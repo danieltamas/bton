@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36">
+  <!-- template image: black on transparent; macOS tints it for light and dark menu bars -->
+  <g transform="rotate(-38 18 18)" fill="#000">
+    <rect x="-2" y="15.2" width="5" height="1.6" rx="0.8" opacity="0.6"/>
+    <rect x="0" y="19.2" width="3" height="1.6" rx="0.8" opacity="0.6"/>
+    <path fill-rule="evenodd" d="M7 14h25a1.8 4 0 0 1 0 8H7a1.8 4 0 0 1 0-8Zm25 1.9a0.8 2.1 0 1 0 0 4.2a0.8 2.1 0 1 0 0-4.2Z"/>
+  </g>
+</svg>

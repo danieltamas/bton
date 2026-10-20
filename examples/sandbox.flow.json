@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "main",
+  "tier": { "marker": "Tier:", "values": ["quick fix"], "default": "quick fix" },
+  "reviews": { "quick fix": [{ "heading": "## Review:" }] },
+  "fixed": "## Fixed:",
+  "moves": [
+    { "move": "review", "when": ["no_review_or_response_newer"], "who": "author" },
+    { "move": "merge", "when": ["approved_current_head"], "who": "author" },
+    { "move": "fix", "when": ["latest_review_changes_or_blocked"], "who": "author" }
+  ],
+  "dispatch": {
+    "fix": { "agent": "claude", "prompt": "Bton e2e: PR #{number} of {repo} at head {head}. Reply with the single word done.", "timeoutMinutes": 5 }
+  },
+  "checks": { "beforeSession": [], "beforeMerge": [] },
+  "caps": { "openPullRequestsPerDeveloper": 2, "openPullRequestsTeam": 6 },
+  "stale": { "pingHours": 24, "escalateHours": 48, "escalateTo": "lead-dev" }
+}

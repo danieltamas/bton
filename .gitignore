@@ -1,0 +1,11 @@
+.build/
+build/
+.swiftpm/
+.DS_Store
+dist/
+.claude/
+.remember/
+docs/PLAN.md
+docs/AUDIT.md
+docs/OPEN-SOURCE.md
+docs/ARCHITECTURE.md
