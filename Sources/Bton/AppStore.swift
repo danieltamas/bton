@@ -290,6 +290,14 @@ final class AppStore {
         await refresh()
     }
 
+    func canRetry(_ job: Job) -> Bool { job.canRetry(among: jobs) }
+
+    /// The move runs again on the same head, once the cause of the failure is fixed.
+    func retry(_ job: Job) async {
+        guard (try? await engine?.retry(job.id)) == true else { return }
+        await refresh()
+    }
+
     /// The job's output and error log, in TextEdit: nothing opens a `.out` file by default.
     func openLogs(of job: Job) {
         let files = outputFiles(of: job).filter(Self.hasContent)

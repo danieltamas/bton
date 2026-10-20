@@ -124,7 +124,9 @@ public struct LeaseStore: Sendable {
         self.remoteURL = remoteURL
     }
 
-    public func claim(_ item: LeaseItem, in repo: String, job: UUID = UUID(), key: String? = nil) async throws -> ClaimResult {
+    /// `rerun` claims a free lease even though its key already ran: the owner retried it.
+    public func claim(_ item: LeaseItem, in repo: String, job: UUID = UUID(), key: String? = nil,
+                      rerun: Bool = false) async throws -> ClaimResult {
         try await failingClosed {
             // A second local claim of the same item loses here, without a push.
             guard let lock = LocalLock(home.url.appendingPathComponent("locks/\(repo.replacingOccurrences(of: "/", with: "__"))__\(item).lock"))
@@ -134,7 +136,7 @@ public struct LeaseStore: Sendable {
                 return .claimed(lease)
             }
             guard let (observed, current) = try await read(item, in: repo) else { return .notClaimed(holder: nil) }
-            guard current.isFree(at: .now), key.map(current.hasRun) != true else { return .notClaimed(holder: current) }
+            guard current.isFree(at: .now), rerun || key.map(current.hasRun) != true else { return .notClaimed(holder: current) }
             guard let lease = try await writeFresh(job: job, key: key, done: current.history, item: item, repo: repo,
                                                    expecting: observed) else { return .notClaimed(holder: nil) }
             return .claimed(lease)

@@ -131,3 +131,7 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
 
 A move is dispatched only when it is mine, has a `dispatch` entry, the PR targets `base`, and
 the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
+
+A move runs once per head on any Mac, whether it succeeds or fails. When a failure's cause is
+fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
+runs it again on the same head, first in line, if it is still the PR's move.

@@ -100,6 +100,12 @@ public enum DispatchPlanner {
         template.replacing(/\{[a-z]+\}/) { values[String($0.output)] ?? String($0.output) }
     }
 
+    /// Every job on the key was retried by the owner, so the lease may run it again too.
+    public static func isRetry(_ key: JobKey, jobs: [Job]) -> Bool {
+        let onKey = jobs.filter { $0.key == key }
+        return !onKey.isEmpty && onKey.allSatisfy { $0.retry == true }
+    }
+
     /// A process's environment in a repo: the repo's variables from this Mac's config, under
     /// Bton's own, which win a clash.
     public static func processEnvironment(repo: [String: String], bton: [String: String]) -> [String: String] {
@@ -140,7 +146,7 @@ public enum DispatchPlanner {
     /// `first` holds the owner's run-next picks, `owner/name#item`: they go before every turn.
     public static func select(_ candidates: [DispatchCandidate], jobs: [Job], maxAgents: Int,
                               agents: [String: AgentTemplate], first: [String] = []) -> [DispatchCandidate] {
-        let seen = Set(jobs.map(\.key))
+        let seen = Set(jobs.filter { $0.retry != true }.map(\.key))
         let running = jobs.filter { $0.status == .running }
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
         var activeRepos = Set(running.map { $0.key.repo.lowercased() })

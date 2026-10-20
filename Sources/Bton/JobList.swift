@@ -77,6 +77,10 @@ private struct JobRow: View {
                 Divider()
                 Button("Stop") { Task { await store.stop(job) } }
             }
+            if store.canRetry(job) {
+                Divider()
+                Button("Retry") { Task { await store.retry(job) } }
+            }
         }
     }
 
@@ -109,6 +113,11 @@ private struct JobRow: View {
             if job.status == .running {
                 IconButton(symbol: "stop.fill", help: "Stop and release the lease", tint: Theme.danger, size: 24) {
                     Task { await store.stop(job) }
+                }
+            }
+            if store.canRetry(job) {
+                IconButton(symbol: "arrow.clockwise", help: "Run this move again on the same head", size: 24) {
+                    Task { await store.retry(job) }
                 }
             }
         }

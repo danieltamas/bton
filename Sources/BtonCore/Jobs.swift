@@ -45,11 +45,13 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var deadline: Date?
     /// Set when the agent's final message is posted as a review.
     public var review: ReviewTarget?
+    /// The owner asked for this failed or stopped move to run again on the same head.
+    public var retry: Bool?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
                 usage: [String: TokenUsage] = [:], cost: Decimal? = nil, deadline: Date? = nil,
-                review: ReviewTarget? = nil) {
+                review: ReviewTarget? = nil, retry: Bool? = nil) {
         self.id = id
         self.key = key
         self.agent = agent
@@ -63,6 +65,14 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
         self.cost = cost
         self.deadline = deadline
         self.review = review
+        self.retry = retry
+    }
+
+    /// A failed or stopped PR job that is its key's latest. A schedule's key names its own time,
+    /// so it never comes round again to retry.
+    public func canRetry(among jobs: [Job]) -> Bool {
+        [.failed, .cancelled].contains(status) && retry != true && key.item.hasPrefix("pr-")
+            && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
     }
 }
 
@@ -105,6 +115,15 @@ public struct JobStore: Sendable {
     public func save(_ job: Job) throws {
         try Self.encoder.encode(job).write(to: directory.appendingPathComponent("\(job.id.uuidString).json"),
                                            options: .atomic)
+    }
+
+    /// Marks a job the owner retries, so its move runs again on the same head.
+    public func requestRetry(_ id: UUID) throws -> Bool {
+        let all = all()
+        guard var job = all.first(where: { $0.id == id }), job.canRetry(among: all) else { return false }
+        job.retry = true
+        try save(job)
+        return true
     }
 
     /// The agent's stdout: its final message.

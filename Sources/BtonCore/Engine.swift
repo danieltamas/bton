@@ -224,6 +224,13 @@ public actor Engine {
         await dispatcher?.stop(id)
     }
 
+    /// Runs a failed or stopped PR move again on its head, first in line.
+    public func retry(_ id: UUID) throws -> Bool {
+        guard let job = jobs.all().first(where: { $0.id == id }), try jobs.requestRetry(id) else { return false }
+        runNext(repo: job.key.repo, item: job.key.item)
+        return true
+    }
+
     /// A PR's jobs' cost; nil when it has none or one of them has no price yet.
     public static func total(of jobs: [Job], repo: String, number: Int) -> Decimal? {
         let mine = jobs.filter { $0.key.repo == repo && $0.key.item == "pr-\(number)" }

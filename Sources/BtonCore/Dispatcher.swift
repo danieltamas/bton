@@ -76,8 +76,8 @@ actor Dispatcher {
         let id = UUID()
         let lease: Lease
         do {
-            guard case let .claimed(claimed) = try await leases.claim(item, in: candidate.key.repo, job: id,
-                                                                      key: candidate.key.description),
+            guard case let .claimed(claimed) = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description,
+                                                                      rerun: DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())),
                   claimed.isLive() else { return false }
             lease = claimed
         } catch {
