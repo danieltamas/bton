@@ -363,6 +363,13 @@ final class AppStore {
         await refresh()
     }
 
+    /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
+    func runNow(_ pr: PullRequest) async {
+        guard let move = pr.move else { return }
+        try? await engine?.runNow(JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha))
+        await refresh()
+    }
+
     /// Says a label-gated move is done: the label goes on GitHub and the next sync reads the next move.
     /// A fresh read must still give me the same move with that label, so a stale popover never
     /// clears a later round's label.

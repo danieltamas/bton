@@ -181,6 +181,8 @@ public enum FlowEngine {
                 return pr.labels.contains(name)
             case ("draft", nil):
                 return pr.isDraft
+            case ("conflicting", nil):
+                return pr.conflicting
             case ("no_review_or_response_newer", nil):
                 guard let latest else { return true }
                 return !matchesHead(latest) || (latestFixed.map { $0 > latest.createdAt } ?? false)

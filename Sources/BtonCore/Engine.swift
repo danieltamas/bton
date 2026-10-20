@@ -233,6 +233,14 @@ public actor Engine {
         return true
     }
 
+    /// Starts a PR's move now (the panel's Merge and Fix conflicts): first in line, and again
+    /// when it failed or was stopped on this head.
+    public func runNow(_ key: JobKey) throws {
+        let all = jobs.all()
+        if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
+        runNext(repo: key.repo, item: key.item)
+    }
+
     /// A PR's jobs' cost; nil when it has none or one of them has no price yet.
     public static func total(of jobs: [Job], repo: String, number: Int) -> Decimal? {
         let mine = jobs.filter { $0.key.repo == repo && $0.key.item == "pr-\(number)" }

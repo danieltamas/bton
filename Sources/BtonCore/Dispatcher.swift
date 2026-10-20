@@ -144,7 +144,7 @@ actor Dispatcher {
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
-            let checks = candidate.pr == nil ? nil
+            let checks = candidate.pr == nil || flow?.dispatch[candidate.key.move]?.checks == false ? nil
                 : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
             for check in checks ?? [] {
                 let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: .seconds(600))

@@ -59,6 +59,7 @@ private struct PullRequestRow: View {
                             Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
                         }
                         if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
+                        if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
                         if store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
                             Chip(text: "next", color: Theme.color(forMove: "schedule"))
                         }
@@ -77,6 +78,12 @@ private struct PullRequestRow: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     if let move = pr.move {
                         if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
+                        if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
+                           FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me), let title = RunNowButton.title(for: move) {
+                            RunNowButton(title: title, symbol: Theme.symbol(forMove: move.name), color: moveColor ?? Theme.neutral) {
+                                Task { await store.runNow(pr) }
+                            }
+                        }
                     }
                     if let job {
                         ModelBadges(job: job, compact: true)
@@ -98,6 +105,42 @@ private struct PullRequestRow: View {
             }
             Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
         }
+    }
+}
+
+/// Starts a move of mine at once, again if it failed on this head.
+private struct RunNowButton: View {
+    let title: String
+    let symbol: String
+    let color: Color
+    let action: () -> Void
+    @State private var hovering = false
+
+    /// Only moves a person would otherwise go to GitHub for get a button; the rest run on their own.
+    static func title(for move: Move) -> String? {
+        switch move.name {
+        case "merge": "Merge"
+        case "resolve": "Fix conflicts"
+        default: nil
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+                Text(title).font(.system(size: 10.5, weight: .semibold))
+            }
+            .foregroundStyle(color)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(color.opacity(hovering ? 0.22 : 0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 0.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
+        .help("\(title) now, again if it failed on this head")
     }
 }
 

@@ -27,6 +27,9 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// The keys of Bton's own marker comments on the PR (`stale-ping fix@<head>`), which are
     /// not in `comments`.
     public var btonMarkers: Set<String> = []
+    /// GitHub says the PR conflicts with its base. False while GitHub is still working it out
+    /// after a push, so nothing starts on a guess.
+    public var conflicting = false
     /// Set once the repo's flow has been evaluated; nil for a repo without a flow.
     public var move: Move?
     /// What this Mac's jobs on the PR cost so far; nil without jobs or while a model has no price.

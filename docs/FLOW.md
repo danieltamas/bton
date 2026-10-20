@@ -84,6 +84,7 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 |-----------|------------|
 | `label:<name>` | the PR has that label |
 | `draft` | the PR is a draft |
+| `conflicting` | GitHub reports the PR conflicts with its base. `UNKNOWN` (GitHub still working it out after a push) does not count |
 | `no_review_or_response_newer` | no review counts yet, or the current head does not match the latest review's, or a `fixed` comment is newer than the latest review |
 | `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head |
 | `latest_review_changes_or_blocked` | the latest review's verdict is `changes` or `blocked` |
@@ -128,6 +129,8 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
   sandbox keeps codex from its service. A helper missing on this Mac is skipped with a note in
   the job's log. Write the prompt to say "ask codex", not "run codex".
 - `timeoutMinutes`: default 60.
+- `"checks": false`: the flow's `checks` do not run before this move. A `resolve` agent works
+  on a PR that conflicts with its base, which a merge check such as `git merge-tree` refuses.
 
 A move is dispatched only when it is mine, has a `dispatch` entry, the PR targets `base`, and
 the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
@@ -135,3 +138,9 @@ the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
 A move runs once per head on any Mac, whether it succeeds or fails. When a failure's cause is
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
 runs it again on the same head, first in line, if it is still the PR's move.
+
+A PR row whose move is mine shows **Merge** for a `merge` move and **Fix conflicts** for a
+`resolve` move, when Bton would dispatch it. Either starts the move now, first in line, and
+again when it failed or was stopped on this head on this Mac (a failure on another Mac is
+retried there). A `resolve` move that fails waits for a new head or one of these buttons:
+it never loops.

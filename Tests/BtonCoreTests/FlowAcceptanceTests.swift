@@ -73,11 +73,12 @@ struct FlowAcceptanceTests {
         #expect(flow.version == 1)
         #expect(flow.base == (example == "team" ? "develop" : "main"))
         if example == "team" {
-            #expect(flow.moves.map(\.move) == ["decide", "finish", "review", "merge", "decide", "fix"])
+            #expect(flow.moves.map(\.move) == ["decide", "finish", "resolve", "review", "merge", "decide", "fix"])
             #expect(flow.tier.marker == "Tier:")
             #expect(flow.tier.values == ["quick fix", "feature", "high-risk"])
             #expect(flow.tier.defaultTier == "feature")
-            #expect(Set(flow.dispatch.keys) == Set(["review", "fix", "merge"]))
+            #expect(Set(flow.dispatch.keys) == Set(["review", "fix", "resolve", "merge"]))
+            #expect(flow.dispatch["resolve"]?.checks == false)
         }
     }
 

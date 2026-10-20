@@ -105,6 +105,9 @@ public struct DispatchRule: Decodable, Sendable {
     /// An argv run instead of an agent (merge).
     public let command: [String]?
     public let timeoutMinutes: Int?
+    /// false: the flow's `checks` do not run before this move. A `resolve` agent works on a PR
+    /// that conflicts with its base, which a merge check would refuse.
+    public let checks: Bool?
     /// Agents on the Mac that runs the move which its Claude may ask (Bton's `ask` tool): the
     /// sandbox keeps them from running from the agent's Bash.
     public let helpers: [String]?

@@ -177,6 +177,7 @@ struct ActiveStrip: View {
         case "review": "Reviewing"
         case "fix": "Fixing"
         case "merge": "Merging"
+        case "resolve": "Resolving conflicts in"
         default: job.key.move.capitalized
         }
         let number = job.key.item.hasPrefix("pr-") ? " #\(job.key.item.dropFirst(3))" : " \(job.key.item)"

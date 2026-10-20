@@ -36,6 +36,7 @@ enum Theme {
         case "review": Color(hex: 0x7AA2FF)
         case "fix": Color(hex: 0xFFB547)
         case "merge": success
+        case "resolve": danger
         case "decide": Color(hex: 0xC792FF)
         case "finish": neutral
         case "schedule": Color(hex: 0x5CC8FF)
@@ -48,6 +49,7 @@ enum Theme {
         case "review": "eye"
         case "fix": "wrench.adjustable"
         case "merge": "arrow.triangle.merge"
+        case "resolve": "arrow.triangle.branch"
         case "decide": "signpost.right"
         case "finish": "pencil.line"
         case "schedule": "clock.arrow.circlepath"
