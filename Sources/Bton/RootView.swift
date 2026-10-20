@@ -15,6 +15,7 @@ struct RootView: View {
     /// The repo the PR, job and merged lists are narrowed to; nil shows every repo.
     @State private var repo: String?
     @Namespace private var island
+    @State private var visible = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +31,8 @@ struct RootView: View {
         }
         .frame(width: 404, height: 620)
         .background(Backdrop())
+        .background(WindowVisibility(visible: $visible))
+        .environment(\.panelVisible, visible)
         .preferredColorScheme(.dark)
     }
 
@@ -50,10 +53,10 @@ struct RootView: View {
                 syncLine
             }
             Spacer()
-            IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
-                .rotationEffect(.degrees(store.isRefreshing ? 360 : 0))
-                .animation(store.isRefreshing ? .linear(duration: 0.9).repeatForever(autoreverses: false) : Motion.snappy,
-                           value: store.isRefreshing)
+            Ticker(active: store.isRefreshing) { time in
+                IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
+                    .rotationEffect(.degrees(time.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360))
+            }
             IconButton(symbol: "gearshape", help: "Settings") { openSettings(.general) }
         }
         .padding(.horizontal, 14)

@@ -82,25 +82,78 @@ struct Eyebrow: View {
     }
 }
 
+/// Whether the menu bar panel is on screen. Perpetual motion pauses while it is not: a hidden
+/// panel would otherwise redraw at the display's rate.
+extension EnvironmentValues {
+    @Entry var panelVisible = true
+}
+
+/// A schedule for motion that runs only while it shows something: capped at 30 fps, and paused
+/// when `active` is false or the panel is hidden.
+struct Ticker<Content: View>: View {
+    @Environment(\.panelVisible) private var panelVisible
+    let active: Bool
+    @ViewBuilder let content: (Double) -> Content
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: !(active && panelVisible))) { context in
+            content(active ? context.date.timeIntervalSinceReferenceDate : 0)
+        }
+    }
+}
+
 /// A dot that breathes while something runs.
 struct PulseDot: View {
     let color: Color
     var pulsing = true
-    @State private var expanded = false
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 6, height: 6)
-            .background {
-                Circle().fill(color.opacity(0.45))
-                    .scaleEffect(expanded ? 2.6 : 1)
-                    .opacity(expanded ? 0 : 0.9)
+        Ticker(active: pulsing) { time in
+            let phase = pulsing ? time.truncatingRemainder(dividingBy: 1.4) / 1.4 : 1
+            let eased = 1 - (1 - phase) * (1 - phase)
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+                .background {
+                    Circle().fill(color.opacity(0.45))
+                        .scaleEffect(1 + 1.6 * eased)
+                        .opacity(0.9 * (1 - eased))
+                }
+        }
+    }
+}
+
+/// Follows its window's occlusion: a menu bar panel's views stay alive after it closes.
+struct WindowVisibility: NSViewRepresentable {
+    @Binding var visible: Bool
+
+    func makeNSView(context: Context) -> VisibilityView { VisibilityView() }
+
+    func updateNSView(_ view: VisibilityView, context: Context) {
+        view.onChange = { shown in if visible != shown { visible = shown } }
+    }
+}
+
+final class VisibilityView: NSView {
+    var onChange: ((Bool) -> Void)?
+    private var token: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let token { NotificationCenter.default.removeObserver(token) }
+        token = window.map { window in
+            NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                   object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.report() }
             }
-            .onAppear {
-                guard pulsing else { return }
-                withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { expanded = true }
-            }
+        }
+        report()
+    }
+
+    /// After the current update: AppKit can move the view while SwiftUI lays it out.
+    private func report() {
+        let shown = window?.occlusionState.contains(.visible) ?? false
+        DispatchQueue.main.async { [weak self] in self?.onChange?(shown) }
     }
 }
 
