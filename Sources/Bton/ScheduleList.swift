@@ -97,9 +97,6 @@ struct ScheduleRow: View {
                     HStack(spacing: 6) {
                         Text(entry.name).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
                         if let last { Chip(text: last.status.rawValue, color: Theme.color(for: last.status)) }
-                        if let repo = entry.repo, let item = entry.item, store.isNext(repo: repo, item: item) {
-                            Chip(text: "next", color: color)
-                        }
                     }
                     Text([interval, entry.repo?.split(separator: "/").last.map(String.init), entry.agent,
                           entry.model.map(ClaudeModel.label(for:)),
@@ -116,7 +113,9 @@ struct ScheduleRow: View {
                         nextRun.font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
                     }
                 }
-                if let repo = entry.repo, let item = entry.item, last?.status != .running {
+                if let repo = entry.repo, let item = entry.item, last?.status != .running, store.isNext(repo: repo, item: item) {
+                    StartingLabel(repo: repo)
+                } else if let repo = entry.repo, let item = entry.item, last?.status != .running {
                     IconButton(symbol: "play.fill", help: "Run now, or as soon as \(repo) is free", tint: color, size: 26) {
                         Task { await store.runNext(repo: repo, item: item) }
                     }

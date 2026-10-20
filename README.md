@@ -49,8 +49,9 @@ head, your repo's checks, then Claude Code, Codex or any CLI you configure.
 **One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
 GitHub hands each move to exactly one Mac.
 
-**Merge and Fix conflicts, one click away.** Any PR of yours that GitHub can merge gets a Merge
-button. It runs your repo's own merge command, so its checks still decide.
+**Conflicts fix themselves.** When your PR falls behind its base and conflicts, an agent merges
+the base in, resolves, tests and pushes. Any PR of yours GitHub can merge gets a Merge button
+that runs your repo's own merge command, so its checks still decide.
 
 **Costs in plain sight.** Every job shows its model and its cost; the panel totals today and the
 week.

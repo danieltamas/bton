@@ -34,9 +34,13 @@ public actor Engine {
     /// Run-next picks, `owner/name#item` lowercased repo, the latest pick first. A pick stays until
     /// it starts (its repo may be busy), or until a tick finds nothing of it to run.
     private var next: [String] = []
-    /// The owner's Merge picks and the head each was asked on: the PR merges instead of its flow
-    /// move, and a new head drops the pick, so nothing merges that the owner did not see.
-    private var merges: [String: String] = [:]
+    /// The owner's Merge and Fix conflicts picks, with the head each was asked on: the PR takes that
+    /// move instead of its flow move, and a new head drops the pick, so nothing runs on a head the
+    /// owner did not see.
+    private var asked: [String: JobKey] = [:]
+    /// Automatic resolves a lease refused, and when: another Mac holds or ran that head, so the flow's
+    /// move goes on for a while before the resolve is tried again.
+    private var declined: [JobKey: Date] = [:]
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
@@ -157,15 +161,11 @@ public actor Engine {
                         }
                         var candidates = DispatchPlanner.candidates(read.pullRequests, flow: flow, me: read.viewer, repo: read.repo.slug)
                         for pr in read.pullRequests {
-                            let pick = Self.pick(repo: read.repo.slug, item: "pr-\(pr.number)")
-                            guard let head = merges[pick] else { continue }
-                            // A new head, a PR that can't merge, or a merge already done on this head ends the request.
-                            guard head == pr.headSha,
-                                  let merge = DispatchPlanner.mergeCandidate(pr, flow: flow, me: read.viewer, repo: read.repo.slug),
-                                  !jobs.all().contains(where: { $0.key == merge.key }) || DispatchPlanner.isRetry(merge.key, jobs: jobs.all())
-                            else { merges[pick] = nil; continue }
-                            candidates.removeAll { $0.key.item == merge.key.item }
-                            candidates.append(merge)
+                            // An agent this Mac lacks would leave the PR with no move at all.
+                            guard let chosen = override(pr, flow: flow, repo: read.repo, me: read.viewer),
+                                  chosen.agent.map({ config.agents[$0] != nil }) ?? true else { continue }
+                            candidates.removeAll { $0.key.item == chosen.key.item }
+                            candidates.append(chosen)
                         }
                         pending += candidates.map { ($0, clone, flow) }
                     }
@@ -184,7 +184,10 @@ public actor Engine {
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             if let me = snapshot.me {
-                let runnable = Set(pending.map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
+                // A move already run on its head can't start, so a pick waiting on it would wait forever.
+                let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
+                let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
+                    .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
                 var started: Set<String> = [], refused: Set<JobKey> = []
                 // A pick whose lease is held elsewhere frees its slot for the next candidate.
                 while true {
@@ -206,9 +209,10 @@ public actor Engine {
                 }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
-                // A merge whose lease history says it already ran elsewhere would hold the PR's flow move back.
-                let refusedMerges = Set(refused.filter { $0.move == "merge" }.map { Self.pick(repo: $0.repo, item: $0.item) })
-                merges = merges.filter { next.contains($0.key) && !refusedMerges.contains($0.key) }
+                // A request whose lease history says it already ran elsewhere would hold the PR's flow move back.
+                asked = asked.filter { next.contains($0.key) && !refused.contains($0.value) }
+                for key in refused where key.move == "resolve" { declined[key] = .now }
+                declined = declined.filter { $0.value > .now.addingTimeInterval(-900) }
             }
         } catch {
             snapshot.problem = error.localizedDescription
@@ -247,6 +251,7 @@ public actor Engine {
     public func retry(_ id: UUID) throws -> Bool {
         guard let job = jobs.all().first(where: { $0.id == id }), try jobs.requestRetry(id) else { return false }
         runNext(repo: job.key.repo, item: job.key.item)
+        ask(job.key)
         return true
     }
 
@@ -256,7 +261,31 @@ public actor Engine {
         let all = jobs.all()
         if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
         runNext(repo: key.repo, item: key.item)
-        if key.move == "merge" { merges[Self.pick(repo: key.repo, item: key.item)] = key.head }
+        ask(key)
+    }
+
+    /// A Merge or Fix conflicts runs instead of the PR's flow move, also when retried from Jobs.
+    private func ask(_ key: JobKey) {
+        if key.move == "merge" || key.move == "resolve" { asked[Self.pick(repo: key.repo, item: key.item)] = key }
+    }
+
+    /// What runs on a PR instead of its flow move: the owner's Merge or Fix conflicts on the head they
+    /// saw, or else Bton's own resolve on a PR of mine that conflicts, once per head.
+    private func override(_ pr: PullRequest, flow: Flow, repo: WatchedRepo, me: String) -> DispatchCandidate? {
+        let pick = Self.pick(repo: repo.slug, item: "pr-\(pr.number)")
+        let all = jobs.all()
+        let fresh = { (c: DispatchCandidate) in !all.contains { $0.key == c.key } || DispatchPlanner.isRetry(c.key, jobs: all) }
+        if let request = asked[pick] {
+            let made = request.head != pr.headSha ? nil : request.move == "merge"
+                ? DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: repo.slug)
+                : DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug)
+            // A new head, a PR that can't take the move any more, or a move already run on this head ends it.
+            if let made, fresh(made) { return made }
+            asked[pick] = nil
+        }
+        guard repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
+              fresh(resolve), declined[resolve.key] == nil else { return nil }
+        return resolve
     }
 
     /// A PR's jobs' cost; nil when it has none or one of them has no price yet.

@@ -91,6 +91,11 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// Variables this Mac's checks, merge commands and agents get in this repo (a test database
     /// that only exists here, for one). This Mac's, never the repo's; never logged.
     public var environment: [String: String]?
+    /// false: my PRs that conflict with their base wait for Fix conflicts instead of being
+    /// resolved on their own. Nil is on.
+    public var resolveConflicts: Bool?
+
+    public var resolvesConflicts: Bool { resolveConflicts != false }
 
     public init(slug: String, path: String?, branch: String? = nil, environment: [String: String]? = nil) {
         self.slug = slug

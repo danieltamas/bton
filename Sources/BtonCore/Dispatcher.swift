@@ -144,7 +144,7 @@ actor Dispatcher {
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
-            let checks = candidate.pr == nil || flow?.dispatch[candidate.key.move]?.checks == false ? nil
+            let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
             for check in checks ?? [] {
                 let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: .seconds(600))
@@ -457,13 +457,19 @@ actor Dispatcher {
         guard let first = argv.first, let executable = Executables.resolve(first) else {
             throw DispatchError.agentNotFound(argv.first ?? "")
         }
-        let result = try await runner.run(executable, Array(argv.dropFirst()), in: directory,
-                                          environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath]),
-                                          timeout: timeout)
+        // The command is logged as it starts, so a log that stops shows what is still running.
         let handle = try FileHandle.appending(to: jobs.logURL(id))
         defer { try? handle.close() }
-        handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8) + result.stdout + Data(result.stderr.utf8))
-        return result.status
+        handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8))
+        do {
+            let result = try await runner.run(executable, Array(argv.dropFirst()), in: directory,
+                                              environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath]),
+                                              timeout: timeout)
+            handle.write(result.stdout + Data(result.stderr.utf8))
+            return result.status
+        } catch ProcessRunner.Failure.timedOut {
+            throw DispatchError.timedOut(argv.joined(separator: " "), minutes: Int(timeout.components.seconds / 60))
+        }
     }
 
     /// One comment per key, carrying Bton's marker so it never changes a move.
@@ -478,22 +484,6 @@ actor Dispatcher {
             try await github.comment(repo: candidate.key.repo, number: pr.number, bodyFile: file)
         } catch {
             log("\(candidate.key): could not post the check failure: \(error.localizedDescription)")
-        }
-    }
-}
-
-enum DispatchError: Error, LocalizedError {
-    case agentNotFound(String)
-    case worktree(String)
-    case placeholder(String)
-    case environment(String)
-
-    var errorDescription: String? {
-        switch self {
-        case let .agentNotFound(name): "\(name) not found on this Mac's PATH"
-        case let .worktree(reason): "worktree: \(reason)"
-        case let .placeholder(reason): reason
-        case let .environment(reason): "environment: \(reason)"
         }
     }
 }

@@ -74,6 +74,7 @@ struct ReposPane: View {
                             .foregroundStyle(Theme.textTertiary).lineLimit(1).truncationMode(.head)
                         BranchPicker(repo: repo, problem: $problem)
                         EnvironmentEditor(repo: repo)
+                        ResolveSwitch(repo: repo, problem: $problem)
                     } else {
                         Text("No folder yet: nothing is started here until it has one.").font(.meta).foregroundStyle(Theme.unassigned)
                     }
@@ -168,6 +169,27 @@ private struct BranchPicker: View {
         } catch {
             problem = error.localizedDescription
         }
+    }
+}
+
+/// Whether my PRs here that conflict with their base are resolved on their own, once per head.
+private struct ResolveSwitch: View {
+    @Environment(AppStore.self) private var store
+    let repo: WatchedRepo
+    @Binding var problem: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.branch").font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
+            Text("Fix conflicts on my PRs automatically").font(.meta).foregroundStyle(Theme.textTertiary)
+            Toggle("", isOn: Binding(get: { repo.resolvesConflicts }, set: { set($0) }))
+                .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.mint)
+        }
+        .help("An agent merges the base into the PR, resolves, tests and pushes. Off: the PR row's Fix conflicts does it.")
+    }
+
+    private func set(_ on: Bool) {
+        do { try store.setResolveConflicts(on, for: repo.slug); problem = nil } catch { problem = error.localizedDescription }
     }
 }
 

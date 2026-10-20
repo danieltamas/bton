@@ -60,9 +60,6 @@ private struct PullRequestRow: View {
                         }
                         if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
                         if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
-                        if store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
-                            Chip(text: "next", color: Theme.color(forMove: "schedule"))
-                        }
                     }
                     Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -78,7 +75,9 @@ private struct PullRequestRow: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     if let move = pr.move {
                         if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
-                        if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
+                        if job == nil, store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
+                            StartingLabel(repo: pr.repo)
+                        } else if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
                            let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me), let title = RunNowButton.title(for: now) {
                             RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
                                          color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
@@ -121,6 +120,7 @@ private struct RunNowButton: View {
     /// flow's own merge or resolve when Bton would dispatch it.
     static func move(for pr: PullRequest, current: Move, flow: Flow, me: String) -> String? {
         if DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: pr.repo) != nil { return "merge" }
+        if DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: pr.repo) != nil { return "resolve" }
         return FlowEngine.isDispatchable(current, pr: pr, flow: flow, me: me) ? current.name : nil
     }
 
@@ -156,32 +156,41 @@ struct MergedList: View {
     let items: [MergedPullRequest]
     let showRepo: Bool
 
+    /// What the tab's badge counts: merged in the last 24 hours, not since midnight.
+    static func recent(_ items: [MergedPullRequest]) -> Int {
+        items.filter { $0.mergedAt > Date.now.addingTimeInterval(-86_400) }.count
+    }
+
     var body: some View {
         if items.isEmpty {
             EmptyState(symbol: "arrow.triangle.merge", title: "Nothing merged yet", detail: "Merged PRs show with what their agents cost.")
         } else {
-            RowStack(items: items) { pr in
-                HoverCard(accent: nil, action: { NSWorkspace.shared.open(pr.url) }) {
-                    HStack(spacing: 10) {
-                        GlyphDisc(symbol: "arrow.triangle.merge", color: Theme.success, size: 26)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                            HStack(spacing: 6) {
-                                Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                if showRepo { RepoName(repo: pr.repo) }
-                                Text(pr.author)
-                                Text("·")
-                                Text(pr.mergedAt, style: .relative)
-                            }
-                            .font(.meta).foregroundStyle(Theme.textTertiary)
-                        }
-                        Spacer(minLength: 4)
-                        if let cost = pr.totalCost {
-                            VStack(alignment: .trailing, spacing: 1) {
-                                Eyebrow(text: "total")
-                                Cost(value: cost)
-                            }
-                        }
+            RowStack(items: items, row: row) {
+                Eyebrow(text: "\(Self.recent(items)) in the last 24 hours")
+            }
+        }
+    }
+
+    private func row(_ pr: MergedPullRequest) -> some View {
+        HoverCard(accent: nil, action: { NSWorkspace.shared.open(pr.url) }) {
+            HStack(spacing: 10) {
+                GlyphDisc(symbol: "arrow.triangle.merge", color: Theme.success, size: 26)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        if showRepo { RepoName(repo: pr.repo) }
+                        Text(pr.author)
+                        Text("·")
+                        Text(pr.mergedAt, style: .relative)
+                    }
+                    .font(.meta).foregroundStyle(Theme.textTertiary)
+                }
+                Spacer(minLength: 4)
+                if let cost = pr.totalCost {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Eyebrow(text: "total")
+                        Cost(value: cost)
                     }
                 }
             }

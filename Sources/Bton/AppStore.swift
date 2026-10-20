@@ -142,30 +142,6 @@ final class AppStore {
         }
     }
 
-    /// The branch PRs merge into; empty means GitHub's default branch.
-    func setBranch(_ branch: String, for slug: String) throws {
-        let branch = branch.trimmingCharacters(in: .whitespaces)
-        guard branch.isEmpty || WatchedRepo.isBranchName(branch) else {
-            throw SettingsError.invalid("\(branch) is not a branch name.")
-        }
-        try update { config in
-            for index in config.repos.indices where config.repos[index].slug == slug {
-                config.repos[index].branch = branch.isEmpty ? nil : branch
-            }
-        }
-    }
-
-    /// Variables the repo's checks, merge commands and agents get on this Mac, as KEY=VALUE lines.
-    func setEnvironment(_ text: String, for slug: String) throws {
-        let environment: [String: String]
-        do { environment = try WatchedRepo.parseEnvironment(text) } catch { throw SettingsError.invalid(error.localizedDescription) }
-        try update { config in
-            for index in config.repos.indices where config.repos[index].slug == slug {
-                config.repos[index].environment = environment.isEmpty ? nil : environment
-            }
-        }
-    }
-
     func removeRepo(_ slug: String) throws {
         if let schedule = config.schedules.first(where: { $0.repo == slug }) {
             throw SettingsError.inUse("\(slug) is used by the schedule \(schedule.name).")
@@ -178,7 +154,7 @@ final class AppStore {
     /// Saves first, so a change that could not be written never shows as made. Starts from the
     /// file, so an edit made outside the app (by hand, by an agent) is not saved over; a file that
     /// cannot be read stops the change rather than being replaced by the window's copy.
-    private func update(_ change: (inout BtonConfig) throws -> Void) throws {
+    func update(_ change: (inout BtonConfig) throws -> Void) throws {
         var next = try BtonConfig.loadOrCreate(home: home)
         try change(&next)
         try next.save(to: home.configURL)
@@ -359,12 +335,14 @@ final class AppStore {
 
     /// Starts a PR's move or a schedule before anything else, as soon as its repo is free.
     func runNext(repo: String, item: String) async {
+        markStarting(repo: repo, item: item)
         await engine?.runNext(repo: repo, item: item)
         await refresh()
     }
 
     /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
     func runNow(_ pr: PullRequest, move: String) async {
+        markStarting(repo: pr.repo, item: "pr-\(pr.number)")
         try? await engine?.runNow(JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move, head: pr.headSha))
         await refresh()
     }
@@ -403,6 +381,12 @@ final class AppStore {
     }
 
     func isNext(repo: String, item: String) -> Bool { next.contains("\(repo.lowercased())#\(item)") }
+
+    /// The row shows "starting" at the click, not after the sync that may already be running.
+    private func markStarting(repo: String, item: String) {
+        let pick = "\(repo.lowercased())#\(item)"
+        if !next.contains(pick) { next.insert(pick, at: 0) }
+    }
 
     private func tick() async {
         guard let engine else { return }

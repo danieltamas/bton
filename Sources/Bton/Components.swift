@@ -126,6 +126,20 @@ struct PulseDot: View {
     }
 }
 
+/// A move or schedule asked to run now that has not started yet: it waits for its repo or the
+/// next sync, and the row says so instead of keeping its button.
+struct StartingLabel: View {
+    let repo: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            PulseDot(color: Theme.mint)
+            Text("starting").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint)
+        }
+        .help("Starts as soon as \(repo) is free and GitHub has been read")
+    }
+}
+
 /// Follows its window's occlusion: a menu bar panel's views stay alive after it closes.
 struct WindowVisibility: NSViewRepresentable {
     @Binding var visible: Bool

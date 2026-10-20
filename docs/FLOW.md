@@ -21,7 +21,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `reviewers` | Optional logins for the reviewer rotation (below). |
 | `moves` | Ordered list of `{ "move", "when": [predicate...], "who" }`. First match wins. |
 | `dispatch` | Per move name, what Bton starts for it (below). A move without an entry is a human's. |
-| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos. |
+| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after 10 minutes. |
 | `intake` | Optional: how an agent takes a new issue. Parsed, not dispatched yet. |
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
@@ -145,7 +145,13 @@ A PR row shows **Merge** on a PR I authored that GitHub reports mergeable, at an
 the flow has a `merge` dispatch, the PR is not a draft, targets `base` and its author is
 trusted: it runs that dispatch (the repo's merge command and its checks decide), and a push
 before it starts cancels it. A `merge` or `resolve` move of mine that Bton would dispatch shows
-**Merge** or **Fix conflicts**. Either starts the move now, first in line, and
+**Merge** or **Fix conflicts**.
+
+A PR I authored that GitHub reports conflicting is resolved by Bton itself, whatever its move,
+once per head and without the flow's checks: the flow's `resolve` dispatch when it has one,
+otherwise the `fix` agent with Bton's own prompt (merge the base in, resolve keeping both
+sides' intent, test, push, reply `## Fixed:`). Settings > Repos turns this off per repo; the
+row's **Fix conflicts** then starts it. Either starts the move now, first in line, and
 again when it failed or was stopped on this head on this Mac (a failure on another Mac is
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:
 it never loops.
