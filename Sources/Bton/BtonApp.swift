@@ -8,6 +8,13 @@ struct BtonApp: App {
     /// The loop starts with the app, not with the menu: the window's content only exists while
     /// it is open, and Bton dispatches whether anyone looks or not.
     init() {
+        if let index = CommandLine.arguments.firstIndex(of: DemoShots.flag), index + 1 < CommandLine.arguments.count {
+            do { try DemoShots.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) } catch {
+                FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+                exit(1)
+            }
+            exit(0)
+        }
         let store = AppStore()
         store.start()
         LoginItem.registerOnce()
@@ -46,5 +53,22 @@ extension NSImage {
             return image
         }
         return NSImage(systemSymbolName: "arrow.up.right.circle", accessibilityDescription: "Bton")!
+    }
+}
+
+extension NSApplication {
+    /// Quits, then opens Bton again once this process is gone: opening it while it still runs
+    /// would only bring the running copy forward.
+    func relaunch() {
+        // `swift run` has no bundle to open again, and quitting would leave nothing running.
+        let bundle = Bundle.main.bundleURL
+        guard bundle.pathExtension == "app", FileManager.default.isExecutableFile(atPath: Bundle.main.executablePath ?? "")
+        else { return NSSound.beep() }
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
+        reopen.arguments = ["-c", "while kill -0 \"$0\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$1\"",
+                            String(ProcessInfo.processInfo.processIdentifier), bundle.path]
+        guard (try? reopen.run()) != nil else { return NSSound.beep() }
+        terminate(nil)
     }
 }

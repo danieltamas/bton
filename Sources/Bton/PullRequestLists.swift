@@ -153,6 +153,7 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
     let items: [Item]
     let row: (Item) -> Row
     let header: () -> Header
+    @Environment(\.stillImage) private var stillImage
     @State private var shown = Self.page
 
     init(items: [Item], @ViewBuilder row: @escaping (Item) -> Row, @ViewBuilder header: @escaping () -> Header) {
@@ -162,24 +163,31 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 6) {
-                header()
-                ForEach(Array(items.prefix(shown).enumerated()), id: \.element.id) { index, item in
-                    row(item).riseIn(index)
-                }
-                if items.count > shown {
-                    PillButton(title: "Show \(min(Self.page, items.count - shown)) more of \(items.count - shown)",
-                               symbol: "chevron.down", prominent: false) {
-                        withAnimation(Motion.spring) { shown += Self.page }
-                    }
-                    .padding(.top, 4)
-                }
+        if stillImage {
+            VStack(spacing: 6) { rows }.padding(.horizontal, 14)
+                .frame(minHeight: 0, maxHeight: .infinity, alignment: .top).clipped()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 6) { rows }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
+            .scrollIndicators(.never)
         }
-        .scrollIndicators(.never)
+    }
+
+    @ViewBuilder private var rows: some View {
+        header()
+        ForEach(Array(items.prefix(shown).enumerated()), id: \.element.id) { index, item in
+            row(item).riseIn(index)
+        }
+        if items.count > shown {
+            PillButton(title: "Show \(min(Self.page, items.count - shown)) more of \(items.count - shown)",
+                       symbol: "chevron.down", prominent: false) {
+                withAnimation(Motion.spring) { shown += Self.page }
+            }
+            .padding(.top, 4)
+        }
     }
 }
 

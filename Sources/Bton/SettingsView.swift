@@ -67,6 +67,7 @@ struct SettingsView: View {
                 .buttonStyle(PressStyle(scale: 0.98))
             }
             Spacer()
+            AppControls().padding(.horizontal, 10)
         }
         .padding(.horizontal, 12)
         .padding(.top, 20)

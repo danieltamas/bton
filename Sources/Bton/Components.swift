@@ -86,6 +86,9 @@ struct Eyebrow: View {
 /// panel would otherwise redraw at the display's rate.
 extension EnvironmentValues {
     @Entry var panelVisible = true
+    /// Drawn once into an image (the README's screenshots): `ImageRenderer` draws no scroll
+    /// view's content and runs no appear animation, so lists lay out flat and fully shown.
+    @Entry var stillImage = false
 }
 
 /// A schedule for motion that runs only while it shows something: capped at 30 fps, and paused
@@ -293,12 +296,13 @@ struct EmptyState: View {
 /// Rows rise into place, one after another, the first time a list shows.
 struct RiseIn: ViewModifier {
     let index: Int
+    @Environment(\.stillImage) private var stillImage
     @State private var shown = false
 
     func body(content: Content) -> some View {
         content
-            .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : 10)
+            .opacity(shown || stillImage ? 1 : 0)
+            .offset(y: shown || stillImage ? 0 : 10)
             .onAppear {
                 withAnimation(Motion.spring.delay(Double(min(index, 10)) * 0.035)) { shown = true }
             }
@@ -331,5 +335,30 @@ struct HoverCard<Content: View>: View {
         .onTapGesture { action?() }
         .pointingHandCursor(action != nil)
         .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
+    }
+}
+
+/// Restart and Quit, side by side wherever Bton can be closed from.
+struct AppControls: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            control("Restart", symbol: "arrow.clockwise", help: "Quit Bton and open it again") { NSApp.relaunch() }
+            control("Quit", symbol: "power", help: "Quit Bton: no move is checked or started until it runs again") {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func control(_ title: String, symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 9.5, weight: .medium))
+                Text(title).font(.system(size: 10.5, weight: .medium))
+            }
+            .foregroundStyle(Theme.textSecondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .help(help)
     }
 }

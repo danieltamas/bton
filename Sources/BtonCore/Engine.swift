@@ -15,6 +15,8 @@ public actor Engine {
         public var next: [String] = []
         /// Repos GitHub couldn't read this tick, slugs lowercased: their last lists still stand.
         public var unread: Set<String> = []
+
+        public init() {}
     }
 
     public let home: BtonHome

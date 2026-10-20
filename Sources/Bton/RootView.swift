@@ -11,11 +11,15 @@ enum Tab: String, CaseIterable, Identifiable {
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openSettings) private var openSettingsWindow
-    @State private var tab: Tab = .pullRequests
+    @State private var tab: Tab
     /// The repo the PR, job and merged lists are narrowed to; nil shows every repo.
     @State private var repo: String?
     @Namespace private var island
     @State private var visible = true
+
+    init(tab: Tab = .pullRequests) {
+        _tab = State(initialValue: tab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -285,16 +289,7 @@ struct RootView: View {
             Text("Checks GitHub every \(Duration.seconds(store.pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))")
                 .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
             Spacer()
-            Button { NSApp.terminate(nil) } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "power").font(.system(size: 9.5, weight: .medium))
-                    Text("Quit").font(.system(size: 10.5, weight: .medium))
-                }
-                .foregroundStyle(Theme.textTertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressStyle())
-            .help("Quit Bton: no move is checked or started until it runs again")
+            AppControls()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

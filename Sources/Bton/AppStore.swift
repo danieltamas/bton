@@ -416,6 +416,12 @@ final class AppStore {
         notify(since: before)
     }
 
+    /// Made-up data and no engine, for the README's screenshots (`DemoShots`).
+    func showDemo(_ snapshot: Engine.Snapshot, config: BtonConfig) {
+        self.config = config
+        apply(snapshot)
+    }
+
     private func apply(_ snapshot: Engine.Snapshot) {
         flows = snapshot.flows
         me = snapshot.me ?? me
