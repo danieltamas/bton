@@ -364,9 +364,8 @@ final class AppStore {
     }
 
     /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
-    func runNow(_ pr: PullRequest) async {
-        guard let move = pr.move else { return }
-        try? await engine?.runNow(JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha))
+    func runNow(_ pr: PullRequest, move: String) async {
+        try? await engine?.runNow(JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move, head: pr.headSha))
         await refresh()
     }
 

@@ -225,7 +225,8 @@ struct RootView: View {
         case .pullRequests: store.openPullRequests.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
-        case .merged: store.merged.count
+        // Merged today: the list is GitHub's latest 30 whatever their age, so its length says nothing.
+        case .merged: store.merged.filter { Calendar.current.isDateInToday($0.mergedAt) }.count
         }
     }
 

@@ -184,6 +184,7 @@ public struct GitHubClient: Sendable {
                         updatedAt: row.updatedAt)
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
             pr.conflicting = row.mergeable == "CONFLICTING"
+            pr.mergeable = row.mergeable == "MERGEABLE"
             pr.btonMarkers = Set(row.comments.nodes.flatMap { BtonMarker.keys(in: $0.body) })
             return pr
         }

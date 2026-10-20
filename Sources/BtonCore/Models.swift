@@ -30,6 +30,8 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// GitHub says the PR conflicts with its base. False while GitHub is still working it out
     /// after a push, so nothing starts on a guess.
     public var conflicting = false
+    /// GitHub says the PR can merge into its base as it stands: the panel's Merge, at any move.
+    public var mergeable = false
     /// Set once the repo's flow has been evaluated; nil for a repo without a flow.
     public var move: Move?
     /// What this Mac's jobs on the PR cost so far; nil without jobs or while a model has no price.

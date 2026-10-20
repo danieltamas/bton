@@ -79,9 +79,10 @@ private struct PullRequestRow: View {
                     if let move = pr.move {
                         if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
                         if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
-                           FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me), let title = RunNowButton.title(for: move) {
-                            RunNowButton(title: title, symbol: Theme.symbol(forMove: move.name), color: moveColor ?? Theme.neutral) {
-                                Task { await store.runNow(pr) }
+                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me), let title = RunNowButton.title(for: now) {
+                            RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
+                                         color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
+                                Task { await store.runNow(pr, move: now) }
                             }
                         }
                     }
@@ -116,9 +117,16 @@ private struct RunNowButton: View {
     let action: () -> Void
     @State private var hovering = false
 
+    /// The move the button starts: Merge on a PR of mine GitHub can merge, at any move, or the
+    /// flow's own merge or resolve when Bton would dispatch it.
+    static func move(for pr: PullRequest, current: Move, flow: Flow, me: String) -> String? {
+        if DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: pr.repo) != nil { return "merge" }
+        return FlowEngine.isDispatchable(current, pr: pr, flow: flow, me: me) ? current.name : nil
+    }
+
     /// Only moves a person would otherwise go to GitHub for get a button; the rest run on their own.
-    static func title(for move: Move) -> String? {
-        switch move.name {
+    static func title(for move: String) -> String? {
+        switch move {
         case "merge": "Merge"
         case "resolve": "Fix conflicts"
         default: nil

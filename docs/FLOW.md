@@ -121,7 +121,9 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
   substituted: PR and issue text never goes into a prompt or an argv.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
   line is a review (rules above) naming the current head.
-- `command`: an argv run in the worktree instead of an agent (merge).
+- `command`: an argv run in the worktree instead of an agent (merge). A merge command should
+  pin the head the checks ran on (`gh pr merge {number} --squash --match-head-commit {head}`),
+  so a push between the checks and the merge is refused.
 - `helpers`: up to three agents of this Mac's `agents` config that a Claude agent may ask for a
   second opinion through Bton's `ask` tool (`mcp__bton__ask`). Bton runs the helper itself,
   outside the agent's sandbox, Claude and codex read-only (any other program as its template
@@ -139,8 +141,11 @@ A move runs once per head on any Mac, whether it succeeds or fails. When a failu
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
 runs it again on the same head, first in line, if it is still the PR's move.
 
-A PR row whose move is mine shows **Merge** for a `merge` move and **Fix conflicts** for a
-`resolve` move, when Bton would dispatch it. Either starts the move now, first in line, and
+A PR row shows **Merge** on a PR I authored that GitHub reports mergeable, at any move, when
+the flow has a `merge` dispatch, the PR is not a draft, targets `base` and its author is
+trusted: it runs that dispatch (the repo's merge command and its checks decide), and a push
+before it starts cancels it. A `merge` or `resolve` move of mine that Bton would dispatch shows
+**Merge** or **Fix conflicts**. Either starts the move now, first in line, and
 again when it failed or was stopped on this head on this Mac (a failure on another Mac is
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:
 it never loops.

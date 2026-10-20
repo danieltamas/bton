@@ -35,18 +35,32 @@ public enum DispatchPlanner {
             guard let move = FlowEngine.move(for: pr, flow: flow),
                   FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me),
                   let rule = flow.dispatch[move.name] else { return nil }
-            let filling = { (template: String) in
-                fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil)
-            }
-            var candidate = DispatchCandidate(target: .pullRequest(pr), move: move,
-                                              key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
-                                              agent: rule.agent?.value(for: move.tier),
-                                              prompt: rule.prompt?.value(for: move.tier).map(filling),
-                                              command: rule.command?.map(filling),
-                                              postComment: rule.post == "comment", timeout: rule.timeout)
-            candidate.helpers = rule.helpers ?? []
-            return candidate
+            return candidate(pr, move: move, rule: rule, repo: repo)
         }
+    }
+
+    /// The owner's Merge on a PR of theirs that GitHub can merge, whatever the flow's move: the
+    /// flow's own `merge` dispatch, so the repo's merge command and its checks still decide.
+    public static func mergeCandidate(_ pr: PullRequest, flow: Flow, me: String, repo: String) -> DispatchCandidate? {
+        let move = Move(name: "merge", owner: me, ownerFromRotation: false,
+                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr.body, rule: flow.tier), hasDispatch: true)
+        guard let rule = flow.dispatch[move.name], pr.author.caseInsensitiveCompare(me) == .orderedSame,
+              pr.mergeable, !pr.isDraft, FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
+        return candidate(pr, move: move, rule: rule, repo: repo)
+    }
+
+    private static func candidate(_ pr: PullRequest, move: Move, rule: DispatchRule, repo: String) -> DispatchCandidate {
+        let filling = { (template: String) in
+            fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil)
+        }
+        var candidate = DispatchCandidate(target: .pullRequest(pr), move: move,
+                                          key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
+                                          agent: rule.agent?.value(for: move.tier),
+                                          prompt: rule.prompt?.value(for: move.tier).map(filling),
+                                          command: rule.command?.map(filling),
+                                          postComment: rule.post == "comment", timeout: rule.timeout)
+        candidate.helpers = rule.helpers ?? []
+        return candidate
     }
 
     /// This Mac's schedules that are due: enabled, complete, in a watched repo with a clone, and

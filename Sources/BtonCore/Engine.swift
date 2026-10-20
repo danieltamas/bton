@@ -34,6 +34,9 @@ public actor Engine {
     /// Run-next picks, `owner/name#item` lowercased repo, the latest pick first. A pick stays until
     /// it starts (its repo may be busy), or until a tick finds nothing of it to run.
     private var next: [String] = []
+    /// The owner's Merge picks and the head each was asked on: the PR merges instead of its flow
+    /// move, and a new head drops the pick, so nothing merges that the owner did not see.
+    private var merges: [String: String] = [:]
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
@@ -152,8 +155,19 @@ public actor Engine {
                         if let stale = flow.stale {
                             await postStaleNotices(read.pullRequests, stale: stale, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         }
-                        pending += DispatchPlanner.candidates(read.pullRequests, flow: flow, me: read.viewer, repo: read.repo.slug)
-                            .map { ($0, clone, flow) }
+                        var candidates = DispatchPlanner.candidates(read.pullRequests, flow: flow, me: read.viewer, repo: read.repo.slug)
+                        for pr in read.pullRequests {
+                            let pick = Self.pick(repo: read.repo.slug, item: "pr-\(pr.number)")
+                            guard let head = merges[pick] else { continue }
+                            // A new head, a PR that can't merge, or a merge already done on this head ends the request.
+                            guard head == pr.headSha,
+                                  let merge = DispatchPlanner.mergeCandidate(pr, flow: flow, me: read.viewer, repo: read.repo.slug),
+                                  !jobs.all().contains(where: { $0.key == merge.key }) || DispatchPlanner.isRetry(merge.key, jobs: jobs.all())
+                            else { merges[pick] = nil; continue }
+                            candidates.removeAll { $0.key.item == merge.key.item }
+                            candidates.append(merge)
+                        }
+                        pending += candidates.map { ($0, clone, flow) }
                     }
                     // Schedules need no flow: they are this Mac's own, like its agents. They start from
                     // the branch PRs merge into, which the owner picks per repo.
@@ -192,6 +206,9 @@ public actor Engine {
                 }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
+                // A merge whose lease history says it already ran elsewhere would hold the PR's flow move back.
+                let refusedMerges = Set(refused.filter { $0.move == "merge" }.map { Self.pick(repo: $0.repo, item: $0.item) })
+                merges = merges.filter { next.contains($0.key) && !refusedMerges.contains($0.key) }
             }
         } catch {
             snapshot.problem = error.localizedDescription
@@ -234,11 +251,12 @@ public actor Engine {
     }
 
     /// Starts a PR's move now (the panel's Merge and Fix conflicts): first in line, and again
-    /// when it failed or was stopped on this head.
+    /// when it failed or was stopped on this head. A `merge` key merges whatever the flow's move.
     public func runNow(_ key: JobKey) throws {
         let all = jobs.all()
         if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
         runNext(repo: key.repo, item: key.item)
+        if key.move == "merge" { merges[Self.pick(repo: key.repo, item: key.item)] = key.head }
     }
 
     /// A PR's jobs' cost; nil when it has none or one of them has no price yet.
