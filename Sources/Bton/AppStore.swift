@@ -360,7 +360,15 @@ final class AppStore {
               now.isMine(read.viewer), now.labels.contains(label)
         else { throw SettingsError.invalid("#\(pr.number) changed since the last sync; nothing was removed.") }
         try await github.removeLabel(label, repo: pr.repo, number: pr.number)
-        await refresh()
+        // The row shows its next move now: the sync may wait behind a check that runs for minutes.
+        // The shown row keeps its cost and working agent; only its labels and move change.
+        if let index = openPullRequests.firstIndex(where: { $0.repo == pr.repo && $0.number == pr.number }) {
+            var moved = fresh
+            moved.labels.removeAll { $0 == label }
+            openPullRequests[index].labels = moved.labels
+            openPullRequests[index].move = FlowEngine.move(for: moved, flow: flow)
+        }
+        Task { await refresh() }
     }
 
     /// The running schedule job working on the PR, if any.

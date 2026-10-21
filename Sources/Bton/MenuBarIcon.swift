@@ -2,10 +2,11 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// The menu bar glyph, drawn frame by frame: the menu bar shows a still image, so SwiftUI
-/// animations never run there. At rest it is the template icon, which follows the menu bar's
-/// light or dark look. An agent at work turns it blue with an arc circling it; a finished sync
-/// sends one mint ripple out of it; a sync that failed leaves it orange until the next good one.
+/// The menu bar glyph: the menu bar shows a still image, so SwiftUI animations never run there.
+/// At rest it is the template icon, which follows the menu bar's light or dark look. An agent at
+/// work turns it blue with an arc beside it, drawn once: a frame redraws the status item on every
+/// display, and an agent works for most of the day. A finished sync sends one mint ripple out of
+/// it, the only drawing done frame by frame; a sync that failed leaves it orange until the next good one.
 @MainActor @Observable
 final class MenuBarIcon {
     enum Mode: Equatable { case idle, working, problem }
@@ -28,7 +29,7 @@ final class MenuBarIcon {
         self.mode = mode
         if synced { rippleUntil = frame + Self.rippleFrames }
         draw()
-        if mode == .working || frame < rippleUntil { startTimer() }
+        if frame < rippleUntil { startTimer() }
     }
 
     private func startTimer() {
@@ -44,7 +45,7 @@ final class MenuBarIcon {
     private func tick() {
         frame += 1
         draw()
-        if mode != .working, frame >= rippleUntil {
+        if frame >= rippleUntil {
             timer?.invalidate()
             timer = nil
         }
@@ -61,7 +62,6 @@ final class MenuBarIcon {
         case .problem: Self.problem
         case .idle: Self.synced
         }
-        let spin = CGFloat(frame) * 24
         let ripple = rippling ? CGFloat(Self.rippleFrames - (rippleUntil - frame)) / CGFloat(Self.rippleFrames) : nil
         let mode = mode, rippleColor = Self.synced
         image = NSImage(size: Self.size, flipped: false) { rect in
@@ -72,7 +72,7 @@ final class MenuBarIcon {
             let center = NSPoint(x: rect.midX, y: rect.midY)
             if mode == .working {
                 let arc = NSBezierPath()
-                arc.appendArc(withCenter: center, radius: 9.5, startAngle: spin, endAngle: spin + 110)
+                arc.appendArc(withCenter: center, radius: 9.5, startAngle: 20, endAngle: 130)
                 arc.lineWidth = 1.6
                 arc.lineCapStyle = .round
                 color.setStroke()

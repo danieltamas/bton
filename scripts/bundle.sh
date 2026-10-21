@@ -59,6 +59,12 @@ if [[ -n $version ]]; then
 fi
 cp Support/Resources/* "$app/Contents/Resources/"
 
-codesign --force --sign - "$app/Contents/MacOS/BtonCLI"
-codesign --force --sign - "$app"
+# Ad-hoc unless this Mac has "Bton Local" (scripts/make-signing-identity.sh): an ad-hoc build is a
+# new app to macOS privacy every time. A release stays ad-hoc so two builds match byte for byte.
+identity=-
+if [[ -z $version ]] && security find-identity -p codesigning 2>/dev/null | grep -q '"Bton Local"'; then
+  identity="Bton Local"
+fi
+codesign --force --sign "$identity" "$app/Contents/MacOS/BtonCLI"
+codesign --force --sign "$identity" "$app"
 echo "$app"

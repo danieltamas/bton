@@ -67,8 +67,8 @@ actor Dispatcher {
         }
     }
 
-    /// `flow` is nil for a schedule, which has no checks and posts nothing. False when the job
-    /// never started: its lease is held elsewhere, or it could not be recorded.
+    /// `flow` is nil for a schedule, which has no checks and posts nothing. Returns once the job is
+    /// recorded; false when it never started: its lease is held elsewhere, or it could not be recorded.
     @discardableResult
     func dispatch(_ candidate: DispatchCandidate, clone: URL, flow: Flow?, agents: [String: AgentTemplate],
                   environment: [String: String] = [:]) async -> Bool {
@@ -98,10 +98,12 @@ actor Dispatcher {
         hold(lease, for: id)
         log("\(candidate.key): started job \(id.uuidString)")
         jobs.note(id, "started \(candidate.key)")
-        let task = Task { await self.run(job, candidate, clone: clone, flow: flow, agents: agents, environment: environment) }
-        work[id] = task
-        await task.value
-        work[id] = nil
+        // Not awaited: checks and a merge command run for minutes, and the sync that started them
+        // would hold every refresh and button behind them. The saved job already counts as running.
+        work[id] = Task {
+            await self.run(job, candidate, clone: clone, flow: flow, agents: agents, environment: environment)
+            self.work[id] = nil
+        }
         return true
     }
 

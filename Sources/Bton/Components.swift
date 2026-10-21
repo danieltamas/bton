@@ -91,38 +91,83 @@ extension EnvironmentValues {
     @Entry var stillImage = false
 }
 
-/// A schedule for motion that runs only while it shows something: capped at 30 fps, and paused
-/// when `active` is false or the panel is hidden.
-struct Ticker<Content: View>: View {
-    @Environment(\.panelVisible) private var panelVisible
-    let active: Bool
-    @ViewBuilder let content: (Double) -> Content
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: !(active && panelVisible))) { context in
-            content(active ? context.date.timeIntervalSinceReferenceDate : 0)
-        }
-    }
-}
-
-/// A dot that breathes while something runs.
+/// A dot that breathes while something runs. The breath is a Core Animation loop, run by the
+/// window server: a SwiftUI timeline would re-render and re-lay out the whole panel every frame
+/// for each dot. It stops while the panel is hidden.
 struct PulseDot: View {
+    @Environment(\.panelVisible) private var panelVisible
+    @Environment(\.stillImage) private var stillImage
     let color: Color
     var pulsing = true
 
     var body: some View {
-        Ticker(active: pulsing) { time in
-            let phase = pulsing ? time.truncatingRemainder(dividingBy: 1.4) / 1.4 : 1
-            let eased = 1 - (1 - phase) * (1 - phase)
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-                .background {
-                    Circle().fill(color.opacity(0.45))
-                        .scaleEffect(1 + 1.6 * eased)
-                        .opacity(0.9 * (1 - eased))
-                }
+        // ImageRenderer draws no AppKit view.
+        if stillImage {
+            Circle().fill(color).frame(width: 6, height: 6)
+        } else {
+            PulseLayer(color: NSColor(color), pulsing: pulsing && panelVisible).frame(width: 6, height: 6)
         }
+    }
+}
+
+private struct PulseLayer: NSViewRepresentable {
+    let color: NSColor
+    let pulsing: Bool
+
+    func makeNSView(context: Context) -> PulseView { PulseView() }
+    func updateNSView(_ view: PulseView, context: Context) { view.show(color: color, pulsing: pulsing) }
+}
+
+final class PulseView: NSView {
+    private let dot = CALayer()
+    private let halo = CALayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        clipsToBounds = false
+        layer?.masksToBounds = false
+        for circle in [halo, dot] {
+            circle.bounds = CGRect(x: 0, y: 0, width: 6, height: 6)
+            circle.cornerRadius = 3
+            layer?.addSublayer(circle)
+        }
+        halo.opacity = 0
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for circle in [halo, dot] { circle.position = CGPoint(x: bounds.midX, y: bounds.midY) }
+        CATransaction.commit()
+    }
+
+    func show(color: NSColor, pulsing: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.backgroundColor = color.cgColor
+        halo.backgroundColor = color.withAlphaComponent(0.45).cgColor
+        CATransaction.commit()
+        guard pulsing != (halo.animation(forKey: "breath") != nil) else { return }
+        if pulsing { halo.add(Self.breath, forKey: "breath") } else { halo.removeAnimation(forKey: "breath") }
+    }
+
+    private static var breath: CAAnimation {
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 1
+        grow.toValue = 2.6
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.9
+        fade.toValue = 0
+        let breath = CAAnimationGroup()
+        breath.animations = [grow, fade]
+        breath.duration = 1.4
+        breath.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        breath.repeatCount = .infinity
+        return breath
     }
 }
 

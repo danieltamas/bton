@@ -57,10 +57,8 @@ struct RootView: View {
                 syncLine
             }
             Spacer()
-            Ticker(active: store.isRefreshing) { time in
-                IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
-                    .rotationEffect(.degrees(time.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360))
-            }
+            // No spinner: the sync line's dot pulses while a sync runs, and a sync can last as long as a check.
+            IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
             IconButton(symbol: "gearshape", help: "Settings") { openSettings(.general) }
         }
         .padding(.horizontal, 14)

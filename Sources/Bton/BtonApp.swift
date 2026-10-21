@@ -45,7 +45,8 @@ struct BtonApp: App {
 
 extension NSImage {
     /// The bundled template icon; `swift run` has no bundle, so it falls back to an SF Symbol.
-    static var btonTemplate: NSImage {
+    /// Read once: the menu bar icon draws it on every frame.
+    static let btonTemplate: NSImage = {
         if let url = Bundle.main.url(forResource: "MenubarIcon", withExtension: "pdf"),
            let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 18, height: 18)
@@ -53,7 +54,7 @@ extension NSImage {
             return image
         }
         return NSImage(systemSymbolName: "arrow.up.right.circle", accessibilityDescription: "Bton")!
-    }
+    }()
 }
 
 extension NSApplication {
