@@ -19,6 +19,7 @@ final class AppStore {
     private(set) var next: [String] = []
     /// The PRs each schedule's agent works on, read from its session every few seconds.
     let work = ScheduleWork()
+    let local = LocalSync()
     /// The job whose session the window shows in place of its list.
     var watchingJob: UUID?
     let icon = MenuBarIcon()
@@ -406,6 +407,7 @@ final class AppStore {
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
         let snapshot = await engine.tick { read in await self.apply(read) }
         apply(snapshot)
+        local.start(repos: config.repos, defaults: snapshot.defaultBranches)
         notify(since: before)
     }
 

@@ -15,6 +15,8 @@ public actor Engine {
         public var next: [String] = []
         /// Repos GitHub couldn't read this tick, slugs lowercased: their last lists still stand.
         public var unread: Set<String> = []
+        /// Each read repo's default branch on GitHub (main), by slug.
+        public var defaultBranches: [String: String] = [:]
 
         public init() {}
     }
@@ -134,6 +136,7 @@ public actor Engine {
                     // A repo's lists land together or not at all: a half-read repo counts as unread.
                     snapshot.openPullRequests += pullRequests
                     snapshot.merged += merged
+                    snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
                 } catch {
                     failures.append("\(repo.slug): \(error.localizedDescription)")

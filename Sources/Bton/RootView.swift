@@ -344,8 +344,12 @@ struct RootView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("Checks GitHub every \(Duration.seconds(store.pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))")
-                .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
+            if store.local.reports.isEmpty {
+                Text("Checks GitHub every \(Duration.seconds(store.pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))")
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
+            } else {
+                BranchSummary()
+            }
             Spacer()
             AppControls()
         }
