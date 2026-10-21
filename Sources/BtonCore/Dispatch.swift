@@ -258,11 +258,11 @@ public enum DispatchPlanner {
     /// searched for placeholders.
     public static func argv(_ template: [String], prompt: String, session: UUID, instructions: String? = nil,
                             values: [String: String] = [:], model: String? = nil,
-                            helpersConfig: String? = nil) -> [String] {
+                            helpersConfig: String? = nil, scratch: String? = nil) -> [String] {
         // The repo's values go in before hardening, so `{clone}/mcp.json` is an absolute path
         // to it; the prompt goes in last, in the same single pass as the session.
         let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model,
-                                               helpersConfig: helpersConfig)
+                                               helpersConfig: helpersConfig, scratch: scratch)
         var argv = hardened.map { fill($0, ["{prompt}": prompt, "{session}": session.uuidString.lowercased()]) }
         if let instructions, let flag = hardened.lastIndex(of: "--append-system-prompt"), flag + 1 < argv.count {
             argv[flag + 1] = instructions + "\n\n" + argv[flag + 1]

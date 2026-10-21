@@ -187,9 +187,14 @@ actor Dispatcher {
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
             let helpers = isClaude ? try offerHelpers(candidate.helpers, agents: agents, to: job.id, in: worktree) : nil
             if let helpers { instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n") }
+            var scratch: String?
+            if isClaude {
+                try FileManager.default.createDirectory(at: Self.scratch(job.id), withIntermediateDirectories: true)
+                scratch = Self.scratch(job.id).path
+            }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model,
-                                                     helpersConfig: helpers?.config),
+                                                     helpersConfig: helpers?.config, scratch: scratch),
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,
                                 environment: helpers == nil ? [:] : ["MCP_TOOL_TIMEOUT": String(Helpers.toolTimeoutMilliseconds)])
@@ -203,6 +208,11 @@ actor Dispatcher {
             if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             await finish(job, status: .failed, detail: lost[job.id].map { "lease lost: \($0)" } ?? error.localizedDescription)
         }
+    }
+
+    /// A Claude agent's own directory for notes and temporary files, gone when its job ends.
+    static func scratch(_ id: UUID) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(id.uuidString.lowercased())", isDirectory: true)
     }
 
     /// Polls the agent until it exits, refreshing the cost meanwhile; stops it at its deadline or
@@ -314,6 +324,7 @@ actor Dispatcher {
 
     private func finish(_ job: Job, status: Job.Status, detail: String?) async {
         var job = job
+        try? FileManager.default.removeItem(at: Self.scratch(job.id))
         expiryWatches.removeValue(forKey: job.id)?.cancel()
         if let renewal = renewals.removeValue(forKey: job.id) {
             renewal.cancel()
