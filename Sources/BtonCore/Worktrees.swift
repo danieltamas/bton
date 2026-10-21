@@ -19,7 +19,8 @@ enum Worktrees {
             return path
         }
         return try await detached(clone.appendingPathComponent(".worktrees/bton-pr-\(pr.number)", isDirectory: true),
-                                  at: pr.headSha, clone: clone, ghPath: ghPath, runner: runner, note: note)
+                                  at: pr.headSha, base: "refs/remotes/origin/\(base)", clone: clone, ghPath: ghPath,
+                                  runner: runner, note: note)
     }
 
     /// A schedule's tree, `.worktrees/bton-<item>`, detached at the default branch's tip as just
@@ -31,14 +32,15 @@ enum Worktrees {
         let tip = try await git(["rev-parse", "refs/remotes/origin/\(branch)"], in: clone, ghPath: ghPath, runner: runner)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return try await detached(clone.appendingPathComponent(".worktrees/bton-\(item)", isDirectory: true),
-                                  at: tip, clone: clone, ghPath: ghPath, runner: runner, fresh: fresh, note: note)
+                                  at: tip, base: nil, clone: clone, ghPath: ghPath, runner: runner, fresh: fresh, note: note)
     }
 
     /// Bton's own tree at `sha`. An earlier job's leftover changes go to the clone's `git stash`,
     /// named after the tree, for a person to look at; refusing instead stopped the tree's every
     /// later job (a build step that rewrites a tracked file leaves such changes on each run).
-    /// `fresh` replaces the tree outright, ignored files included.
-    private static func detached(_ path: URL, at sha: String, clone: URL, ghPath: String, runner: ProcessRunner,
+    /// `fresh` replaces the tree outright, ignored files included. `base` is what a PR merges
+    /// into, nil for a schedule's tree.
+    private static func detached(_ path: URL, at sha: String, base: String?, clone: URL, ghPath: String, runner: ProcessRunner,
                                  fresh: Bool = false, note: @Sendable (String) -> Void) async throws -> URL {
         if FileManager.default.fileExists(atPath: path.path) || (try? FileManager.default.destinationOfSymbolicLink(atPath: path.path)) != nil {
             // A PR's check could plant a link here to someone's checkout: nothing is stashed or
@@ -48,28 +50,84 @@ enum Worktrees {
             }
             if fresh {
                 try await git(["worktree", "remove", "--force", path.path], in: clone, ghPath: ghPath, runner: runner)
-                return try await detached(path, at: sha, clone: clone, ghPath: ghPath, runner: runner, note: note)
+                return try await detached(path, at: sha, base: base, clone: clone, ghPath: ghPath, runner: runner, note: note)
             }
             if try await cleanHead(path, ghPath: ghPath, runner: runner) == nil {
                 let message = "bton: leftovers in \(path.lastPathComponent) before \(Date.now.formatted(.iso8601))"
                 try await git(["stash", "push", "--include-untracked", "--message", message], in: path, ghPath: ghPath, runner: runner)
-                let left = try await git(["status", "--porcelain"], in: path, ghPath: ghPath, runner: runner)
-                guard left.isEmpty else {
-                    // A stash leaves a dirty submodule, and an antivirus that quarantines a
-                    // tracked file deletes it again as soon as git puts it back.
-                    let paths = left.split(separator: "\n").prefix(3).map { $0.dropFirst(3) }.joined(separator: ", ")
-                    throw DispatchError.worktree("\(path.path) still has changes after stashing them (a dirty submodule, or something outside git such as an antivirus quarantining a file): \(paths)")
-                }
                 let stash = (try? await git(["rev-parse", "--verify", "refs/stash"], in: path, ghPath: ghPath, runner: runner))?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
                 note("saved an earlier job's changes in \(path.lastPathComponent) to git stash \(stash): \(message)")
+                // The old head only needs a clean tree to move off; what may stay out is decided
+                // at the head the job runs on.
+                try await leaveOutVanished(path, base: nil, ghPath: ghPath, runner: runner, note: note)
+                let left = try await git(["status", "--porcelain"], in: path, ghPath: ghPath, runner: runner)
+                guard left.isEmpty else {
+                    // A stash leaves a dirty submodule behind.
+                    let paths = left.split(separator: "\n").prefix(3).map { $0.dropFirst(3) }.joined(separator: ", ")
+                    throw DispatchError.worktree("\(path.path) still has changes after stashing them: \(paths)")
+                }
             }
             try await git(["checkout", "--quiet", "--detach", sha], in: path, ghPath: ghPath, runner: runner)
         } else {
             try await git(["worktree", "add", "--quiet", "--detach", path.path, sha], in: clone,
                           ghPath: ghPath, runner: runner)
         }
+        try await leaveOutVanished(path, base: base, ghPath: ghPath, runner: runner, note: note)
         return path
+    }
+
+    /// Right after git wrote the tree, a tracked file that is already gone was removed by
+    /// something outside git, such as an antivirus that quarantines it each time. Sparse checkout
+    /// leaves it out of this tree, so the tree is clean and no commit deletes it; the clone's
+    /// other checkouts are untouched. A file the PR or its base changed since they parted is never
+    /// left out, since a review, a check or a merge must see it: that stops the job, as does a name
+    /// a pattern can't hold.
+    private static func leaveOutVanished(_ path: URL, base: String?, ghPath: String, runner: ProcessRunner,
+                                         note: @Sendable (String) -> Void) async throws {
+        func paths(_ output: String, tagged tag: String) -> [String] {
+            output.split(separator: "\0").filter { $0.hasPrefix(tag) }.map { String($0.dropFirst(tag.count)) }
+        }
+        let vanished = paths(try await git(["status", "--porcelain", "-z"], in: path, ghPath: ghPath, runner: runner),
+                             tagged: " D ")
+        let leftOut = paths(try await git(["ls-files", "-z", "-t"], in: path, ghPath: ghPath, runner: runner), tagged: "S ")
+        guard !vanished.isEmpty || !leftOut.isEmpty else { return }
+        // Either side, so the agent's merge of the base never conflicts on a file it can't see.
+        var changed: Set<String> = []
+        if let base {
+            for range in ["\(base)...HEAD", "HEAD...\(base)"] {
+                changed.formUnion(paths(try await git(["diff", "--name-only", "--no-renames", "-z", range],
+                                                      in: path, ghPath: ghPath, runner: runner), tagged: ""))
+            }
+        }
+        let wanted = Set(leftOut + vanished).filter { !changed.contains($0) && !$0.contains(where: \.isNewline) }
+        if wanted != Set(leftOut) {
+            let arguments = wanted.isEmpty ? ["sparse-checkout", "disable"]
+                : ["sparse-checkout", "set", "--no-cone", "--", "/*"] + wanted.sorted().map { "!/" + sparseEscaped($0) }
+            try await git(arguments, in: path, ghPath: ghPath, runner: runner)
+        }
+        // A file brought back in may vanish again as git writes it.
+        let kept = paths(try await git(["status", "--porcelain", "-z"], in: path, ghPath: ghPath, runner: runner),
+                         tagged: " D ").filter { !wanted.contains($0) }
+        guard kept.isEmpty else {
+            throw DispatchError.worktree("something outside git (an antivirus?) deletes \(kept.prefix(3).joined(separator: ", ")) in \(path.lastPathComponent) as soon as git writes it, and it cannot be left out: the PR or its base changed it, so a review, check or merge must see it, or its name holds a line break")
+        }
+        let added = wanted.subtracting(leftOut)
+        if !added.isEmpty {
+            note("left out of \(path.lastPathComponent), since something outside git deletes them as soon as git writes them (an antivirus?): \(added.sorted().joined(separator: ", "))")
+        }
+    }
+
+    /// A path as a literal sparse-checkout pattern: gitignore syntax gives `\`, `*`, `?` and `[`
+    /// meaning, and trailing spaces are dropped unless escaped.
+    private static func sparseEscaped(_ path: String) -> String {
+        var escaped = ""
+        for character in path {
+            if "\\*?[".contains(character) { escaped.append("\\") }
+            escaped.append(character)
+        }
+        if escaped.hasSuffix(" ") { escaped = String(escaped.dropLast()) + "\\ " }
+        return escaped
     }
 
     /// The path is `.worktrees/<name>` of the clone itself, no link on the way, and git lists it

@@ -390,6 +390,13 @@ final class AppStore {
 
     func isNext(repo: String, item: String) -> Bool { next.contains("\(repo.lowercased())#\(item)") }
 
+    /// The schedule running in the repo: nothing else starts there until it ends.
+    func runningSchedule(repo: String) -> String? {
+        guard let job = jobs.first(where: { $0.status == .running && $0.key.move == "schedule"
+            && $0.key.repo.lowercased() == repo.lowercased() }) else { return nil }
+        return schedules.first { $0.item == job.key.item }?.name ?? "a schedule"
+    }
+
     /// The row shows "starting" at the click, not after the sync that may already be running.
     private func markStarting(repo: String, item: String) {
         let pick = "\(repo.lowercased())#\(item)"
