@@ -51,7 +51,8 @@ private struct JobRow: View {
                         Chip(text: job.status.rawValue, color: color)
                     }
                     if job.agent != nil { ModelBadges(job: job) }
-                    Text([job.agent == nil ? "command" : nil, job.key.repo.split(separator: "/").last.map(String.init), job.detail]
+                    Text([job.agent == nil ? "command" : nil, job.key.repo.split(separator: "/").last.map(String.init),
+                          store.work.summary(of: job), job.detail]
                         .compactMap { $0 }.joined(separator: " · "))
                         .font(.meta).foregroundStyle(job.status == .failed ? Theme.danger.opacity(0.85) : Theme.textTertiary)
                         .lineLimit(2)

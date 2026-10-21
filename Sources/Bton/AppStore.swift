@@ -17,8 +17,8 @@ final class AppStore {
     private var refreshAgain = false
     /// Run-next picks waiting for their repo, `owner/name#item` with the repo lowercased.
     private(set) var next: [String] = []
-    /// The PR each running schedule's agent works on now, read from its session every few seconds.
-    private(set) var focus: [UUID: Int] = [:]
+    /// The PRs each schedule's agent works on, read from its session every few seconds.
+    let work = ScheduleWork()
     /// The job whose session the window shows in place of its list.
     var watchingJob: UUID?
     let icon = MenuBarIcon()
@@ -93,7 +93,7 @@ final class AppStore {
         }
         focusLoop = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.readFocus()
+                if let self { await work.read(jobs) }
                 try? await Task.sleep(for: .seconds(5))
             }
         }
@@ -373,19 +373,7 @@ final class AppStore {
 
     /// The running schedule job working on the PR, if any.
     func schedule(workingOn pr: PullRequest) -> Job? {
-        jobs.first { $0.status == .running && $0.key.repo == pr.repo && focus[$0.id] == pr.number }
-    }
-
-    /// Off the main actor: a session file can be large, and only its tail is read.
-    private func readFocus() async {
-        let ids = jobs.filter { $0.status == .running && !$0.key.item.hasPrefix("pr-") }.map(\.id)
-        guard !ids.isEmpty || !focus.isEmpty else { return }
-        let read = await Task.detached {
-            Dictionary(uniqueKeysWithValues: ids.compactMap { id in
-                ClaudeSessions.sessionFile(id: id).flatMap { SessionTranscript.currentPullRequest(ofSessionFile: $0) }.map { (id, $0) }
-            })
-        }.value
-        if read != focus { focus = read }
+        jobs.first { $0.status == .running && $0.key.repo == pr.repo && work.current[$0.id] == pr.number }
     }
 
     func isNext(repo: String, item: String) -> Bool { next.contains("\(repo.lowercased())#\(item)") }

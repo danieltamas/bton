@@ -171,7 +171,7 @@ struct ActiveStrip: View {
     /// "Reviewing #343", "Fixing #326", or the schedule's name.
     private func title(of job: Job) -> String {
         if let entry = schedules.first(where: { $0.item == job.key.item }) {
-            return entry.name + (store.focus[job.id].map { " · on #\($0)" } ?? "")
+            return entry.name + (store.work.summary(of: job).map { " · \($0)" } ?? "")
         }
         let verb = switch job.key.move {
         case "review": "Reviewing"

@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var tab: Tab
     /// The repo the PR, job and merged lists are narrowed to; nil shows every repo.
     @State private var repo: String?
+    /// What the PR, job and merged lists are narrowed to while typed; each tab counts its matches.
+    @State private var query = ""
     @Namespace private var island
     @State private var visible = true
 
@@ -219,13 +221,36 @@ struct RootView: View {
     }
 
     private func count(for tab: Tab) -> Int {
-        switch tab {
+        let search = SearchQuery(query)
+        if !search.isEmpty, tab != .schedule { return listed(search).count(for: tab) }
+        return switch tab {
         case .pullRequests: store.openPullRequests.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
         // The list is GitHub's latest 30 whatever their age, so its length says nothing.
         case .merged: MergedList.recent(store.merged)
         }
+    }
+
+    /// The lists as shown: narrowed to the chosen repo, then to the search.
+    private func listed(_ search: SearchQuery) -> Listed {
+        let shown = listedRepos.contains(repo ?? "") ? repo : nil
+        let keep = { (slug: String) in shown == nil || slug == shown }
+        // A job matches its PRs' titles and authors too.
+        let known = Dictionary(store.openPullRequests.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }
+            + store.merged.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }) { first, _ in first }
+        return Listed(
+            pullRequests: store.openPullRequests.filter {
+                keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author])
+            },
+            jobs: store.jobs.filter { job in
+                let item = job.key.item
+                let numbers = item.hasPrefix("pr-") ? Int(item.dropFirst(3)).map { [$0] } ?? [] : store.work.numbers(of: job)
+                let texts = [jobTitle(job, schedules: store.schedules)] + numbers.flatMap { known["\(job.key.repo)#\($0)"] ?? [] }
+                return keep(job.key.repo) && search.matches(numbers: numbers, texts: texts)
+            },
+            merged: store.merged.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author]) },
+            repoJobs: store.jobs.filter { keep($0.key.repo) })
     }
 
     // MARK: content
@@ -244,16 +269,50 @@ struct RootView: View {
 
     @ViewBuilder private func tabContent(showRepo: Bool) -> some View {
         let shown = listedRepos.contains(repo ?? "") ? repo : nil
-        let keep = { (slug: String) in shown == nil || slug == shown }
+        let search = SearchQuery(query)
+        let lists = listed(search)
         VStack(spacing: 0) {
-            if tab != .schedule, listedRepos.count > 1 { repoFilter(selected: shown).padding(.bottom, 8) }
+            if tab != .schedule {
+                SearchField(text: $query).padding(.bottom, 8)
+                if listedRepos.count > 1 { repoFilter(selected: shown).padding(.bottom, 8) }
+            }
+            if tab != .schedule, !search.isEmpty, lists.count(for: tab) == 0 {
+                noMatch(search, lists: lists)
+            } else {
+                switch tab {
+                case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
+                                                    jobs: lists.repoJobs, schedules: store.schedules)
+                case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
+                case .schedule: ScheduleList(open: openSettings)
+                case .merged: MergedList(items: lists.merged, showRepo: showRepo)
+                }
+            }
+        }
+    }
+
+    /// Where else the search finds something, so a merged PR searched under PRs is one click away.
+    private func noMatch(_ search: SearchQuery, lists: Listed) -> some View {
+        let elsewhere = [Tab.pullRequests, .jobs, .merged].filter { lists.count(for: $0) > 0 }
+            .map { "\($0.rawValue) (\(lists.count(for: $0)))" }
+        return EmptyState(symbol: "magnifyingglass", title: "Nothing here matches \(search.text)",
+                          detail: elsewhere.isEmpty
+                              ? "Search covers open PRs, this Mac's jobs and GitHub's latest merged PRs."
+                              : "Found in " + elsewhere.joined(separator: ", ") + ".")
+    }
+
+    struct Listed {
+        let pullRequests: [PullRequest]
+        let jobs: [Job]
+        let merged: [MergedPullRequest]
+        /// The repo's jobs whatever the search: the PR list's strip shows every running agent.
+        let repoJobs: [Job]
+
+        func count(for tab: Tab) -> Int {
             switch tab {
-            case .pullRequests: PullRequestList(items: store.openPullRequests.filter { keep($0.repo) }, showRepo: showRepo,
-                                                me: store.me, jobs: store.jobs.filter { keep($0.key.repo) },
-                                                schedules: store.schedules)
-            case .jobs: JobList(items: store.jobs.filter { keep($0.key.repo) }, schedules: store.schedules)
-            case .schedule: ScheduleList(open: openSettings)
-            case .merged: MergedList(items: store.merged.filter { keep($0.repo) }, showRepo: showRepo)
+            case .pullRequests: pullRequests.count
+            case .jobs: jobs.count
+            case .schedule: 0
+            case .merged: merged.count
             }
         }
     }

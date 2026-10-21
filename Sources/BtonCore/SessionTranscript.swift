@@ -43,7 +43,9 @@ public enum SessionTranscript {
                     made.append((.thinking, ""))
                 case "tool_use":
                     let name = block["name"] as? String ?? "tool"
-                    made.append((.tool(name: name), summary(of: block["input"] as? [String: Any] ?? [:])))
+                    let input = block["input"] as? [String: Any] ?? [:]
+                    // A Bash entry is its command alone: the PR readers take it for one.
+                    made.append((.tool(name: name), name == "Bash" ? input["command"] as? String ?? "" : summary(of: input)))
                 case "tool_result":
                     made.append((.result(isError: block["is_error"] as? Bool ?? false), resultText(block["content"])))
                 default:
@@ -73,6 +75,21 @@ public enum SessionTranscript {
             if case .tool(name: "Bash") = entry.kind, let number = pullRequest(inCommand: entry.text) { return number }
         }
         return nil
+    }
+
+    /// Every PR a session acted on, in the order it first did, from the whole file.
+    public static func pullRequests(ofSessionFile url: URL) -> [Int] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return pullRequests(in: data)
+    }
+
+    static func pullRequests(in data: Data) -> [Int] {
+        var seen = Set<Int>()
+        return entries(in: data, limit: .max).compactMap { entry in
+            guard case .tool(name: "Bash") = entry.kind else { return nil }
+            return pullRequest(inCommand: entry.text)
+        }
+        .filter { seen.insert($0).inserted }
     }
 
     static let pullRequestVerbs: Set = ["view", "diff", "checks", "comment", "edit", "review", "merge", "checkout",

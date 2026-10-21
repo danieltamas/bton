@@ -165,7 +165,7 @@ struct MergedList: View {
         if items.isEmpty {
             EmptyState(symbol: "arrow.triangle.merge", title: "Nothing merged yet", detail: "Merged PRs show with what their agents cost.")
         } else {
-            RowStack(items: items, row: row) {
+            RowStack(items: items.sorted { $0.number > $1.number }, row: row) {
                 Eyebrow(text: "\(Self.recent(items)) in the last 24 hours")
             }
         }
