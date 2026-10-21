@@ -78,7 +78,8 @@ private struct PullRequestRow: View {
                         if job == nil, store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
                             StartingLabel(repo: pr.repo, waitsFor: store.runningSchedule(repo: pr.repo))
                         } else if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
-                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me), let title = RunNowButton.title(for: now) {
+                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me),
+                           let title = RunNowButton.title(for: now, failed: store.failedOnHead(pr, move: now)) {
                             RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
                                          color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
                                 Task { await store.runNow(pr, move: now) }
@@ -124,12 +125,13 @@ private struct RunNowButton: View {
         return FlowEngine.isDispatchable(current, pr: pr, flow: flow, me: me) ? current.name : nil
     }
 
-    /// Only moves a person would otherwise go to GitHub for get a button; the rest run on their own.
-    static func title(for move: String) -> String? {
+    /// Only moves a person would otherwise go to GitHub for get a button; the rest run on their own,
+    /// once per head, so one that failed on this head waits for a Retry.
+    static func title(for move: String, failed: Bool) -> String? {
         switch move {
         case "merge": "Merge"
         case "resolve": "Fix conflicts"
-        default: nil
+        default: failed ? "Retry \(move)" : nil
         }
     }
 
