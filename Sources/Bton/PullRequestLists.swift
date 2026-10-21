@@ -76,7 +76,7 @@ private struct PullRequestRow: View {
                     if let move = pr.move {
                         if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
                         if job == nil, store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
-                            StartingLabel(repo: pr.repo, waitsFor: store.runningSchedule(repo: pr.repo))
+                            StartingLabel(repo: pr.repo)
                         } else if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
                            let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me),
                            let title = RunNowButton.title(for: now, failed: store.failedOnHead(pr, move: now)) {

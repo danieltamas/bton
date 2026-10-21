@@ -24,6 +24,11 @@ extension AppStore {
         try updateRepo(slug) { $0.resolveConflicts = on ? nil : false }
     }
 
+    /// Whether a sync starts the flow's moves here; off, only schedules and the owner's asks start agents.
+    func setStartMoves(_ on: Bool, for slug: String) throws {
+        try updateRepo(slug) { $0.startMoves = on ? true : nil }
+    }
+
     private func updateRepo(_ slug: String, _ change: (inout WatchedRepo) -> Void) throws {
         try update { config in
             for index in config.repos.indices where config.repos[index].slug == slug { change(&config.repos[index]) }

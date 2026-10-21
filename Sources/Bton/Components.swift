@@ -175,17 +175,13 @@ final class PulseView: NSView {
 /// next sync, and the row says so instead of keeping its button.
 struct StartingLabel: View {
     let repo: String
-    /// The schedule running in the repo, which holds every other job there back.
-    var waitsFor: String?
 
     var body: some View {
         HStack(spacing: 5) {
-            PulseDot(color: waitsFor == nil ? Theme.mint : Theme.textTertiary, pulsing: waitsFor == nil)
-            Text(waitsFor.map { "after \($0)" } ?? "starting").font(.system(size: 10, weight: .medium))
-                .foregroundStyle(waitsFor == nil ? Theme.mint : Theme.textTertiary).lineLimit(1)
+            PulseDot(color: Theme.mint, pulsing: true)
+            Text("starting").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint).lineLimit(1)
         }
-        .help(waitsFor.map { "Starts when \($0) ends: nothing else runs in \(repo) meanwhile" }
-              ?? "Starts as soon as \(repo) is free and GitHub has been read")
+        .help("Starts at the next sync with a free agent slot in \(repo), once no other job holds it")
     }
 }
 

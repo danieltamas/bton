@@ -31,6 +31,16 @@ public struct DispatchCandidate: Sendable {
     }
 }
 
+/// What became of a candidate the dispatcher was handed.
+public enum DispatchOutcome: Sendable {
+    case started
+    /// Its lease is held elsewhere or could not be read, or the job could not be recorded: it may
+    /// start at a later sync.
+    case busy
+    /// The lease's history says this move already ran on this head, on some Mac.
+    case ran
+}
+
 /// The pure half of the dispatcher: which moves to start this tick.
 public enum DispatchPlanner {
     public static func candidates(_ pullRequests: [PullRequest], flow: Flow, me: String, repo: String) -> [DispatchCandidate] {
@@ -197,8 +207,9 @@ public enum DispatchPlanner {
 
     /// What starts now, from every watched repo's candidates at once. Repos take turns, one
     /// candidate each, so one busy repo never holds every agent; within a repo, PR moves go oldest
-    /// PR first, then its schedules. A schedule works its whole repo: it waits while any job runs
-    /// there, and nothing else starts in a repo while its schedule runs.
+    /// PR first, then its schedules. A schedule works its whole repo, so it waits until no job runs
+    /// there; while it runs, PR moves keep starting. What keeps the two off one PR is the PR's
+    /// lease, which the schedule's agent claims before it acts.
     /// `first` holds the owner's run-next picks, `owner/name#item`: they go before every turn.
     public static func select(_ candidates: [DispatchCandidate], jobs: [Job], maxAgents: Int,
                               agents: [String: AgentTemplate], first: [String] = []) -> [DispatchCandidate] {
@@ -206,26 +217,23 @@ public enum DispatchPlanner {
         let running = jobs.filter { $0.status == .running }
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
         var activeRepos = Set(running.map { $0.key.repo.lowercased() })
-        var scheduledRepos = Set(running.filter { $0.key.move == scheduleMove }.map { $0.key.repo.lowercased() })
         var picked: [DispatchCandidate] = []
         let rank = { (c: DispatchCandidate) in first.firstIndex(of: "\(c.key.repo.lowercased())#\(c.key.item)") ?? first.count }
         // What could never start here leaves its repo's turn to a candidate that can.
         let startable = candidates.filter { candidate in
             let repo = candidate.key.repo.lowercased()
             return !seen.contains(candidate.key) && !busyItems.contains("\(repo)#\(candidate.key.item)")
-                && !scheduledRepos.contains(repo) && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
+                && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
                 && candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil)
         }
         let ordered = inTurns(startable).enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
         for candidate in ordered where picked.count < maxAgents - running.count {
             let repo = candidate.key.repo.lowercased(), item = "\(repo)#\(candidate.key.item)"
             let isSchedule = candidate.key.move == scheduleMove
-            guard !busyItems.contains(item), !scheduledRepos.contains(repo), !(isSchedule && activeRepos.contains(repo))
-            else { continue }
+            guard !busyItems.contains(item), !(isSchedule && activeRepos.contains(repo)) else { continue }
             picked.append(candidate)
             busyItems.insert(item)
             activeRepos.insert(repo)
-            if isSchedule { scheduledRepos.insert(repo) }
         }
         return picked
     }
@@ -256,16 +264,21 @@ public enum DispatchPlanner {
     /// argument whatever it contains. A Claude Code template gets Bton's hardening first, and the
     /// team's `instructions` lead its system prompt, added after the fill so their text is never
     /// searched for placeholders.
+    /// `playbook` goes first in a Claude agent's system prompt; codex has no such flag, so it
+    /// leads the task there. Another CLI gets the prompt alone, as its template expects.
     public static func argv(_ template: [String], prompt: String, session: UUID, instructions: String? = nil,
                             values: [String: String] = [:], model: String? = nil,
-                            helpersConfig: String? = nil, scratch: String? = nil) -> [String] {
+                            helpersConfig: String? = nil, scratch: String? = nil, playbook: String? = nil) -> [String] {
         // The repo's values go in before hardening, so `{clone}/mcp.json` is an absolute path
         // to it; the prompt goes in last, in the same single pass as the session.
         let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model,
                                                helpersConfig: helpersConfig, scratch: scratch)
-        var argv = hardened.map { fill($0, ["{prompt}": prompt, "{session}": session.uuidString.lowercased()]) }
-        if let instructions, let flag = hardened.lastIndex(of: "--append-system-prompt"), flag + 1 < argv.count {
-            argv[flag + 1] = instructions + "\n\n" + argv[flag + 1]
+        let isCodex = template.first.map(AgentHardening.isCodex) == true
+        let task = isCodex ? playbook.map { $0 + "\n\nYour task:\n" + prompt } ?? prompt : prompt
+        var argv = hardened.map { fill($0, ["{prompt}": task, "{session}": session.uuidString.lowercased()]) }
+        let system = template.first.map(AgentHardening.isClaude) == true ? [playbook, instructions].compactMap { $0 } : []
+        if !system.isEmpty, let flag = hardened.lastIndex(of: "--append-system-prompt"), flag + 1 < argv.count {
+            argv[flag + 1] = (system + [argv[flag + 1]]).joined(separator: "\n\n")
         }
         return argv
     }

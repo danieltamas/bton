@@ -56,7 +56,8 @@ What it does not contain, by design or for want of a client-side lever:
   Mac that takes the move. Checks run as the Mac's user, outside any sandbox.
 - A file the agent opens itself (a PR's `AGENTS.md`, its docs) is read as data under the system
   prompt's rule, nothing stronger.
-- A schedule's agent reads PRs itself, so the collaborator gate is up to its prompt.
+- A schedule's agent reads PRs itself, so the collaborator gate is up to its prompt. On a repo
+  whose sync starts no moves (the default), that prompt is the only gate for the work it does.
 - A repo's environment (Settings > Repos) is stored in plain text in `config.json` and reaches
   the PR's own code through its checks and agents. Put only values meant for that code there,
   such as a local test database. Job logs are not redacted, and an agent that posts with `gh`

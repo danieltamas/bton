@@ -68,31 +68,33 @@ actor Dispatcher {
     }
 
     /// `flow` is nil for a schedule, which has no checks and posts nothing. Returns once the job is
-    /// recorded; false when it never started: its lease is held elsewhere, or it could not be recorded.
+    /// recorded, or why it never started.
     @discardableResult
     func dispatch(_ candidate: DispatchCandidate, clone: URL, flow: Flow?, agents: [String: AgentTemplate],
-                  environment: [String: String] = [:]) async -> Bool {
-        guard let item = LeaseItem(candidate.key.item) else { return false }
+                  environment: [String: String] = [:]) async -> DispatchOutcome {
+        guard let item = LeaseItem(candidate.key.item) else { return .busy }
         let id = UUID()
+        let rerun = DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())
         let lease: Lease
         do {
-            guard case let .claimed(claimed) = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description,
-                                                                      rerun: DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())),
-                  claimed.isLive() else { return false }
-            lease = claimed
+            switch try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun) {
+            case let .claimed(claimed) where claimed.isLive(): lease = claimed
+            case let .notClaimed(holder) where !rerun && holder?.hasRun(candidate.key.description) == true: return .ran
+            default: return .busy
+            }
         } catch {
             log("\(candidate.key): lease not held (\(error.localizedDescription))")
-            return false
+            return .busy
         }
         let job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running)
         guard let lock = LocalLock(jobs.lockURL(id)) else {
             try? await leases.release(lease)
-            return false
+            return .busy
         }
         guard (try? jobs.save(job)) != nil else {
             lock.release()
             try? await leases.release(lease)
-            return false
+            return .busy
         }
         locks[id] = lock
         hold(lease, for: id)
@@ -104,7 +106,7 @@ actor Dispatcher {
             await self.run(job, candidate, clone: clone, flow: flow, agents: agents, environment: environment)
             self.work[id] = nil
         }
-        return true
+        return .started
     }
 
     /// Stops a job; the lease is released as the job finishes. A job another instance on this
@@ -194,12 +196,12 @@ actor Dispatcher {
             }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model,
-                                                     helpersConfig: helpers?.config, scratch: scratch),
+                                                     helpersConfig: helpers?.config, scratch: scratch, playbook: PRPlaybook.text(for: candidate.key.move)),
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,
                                 environment: helpers == nil ? [:] : ["MCP_TOOL_TIMEOUT": String(Helpers.toolTimeoutMilliseconds)])
             try jobs.save(job)
-            jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?")")
+            jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?"), playbook v\(PRPlaybook.version)")
             let started = job
             Task { await self.watch(started) }
         } catch {
@@ -418,23 +420,6 @@ actor Dispatcher {
         try process.run()
         processes[id] = process
         return process.processIdentifier
-    }
-
-    /// The agent's git reaches GitHub over HTTPS with gh's credential, as Bton's own does: an SSH
-    /// remote needs `~/.ssh`, which Claude Code's sandbox may not let it read.
-    static func gitOverHTTPS(ghPath: String) -> [String: String] {
-        let settings = [
-            ("url.https://github.com/.insteadOf", "git@github.com:"),
-            ("url.https://github.com/.insteadOf", "ssh://git@github.com/"),
-            ("credential.https://github.com.helper", ""),
-            ("credential.https://github.com.helper", "!\(ghPath) auth git-credential"),
-        ]
-        var environment = ["GIT_CONFIG_COUNT": String(settings.count), "GIT_TERMINAL_PROMPT": "0"]
-        for (index, (key, value)) in settings.enumerated() {
-            environment["GIT_CONFIG_KEY_\(index)"] = key
-            environment["GIT_CONFIG_VALUE_\(index)"] = value
-        }
-        return environment
     }
 
     private func isAlive(_ id: UUID, pid: Int32) -> Bool {

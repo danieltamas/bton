@@ -60,12 +60,12 @@ struct QueueAcceptanceTests {
         #expect(QueueFixture.select([schedule, pr]) == [pr.key])
     }
 
-    @Test func runningScheduleBlocksOnlyItsRepo() {
+    @Test func runningScheduleLetsPRMovesStart() {
         let pr = QueueFixture.candidate("OWNER/A")
         let schedule = QueueFixture.candidate("owner/a", 2, schedule: true)
         let other = QueueFixture.candidate("owner/b")
         let running = QueueFixture.job(QueueFixture.candidate("owner/a", 99, schedule: true).key)
-        #expect(QueueFixture.select([pr, schedule, other], jobs: [running]) == [other.key])
+        #expect(QueueFixture.select([pr, schedule, other], jobs: [running]) == [pr.key, other.key])
     }
 
     @Test(arguments: [Job.Status.running, .succeeded, .failed, .cancelled])
@@ -93,12 +93,12 @@ struct QueueAcceptanceTests {
             == [b.key, c.key, a.key])
     }
 
-    @Test func firstScheduleExcludesLaterCandidatesInItsRepo() {
+    @Test func firstScheduleLetsLaterPRMovesStart() {
         let pr = QueueFixture.candidate()
         let schedule = QueueFixture.candidate(schedule: true)
         let other = QueueFixture.candidate("owner/b")
         #expect(QueueFixture.select([pr, other, schedule], first: ["owner/a#schedule-1"])
-            == [schedule.key, other.key])
+            == [schedule.key, pr.key, other.key])
     }
 
     @Test func firstPicksStillRespectExclusions() {

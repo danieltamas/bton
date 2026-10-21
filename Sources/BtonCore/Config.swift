@@ -94,8 +94,13 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// false: my PRs that conflict with their base wait for Fix conflicts instead of being
     /// resolved on their own. Nil is on.
     public var resolveConflicts: Bool?
+    /// true: every sync starts the flow's moves that are this Mac's. Otherwise a sync only reads
+    /// the repo's PRs, and an agent starts there only from a schedule or a move the owner asked
+    /// for (Run now, Merge, Fix conflicts, Retry). Nil is off.
+    public var startMoves: Bool?
 
     public var resolvesConflicts: Bool { resolveConflicts != false }
+    public var startsMoves: Bool { startMoves == true }
 
     public init(slug: String, path: String?, branch: String? = nil, environment: [String: String]? = nil) {
         self.slug = slug

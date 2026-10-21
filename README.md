@@ -35,16 +35,23 @@ You open PR #412 and go back to work. Here is what happens next:
 | **Your Mac** | `develop` moved and #412 now conflicts: Claude merges it in, keeps both sides, pushes | $0.18 |
 | **Your Mac** | Runs your merge script. #412 is in. | |
 
-Nobody opened a terminal. Each step showed up in the menu bar with the model that did it and
-what it cost. A person is asked only where your flow says a person decides.
+Nobody opened a terminal (that repo has "Start the flow's moves on every sync" on). Each step
+showed up in the menu bar with the model that did it and what it cost. A person is asked only where your flow says a person decides.
 
 ## What you get
 
 **The next move on every PR.** `review`, `fix`, `resolve`, `merge` or `decide`, and whose it is.
 The menu bar counts what is waiting on you.
 
-**Agents that start on their own.** A move that is yours starts by itself: a worktree at the PR's
-head, your repo's checks, then Claude Code, Codex or any CLI you configure.
+**Agents when you say so.** A sync only reads your PRs. Agents start from your schedules and from
+the buttons you press: a worktree at the PR's head, your repo's checks, then Claude Code, Codex or
+any CLI you configure. Turn on "Start the flow's moves on every sync" for a repo and every move
+that is yours there starts by itself.
+
+**A playbook built in.** Every agent Bton starts follows the same way of working a PR: read the
+diff once, targeted tests first, every finding with evidence, scoped re-reviews, short comments,
+and the edge cases of each move (rebased heads, lockfiles and migrations, flaky tests, wrong
+findings, conflicts where both sides changed behaviour). Your flow and your CLAUDE.md still win.
 
 **One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
 GitHub hands each move to exactly one Mac.
@@ -62,7 +69,8 @@ against origin and what develop has that main lacks.
 week.
 
 **Scheduled agents.** Triage issues nightly, refresh docs weekly: your prompt, your repo, on a
-timer, in a clean worktree. A schedule's row names the PR it is on and the PRs it worked on.
+timer, in a clean worktree. A schedule's row names the PR it is on and the PRs it worked on. A
+schedule's agent can claim a PR with `bton lease claim`, so no move starts there while it works.
 
 **Find any PR.** Search by number, title or login across open PRs, jobs and Merged. A move of
 yours that failed gets a Retry on its row.

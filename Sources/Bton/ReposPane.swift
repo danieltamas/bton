@@ -74,7 +74,14 @@ struct ReposPane: View {
                             .foregroundStyle(Theme.textTertiary).lineLimit(1).truncationMode(.head)
                         BranchPicker(repo: repo, problem: $problem)
                         EnvironmentEditor(repo: repo)
-                        ResolveSwitch(repo: repo, problem: $problem)
+                        RepoSwitch(symbol: "play.circle", title: "Start the flow's moves on every sync",
+                                   help: "Off (the default): a sync only reads the PRs, and agents start here from your schedules and from Run now, Merge and Retry.",
+                                   isOn: repo.startsMoves, problem: $problem) { try store.setStartMoves($0, for: repo.slug) }
+                        if repo.startsMoves {
+                            RepoSwitch(symbol: "arrow.triangle.branch", title: "Fix conflicts on my PRs automatically",
+                                       help: "An agent merges the base into the PR, resolves, tests and pushes. Off: the PR row's Fix conflicts does it.",
+                                       isOn: repo.resolvesConflicts, problem: $problem) { try store.setResolveConflicts($0, for: repo.slug) }
+                        }
                     } else {
                         Text("No folder yet: nothing is started here until it has one.").font(.meta).foregroundStyle(Theme.unassigned)
                     }
@@ -172,24 +179,25 @@ private struct BranchPicker: View {
     }
 }
 
-/// Whether my PRs here that conflict with their base are resolved on their own, once per head.
-private struct ResolveSwitch: View {
-    @Environment(AppStore.self) private var store
-    let repo: WatchedRepo
+/// One of a repo's on/off settings on this Mac, saved as soon as it is flipped.
+private struct RepoSwitch: View {
+    let symbol: String
+    let title: String
+    let help: String
+    let isOn: Bool
     @Binding var problem: String?
+    let set: (Bool) throws -> Void
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.branch").font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
-            Text("Fix conflicts on my PRs automatically").font(.meta).foregroundStyle(Theme.textTertiary)
-            Toggle("", isOn: Binding(get: { repo.resolvesConflicts }, set: { set($0) }))
-                .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.mint)
+            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
+            Text(title).font(.meta).foregroundStyle(Theme.textTertiary)
+            Toggle("", isOn: Binding(get: { isOn }, set: { on in
+                do { try set(on); problem = nil } catch { problem = error.localizedDescription }
+            }))
+            .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.mint)
         }
-        .help("An agent merges the base into the PR, resolves, tests and pushes. Off: the PR row's Fix conflicts does it.")
-    }
-
-    private func set(_ on: Bool) {
-        do { try store.setResolveConflicts(on, for: repo.slug); problem = nil } catch { problem = error.localizedDescription }
+        .help(help)
     }
 }
 

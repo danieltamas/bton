@@ -170,6 +170,9 @@ public actor Engine {
                             candidates.removeAll { $0.key.item == chosen.key.item }
                             candidates.append(chosen)
                         }
+                        if !read.repo.startsMoves {
+                            candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
+                        }
                         pending += candidates.map { ($0, clone, flow) }
                     }
                     // Schedules need no flow: they are this Mac's own, like its agents. They start from
@@ -191,7 +194,7 @@ public actor Engine {
                 let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
                 let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
                     .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
-                var started: Set<String> = [], refused: Set<JobKey> = []
+                var started: Set<String> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
                 // A pick whose lease is held elsewhere frees its slot for the next candidate.
                 while true {
                     let open = pending.map(\.candidate).filter { !refused.contains($0.key) }
@@ -202,18 +205,22 @@ public actor Engine {
                     for candidate in selected {
                         guard let entry = pending.first(where: { $0.candidate.key == candidate.key }) else { continue }
                         let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
-                        if await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
-                                                     environment: environment) {
-                            started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
-                        } else {
-                            refused.insert(candidate.key)
+                        switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
+                                                         environment: environment) {
+                        case .started: started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                        case .busy: refused.insert(candidate.key)
+                        case .ran: refused.insert(candidate.key); ran.insert(candidate.key)
                         }
                     }
                 }
+                // A pick whose move already ran elsewhere would wait forever, or hand its place to another move.
+                let ranPicks = Set(ran.map { Self.pick(repo: $0.repo, item: $0.item) })
+                next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
-                // A request whose lease history says it already ran elsewhere would hold the PR's flow move back.
-                asked = asked.filter { next.contains($0.key) && !refused.contains($0.value) }
+                // A request whose lease history says it already ran elsewhere would hold the PR's flow move
+                // back; one whose lease is only held now (a schedule's agent on the PR) waits for it.
+                asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
                 for key in refused where key.move == "resolve" { declined[key] = .now }
                 declined = declined.filter { $0.value > .now.addingTimeInterval(-900) }
             }
@@ -273,7 +280,7 @@ public actor Engine {
     }
 
     /// What runs on a PR instead of its flow move: the owner's Merge or Fix conflicts on the head they
-    /// saw, or else Bton's own resolve on a PR of mine that conflicts, once per head.
+    /// saw, or else, where the sync starts moves, Bton's own resolve on a PR of mine that conflicts, once per head.
     private func override(_ pr: PullRequest, flow: Flow, repo: WatchedRepo, me: String) -> DispatchCandidate? {
         let pick = Self.pick(repo: repo.slug, item: "pr-\(pr.number)")
         let all = jobs.all()
@@ -282,11 +289,13 @@ public actor Engine {
             let made = request.head != pr.headSha ? nil : request.move == "merge"
                 ? DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: repo.slug)
                 : DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug)
-            // A new head, a PR that can't take the move any more, or a move already run on this head ends it.
+            // A new head, a PR that can't take the move any more, or a move already run on this head
+            // ends it, and its place in line: the owner asked for that move, not whatever comes next.
             if let made, fresh(made) { return made }
             asked[pick] = nil
+            next.removeAll { $0 == pick }
         }
-        guard repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
+        guard repo.startsMoves, repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
               fresh(resolve), declined[resolve.key] == nil else { return nil }
         return resolve
     }

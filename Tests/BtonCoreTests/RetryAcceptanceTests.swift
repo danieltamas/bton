@@ -186,7 +186,7 @@ struct RetryAcceptanceTests {
     }
 }
 
-private struct RetryLeaseFixture {
+struct RetryLeaseFixture {
     let root: URL
     let repo = "synthetic/project"
     let item: LeaseItem
