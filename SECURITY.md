@@ -35,7 +35,15 @@ The threat model is a team that trusts its collaborators, not a public repo open
 - Agents' permissions are set per Mac, never by the repo, and hardened at launch:
   a PR's `.claude/settings.json`, `CLAUDE.md` and `.mcp.json` never load, GitHub writes that
   skip the merge gate are denied, Claude Code's sandbox is always on, and the team's
-  instructions come from the branch PRs merge into.
+  instructions come from the branch PRs merge into. Each Claude agent writes scratch files only
+  to its own directory, removed when the job ends. Codex runs with `--ignore-user-config` and
+  hooks off, so no MCP server, plugin or hook starts, and a PR's `.codex/config.toml` configures
+  nothing; only the owner's model, reasoning effort and service tier carry over.
+- Bton changes the owner's own checkout in one way: after a sync it fast-forwards the local
+  working and default branches that are only behind origin (`merge --ff-only
+  --no-overwrite-ignore` in the folder that has the branch checked out, while it still does).
+  Git refuses when that would overwrite uncommitted changes; a branch with local commits is only
+  reported.
 - No token is stored: `gh` holds the credential.
 - Bton writes on GitHub only: lease refs, the rotation's assignee, review and decision comments
   of a `post: comment` move, removal of a decided move's labels, and failure and staleness

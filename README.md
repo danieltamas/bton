@@ -53,11 +53,19 @@ GitHub hands each move to exactly one Mac.
 the base in, resolves, tests and pushes. Any PR of yours GitHub can merge gets a Merge button
 that runs your repo's own merge command, so its checks still decide.
 
+**Your develop and main stay current.** After every sync Bton fast-forwards your local working
+branch and the default branch when they are only behind origin, so you and your agents start from
+what is merged. A branch with commits of its own is never touched. The footer shows each one
+against origin and what develop has that main lacks.
+
 **Costs in plain sight.** Every job shows its model and its cost; the panel totals today and the
 week.
 
 **Scheduled agents.** Triage issues nightly, refresh docs weekly: your prompt, your repo, on a
-timer, in a clean worktree.
+timer, in a clean worktree. A schedule's row names the PR it is on and the PRs it worked on.
+
+**Find any PR.** Search by number, title or login across open PRs, jobs and Merged. A move of
+yours that failed gets a Retry on its row.
 
 <table>
   <tr>
@@ -94,7 +102,8 @@ checks.
 Bton is for a team that trusts its collaborators: it acts only on PRs from owners, members and
 collaborators, and the Mac that takes a move runs the PR's code. Claude Code agents start
 hardened (the PR's own `.claude/`, `CLAUDE.md` and `.mcp.json` never load, the sandbox is always
-on). Protect your base branch. The full threat model is in [`SECURITY.md`](SECURITY.md).
+on). Codex runs start with no MCP server, plugin or hook, and ignore the PR's `.codex/`. Protect
+your base branch. The full threat model is in [`SECURITY.md`](SECURITY.md).
 
 <details>
 <summary><b>CLI</b></summary>
