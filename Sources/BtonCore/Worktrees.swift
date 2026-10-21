@@ -53,8 +53,12 @@ enum Worktrees {
             if try await cleanHead(path, ghPath: ghPath, runner: runner) == nil {
                 let message = "bton: leftovers in \(path.lastPathComponent) before \(Date.now.formatted(.iso8601))"
                 try await git(["stash", "push", "--include-untracked", "--message", message], in: path, ghPath: ghPath, runner: runner)
-                guard try await cleanHead(path, ghPath: ghPath, runner: runner) != nil else {
-                    throw DispatchError.worktree("\(path.path) still has changes after stashing them")
+                let left = try await git(["status", "--porcelain"], in: path, ghPath: ghPath, runner: runner)
+                guard left.isEmpty else {
+                    // A stash leaves a dirty submodule, and an antivirus that quarantines a
+                    // tracked file deletes it again as soon as git puts it back.
+                    let paths = left.split(separator: "\n").prefix(3).map { $0.dropFirst(3) }.joined(separator: ", ")
+                    throw DispatchError.worktree("\(path.path) still has changes after stashing them (a dirty submodule, or something outside git such as an antivirus quarantining a file): \(paths)")
                 }
                 let stash = (try? await git(["rev-parse", "--verify", "refs/stash"], in: path, ghPath: ghPath, runner: runner))?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
