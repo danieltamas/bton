@@ -1,9 +1,10 @@
 import Foundation
 
-/// What every Claude Code agent runs with, whatever its template says. An agent works in a PR's
-/// checkout, so nothing the branch carries may configure it: a `.claude/settings.json` (hooks run
-/// shell commands at start, permissions widen the allowlist) or a `.mcp.json` server. A settings
-/// or MCP file named by a relative path would be the PR's own, so only absolute ones are kept.
+/// What every Claude Code or codex agent runs with, whatever its template says. An agent works in
+/// a PR's checkout, so nothing the branch carries may configure it: a `.claude/settings.json` (hooks
+/// run shell commands at start, permissions widen the allowlist), a `.mcp.json` server or a
+/// `.codex/config.toml`. A settings or MCP file named by a relative path would be the PR's own, so
+/// only absolute ones are kept.
 public enum AgentHardening {
     /// GitHub writes that would skip a repo's merge gate. Claude Code matches these against the
     /// command's text, so they stop an agent going the obvious way, not a determined one.
@@ -34,15 +35,54 @@ public enum AgentHardening {
         URL(fileURLWithPath: executable).lastPathComponent == "claude"
     }
 
+    static func isCodex(_ executable: String) -> Bool {
+        URL(fileURLWithPath: executable).lastPathComponent == "codex"
+    }
+
+    /// The user's codex settings a run keeps: which model, how hard it thinks, which tier it bills.
+    static let keptCodexSettings: Set = ["model", "model_reasoning_effort", "service_tier"]
+
+    /// A codex run reads neither `config.toml` nor a checkout's `.codex/config.toml`, which codex
+    /// loads in any worktree of a repo trusted there: either may start MCP servers, plugins or
+    /// other programs beside the agent, outside its sandbox. Only the settings above carry over
+    /// from `userConfig`, as plain quoted values. Hooks stay off whatever a wrapper enables.
+    static func quietCodex(_ template: [String], userConfig: String?) -> [String] {
+        guard !template.contains("--ignore-user-config") else { return template }
+        var flags = ["--ignore-user-config", "--disable", "hooks"]
+        for line in (userConfig ?? "").split(whereSeparator: \.isNewline) {
+            let text = line.trimmingCharacters(in: .whitespaces)
+            // Settings after the first table belong to that table.
+            if text.hasPrefix("[") { break }
+            // A key and a value may each be in double or single quotes.
+            guard let match = text.wholeMatch(of: /(["']?)([a-z_]+)\1\s*=\s*(["'])([A-Za-z0-9._-]*)\3\s*(#.*)?/),
+                  keptCodexSettings.contains(String(match.2)) else { continue }
+            flags += ["-c", "\(match.2)=\"\(match.4)\""]
+        }
+        // `--ignore-user-config` is an option of `exec` (alias `e`) alone. Without that subcommand
+        // it follows the program, where codex refuses to start rather than load the user's servers.
+        let end = template.firstIndex(of: "--") ?? template.endIndex
+        let at = template[1..<max(1, end)].firstIndex { $0 == "exec" || $0 == "e" }.map { $0 + 1 } ?? 1
+        return Array(template[..<at]) + flags + Array(template[at...])
+    }
+
+    /// `$CODEX_HOME/config.toml`, where codex reads the user's settings.
+    static func codexUserConfig() -> String? {
+        let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+        return try? String(contentsOf: home.appendingPathComponent("config.toml"), encoding: .utf8)
+    }
+
     /// The template with Bton's flags, before `{prompt}` is filled in, so no prompt text is ever
-    /// read as a flag. They go before a `--`, which would make them positional. Another agent's
-    /// template is returned as it is. `model` replaces the template's own `--model`, so a run never
+    /// read as a flag. They go before a `--`, which would make them positional. A codex template
+    /// gets `quietCodex`; another agent's is returned as it is. `model` replaces the template's own `--model`, so a run never
     /// follows whatever `~/.claude/settings.json` says that day. `helpersConfig` is Bton's own MCP
     /// server file for the job's helpers, loaded and allowed beside the template's. `scratch` is the
     /// job's own directory outside the repository, which every tool may write.
     public static func hardened(_ template: [String], model: String? = nil, helpersConfig: String? = nil,
                                 scratch: String? = nil) -> [String] {
-        guard let first = template.first, isClaude(first) else { return template }
+        guard let first = template.first else { return template }
+        if isCodex(first) { return quietCodex(template, userConfig: codexUserConfig()) }
+        guard isClaude(first) else { return template }
         var argv = [first]
         var systemPrompt: String?
         var settings: String?

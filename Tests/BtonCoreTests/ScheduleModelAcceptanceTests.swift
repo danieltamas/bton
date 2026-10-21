@@ -129,7 +129,7 @@ struct ScheduleModelAcceptanceTests {
         #expect(argv == AgentHardening.hardened(template))
     }
 
-    @Test(arguments: ["codex", "agent", "/synthetic/bin/claude-wrapper"])
+    @Test(arguments: ["codex-wrapper", "agent", "/synthetic/bin/claude-wrapper"])
     func nonClaudeTemplateIsUnchangedWithAnyModel(executable: String) {
         let template = [executable, "--model=own", "--model", "other", "{prompt}", "--", "{session}"]
         for model: String? in [nil, ScheduleModelFixture.model, "invalid model"] {

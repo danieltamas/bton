@@ -86,10 +86,10 @@ struct RepoPlaceholderAcceptanceTests {
     }
 
     @Test func nonClaudeArgvFillsRepoValuesInEveryElement() throws {
-        let template = ["codex", "exec", "{prompt}", "-C", "{clone}", "--repo={repo}", "--base={base}"]
+        let template = ["agent", "exec", "{prompt}", "-C", "{clone}", "--repo={repo}", "--base={base}"]
         let argv = DispatchPlanner.argv(template, prompt: "{clone}", session: RepoPlaceholderFixture.session,
                                         values: try RepoPlaceholderFixture.values())
-        #expect(argv == ["codex", "exec", "{clone}", "-C", "/tmp/acme widget", "--repo=acme/widget", "--base=develop"])
+        #expect(argv == ["agent", "exec", "{clone}", "-C", "/tmp/acme widget", "--repo=acme/widget", "--base=develop"])
     }
 
     @Test func schedulePromptIsFilledByCallerWithConfiguredRepoValues() throws {

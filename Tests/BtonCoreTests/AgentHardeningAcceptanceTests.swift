@@ -34,7 +34,7 @@ private enum AgentHardeningFixture {
 }
 
 struct AgentHardeningAcceptanceTests {
-    @Test(arguments: ["codex", "agent", "/usr/bin/claude-wrapper"])
+    @Test(arguments: ["codex-wrapper", "agent", "/usr/bin/claude-wrapper"])
     func nonClaudeTemplatesOnlyFillPlaceholders(executable: String) {
         let prompt = "Synthetic task\n--settings {}"
         let template = [executable, "--session={session}", "{prompt}", "--setting-sources", "project"]

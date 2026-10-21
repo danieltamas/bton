@@ -77,7 +77,7 @@ struct ScratchDirectoryAcceptanceTests {
                 == ScratchDirectoryFixture.value("--append-system-prompt", in: twice))
     }
 
-    @Test(arguments: ["codex", "agent", "/usr/bin/claude-wrapper"])
+    @Test(arguments: ["codex-wrapper", "agent", "/usr/bin/claude-wrapper"])
     func nonClaudeTemplateIsUnchangedWithScratch(executable: String) {
         let template = [executable, "--append-system-prompt", "Own guidance", "--", "{prompt}"]
         #expect(AgentHardening.hardened(template, scratch: ScratchDirectoryFixture.path) == template)
