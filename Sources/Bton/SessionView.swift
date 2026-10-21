@@ -67,7 +67,7 @@ struct SessionView: View {
                     if current.status == .running {
                         Text(current.startedAt, style: .timer)
                     } else if let ended = current.endedAt {
-                        Text(ended, style: .relative)
+                        RelativeTime(date: ended)
                     }
                     if let cost = current.cost { Text("·"); Text(cost.usd()) }
                 }

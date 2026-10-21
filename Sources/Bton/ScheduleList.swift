@@ -72,7 +72,7 @@ struct ScheduleList: View {
                     Text("every \(store.pollSeconds)s").font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(Theme.textSecondary)
                     if let last = store.lastRefresh {
-                        Text(last.addingTimeInterval(TimeInterval(store.pollSeconds)), style: .relative)
+                        RelativeTime(date: last.addingTimeInterval(TimeInterval(store.pollSeconds)))
                             .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
                     }
                 }
@@ -133,6 +133,6 @@ struct ScheduleRow: View {
     /// Due now means at the next sync, which is when the engine starts it.
     @ViewBuilder private var nextRun: some View {
         let next = { var timed = entry; timed.lastRun = last?.startedAt; return timed.nextRun(after: .now) }()
-        if next <= .now.addingTimeInterval(1) { Text("next sync") } else { Text(next, style: .relative) }
+        if next <= .now.addingTimeInterval(1) { Text("next sync") } else { RelativeTime(date: next) }
     }
 }

@@ -67,7 +67,7 @@ private struct PullRequestRow: View {
                         Avatar(login: pr.author)
                         Text(pr.author).foregroundStyle(Theme.textSecondary)
                         Text("·").foregroundStyle(Theme.textTertiary)
-                        Text(pr.updatedAt, style: .relative).foregroundStyle(Theme.textTertiary)
+                        RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary)
                     }
                     .font(.meta)
                 }
@@ -182,7 +182,7 @@ struct MergedList: View {
                         if showRepo { RepoName(repo: pr.repo) }
                         Text(pr.author)
                         Text("·")
-                        Text(pr.mergedAt, style: .relative)
+                        RelativeTime(date: pr.mergedAt)
                     }
                     .font(.meta).foregroundStyle(Theme.textTertiary)
                 }

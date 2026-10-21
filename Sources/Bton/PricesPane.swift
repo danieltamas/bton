@@ -37,7 +37,7 @@ struct PricesPane: View {
                             .foregroundStyle(Theme.textPrimary)
                         Group {
                             if let updated = store.prices.updatedAt {
-                                Text("\(store.prices.source ?? "price list") · updated \(Text(updated, style: .relative)) ago")
+                                RelativeTime(date: updated) { "\(store.prices.source ?? "price list") · updated \($0) ago" }
                             } else {
                                 Text("Not fetched yet")
                             }

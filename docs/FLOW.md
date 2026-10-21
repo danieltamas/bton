@@ -149,8 +149,8 @@ before it starts cancels it. A `merge` or `resolve` move of mine that Bton would
 
 A PR I authored that GitHub reports conflicting is resolved by Bton itself, whatever its move,
 once per head and without the flow's checks: the flow's `resolve` dispatch when it has one,
-otherwise the `fix` agent with Bton's own prompt (merge the base in, resolve keeping both
-sides' intent, test, push, reply `## Fixed:`). Settings > Repos turns this off per repo; the
+otherwise the `fix` agent, or else the `review` agent, with Bton's own prompt (merge the base in, resolve keeping both
+sides' intent, test, push). Settings > Repos turns this off per repo; the
 row's **Fix conflicts** then starts it. Either starts the move now, first in line, and
 again when it failed or was stopped on this head on this Mac (a failure on another Mac is
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:

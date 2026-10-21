@@ -73,7 +73,7 @@ struct RootView: View {
             PulseDot(color: store.problem == nil ? Theme.success : Theme.unassigned, pulsing: store.isRefreshing)
             Group {
                 if let last = store.lastRefresh {
-                    Text("\(repoCount) · synced \(Text(last, style: .relative)) ago")
+                    RelativeTime(date: last) { "\(repoCount) · synced \($0) ago" }
                 } else {
                     Text(repoCount)
                 }

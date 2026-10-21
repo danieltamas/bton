@@ -96,7 +96,7 @@ private struct JobRow: View {
                 if job.status == .running {
                     Text(job.startedAt, style: .timer)
                 } else if let ended = job.endedAt {
-                    Text(ended, style: .relative)
+                    RelativeTime(date: ended)
                 }
             }
             .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
