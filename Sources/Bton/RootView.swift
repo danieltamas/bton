@@ -23,6 +23,9 @@ struct RootView: View {
         _tab = State(initialValue: tab)
     }
 
+    /// Room for four PR rows, short of the screen under the menu bar on a small display.
+    private static var height: CGFloat { min(780, (NSScreen.main?.visibleFrame.height ?? 820) - 40) }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -35,7 +38,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: store.watchingJob)
             footer
         }
-        .frame(width: 404, height: 620)
+        .frame(width: 404, height: Self.height)
         .background(Backdrop())
         .background(WindowVisibility(visible: $visible))
         .environment(\.panelVisible, visible)
