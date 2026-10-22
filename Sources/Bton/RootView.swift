@@ -140,7 +140,7 @@ struct RootView: View {
                             ForEach(Array(Set(waiting.compactMap(\.move?.name))).sorted(), id: \.self) { name in
                                 Chip(text: name, symbol: Theme.symbol(forMove: name), color: Theme.color(forMove: name))
                             }
-                            if asked { Chip(text: "asked", symbol: "questionmark.bubble", color: Theme.mint) }
+                            if asked { Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint) }
                         }
                     }
                 }

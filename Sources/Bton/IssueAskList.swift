@@ -71,7 +71,10 @@ private struct IssueAskRow: View {
                         RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary)
                     }
                     .font(.meta)
-                    if let job, job.status == .failed || job.status == .cancelled {
+                    if let job, job.status == .succeeded {
+                        Text("Draft ready: post it as a comment on the issue. This clears at the next sync after you reply.")
+                            .font(.meta).foregroundStyle(Theme.mint).fixedSize(horizontal: false, vertical: true)
+                    } else if let job, job.status == .failed || job.status == .cancelled {
                         Text("Draft \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? ""). A new question starts a new one.")
                             .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
                     }
@@ -142,6 +145,10 @@ struct DraftView: View {
                     .padding(.horizontal, 14)
             }
             .scrollIndicators(.never)
+            Text("Bton never posts it. Copy it, open the issue and paste it as your comment: the ask clears at the next sync after you reply.")
+                .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
             HStack(spacing: 8) {
                 if copied { Chip(text: "copied", symbol: "checkmark", color: Theme.success).transition(.opacity) }
                 Spacer()
