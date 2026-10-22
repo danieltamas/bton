@@ -70,7 +70,8 @@ GitHub hands each move to exactly one Mac.
 
 **Conflicts fix themselves.** When your PR falls behind its base and conflicts, an agent merges
 the base in, resolves, tests and pushes. Any PR of yours GitHub can merge gets a Merge button
-that runs your repo's own merge command, so its checks still decide.
+that runs your repo's own merge command, so its checks still decide: a merge a check stopped says
+which check, and offers Retry merge. While an agent works a PR, its row offers no second start.
 
 **Your develop and main stay current.** After every sync Bton fast-forwards your local working
 branch and the default branch when they are only behind origin, so you and your agents start from
