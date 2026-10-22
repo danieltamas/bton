@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds Bton.app from the SwiftPM targets: the app and CLI binaries, Info.plist and the icons
 # committed in Support/Resources. Ad hoc signed. --universal builds arm64 and x86_64 and joins
-# them; --version and --build stamp Info.plist; --scratch and --out place the build. The source
+# them; --version and --build stamp Info.plist, --source the commit a build from a checkout
+# comes from (BtonSource, for Settings > About); --scratch and --out place the build. The source
 # and build paths are remapped in the binaries, so where the tree lives leaves no trace in them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -9,6 +10,7 @@ cd "$(dirname "$0")/.."
 archs=("$(uname -m)")
 version=""
 build=""
+source=""
 scratch=.build
 out=build
 while (($#)); do
@@ -16,9 +18,10 @@ while (($#)); do
     --universal) archs=(arm64 x86_64) ;;
     --version) version=$2; shift ;;
     --build) build=$2; shift ;;
+    --source) source=$2; shift ;;
     --scratch) scratch=$2; shift ;;
     --out) out=$2; shift ;;
-    *) echo "usage: bundle.sh [--universal] [--version <x.y.z> --build <n>] [--scratch <dir>] [--out <dir>]" >&2; exit 2 ;;
+    *) echo "usage: bundle.sh [--universal] [--version <x.y.z> --build <n>] [--source <describe>] [--scratch <dir>] [--out <dir>]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -56,6 +59,9 @@ cp Support/Info.plist "$app/Contents/Info.plist"
 if [[ -n $version ]]; then
   plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
   plutil -replace CFBundleVersion -string "${build:-1}" "$app/Contents/Info.plist"
+fi
+if [[ -n $source ]]; then
+  plutil -replace BtonSource -string "$source" "$app/Contents/Info.plist"
 fi
 cp Support/Resources/* "$app/Contents/Resources/"
 

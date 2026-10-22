@@ -34,6 +34,7 @@ struct SettingsView: View {
         case .schedules: SchedulesPane()
         case .supervisor: SupervisorPane()
         case .prices: PricesPane()
+        case .about: AboutPane()
         }
     }
 
@@ -87,6 +88,7 @@ extension SettingsPane {
         case .schedules: "clock.arrow.circlepath"
         case .supervisor: Theme.symbol(forMove: Supervision.move)
         case .prices: "dollarsign.circle"
+        case .about: "info.circle"
         }
     }
 
@@ -98,6 +100,7 @@ extension SettingsPane {
         case .schedules: Theme.color(forMove: "schedule")
         case .supervisor: Theme.color(forMove: Supervision.move)
         case .prices: Color(hex: 0xFFB547)
+        case .about: Theme.neutral
         }
     }
 }

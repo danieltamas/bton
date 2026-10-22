@@ -3,5 +3,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-app=$(scripts/bundle.sh | tail -1)
+# The commit it is built from, which Settings > About shows.
+app=$(scripts/bundle.sh --source "$(git describe --tags --always --dirty)" | tail -1)
 exec ./install.sh --app "$app"
