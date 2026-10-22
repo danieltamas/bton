@@ -242,6 +242,7 @@ public actor Engine {
                 }
                 // A pick whose move already ran elsewhere would wait forever, or hand its place to another move.
                 let ranPicks = Set(ran.map { Self.pick(repo: $0.repo, item: $0.item) })
+                for pick in started { asked[pick] = nil }
                 // Only the ask that ran: a newer one on the same issue, asked meanwhile, stays.
                 let drafted = startedKeys.union(ran)
                 draftRequests.removeAll { drafted.contains(IssueDrafts.key(for: $0)) }
@@ -316,12 +317,17 @@ public actor Engine {
         let all = jobs.all()
         let fresh = { (c: DispatchCandidate) in !all.contains { $0.key == c.key } || DispatchPlanner.isRetry(c.key, jobs: all) }
         if let request = asked[pick] {
+            // The flow's own move needs no override (a reviewer's merge on a teammate's PR): its
+            // candidate runs, first in line. The request stays, pinning the head, until it starts.
+            if request.head == pr.headSha, request.move == pr.move?.name { return nil }
             let made = request.head != pr.headSha ? nil : request.move == "merge"
                 ? DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: repo.slug)
                 : DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug)
             // A new head, a PR that can't take the move any more, or a move already run on this head
             // ends it, and its place in line: the owner asked for that move, not whatever comes next.
             if let made, fresh(made) { return made }
+            let why = request.head != pr.headSha ? "the head moved" : made == nil ? "the PR cannot take it now" : "it already ran on this head"
+            log("\(repo.slug)#\(pr.number): \(request.move) not started: \(why)")
             asked[pick] = nil
             next.removeAll { $0 == pick }
         }
