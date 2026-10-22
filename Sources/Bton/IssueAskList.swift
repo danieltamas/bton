@@ -24,6 +24,20 @@ extension AppStore {
         await refresh()
     }
 
+    /// Posts my reply as a comment on the issue, from a file beside the draft's output (0600, in
+    /// Bton's home), then syncs so the ask clears.
+    func postReply(_ text: String, to ask: IssueAsk, draft job: Job) async throws {
+        guard let github, let output = outputFiles(of: job).first else { throw CocoaError(.fileNoSuchFile) }
+        guard !postedAsks.contains(ask.notice), postingAsks.insert(ask.notice).inserted else { return }
+        defer { postingAsks.remove(ask.notice) }
+        let file = output.appendingPathExtension("reply")
+        try Data(text.utf8).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
+        postedAsks.insert(ask.notice)
+        await refresh()
+    }
+
     /// The drafted reply: the job's final message.
     func draftText(of job: Job) -> String? {
         guard let url = outputFiles(of: job).first, let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
@@ -71,8 +85,11 @@ private struct IssueAskRow: View {
                         RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary)
                     }
                     .font(.meta)
-                    if let job, job.status == .succeeded {
-                        Text("Draft ready: post it as a comment on the issue. This clears at the next sync after you reply.")
+                    if store.postedAsks.contains(ask.notice) {
+                        Text("Reply posted. This clears when the next sync reads it.")
+                            .font(.meta).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true)
+                    } else if let job, job.status == .succeeded {
+                        Text("Draft ready: read it, edit it if you like, and post it from View draft.")
                             .font(.meta).foregroundStyle(Theme.mint).fixedSize(horizontal: false, vertical: true)
                     } else if let job, job.status == .failed || job.status == .cancelled {
                         Text("Draft \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? ""). A new question starts a new one.")
@@ -114,16 +131,21 @@ private struct IssueAskRow: View {
     }
 }
 
-/// A drafted reply in place of the list: read it, copy it, post it on GitHub yourself.
+/// A drafted reply in place of the list: read it, edit it, and post it as my comment, or copy it.
 struct DraftView: View {
     @Environment(AppStore.self) private var store
     let ask: IssueAsk
     let close: () -> Void
+    @State private var text = ""
     @State private var copied = false
+    /// Post reply asks once more before it writes on GitHub under my name.
+    @State private var confirming = false
+    @State private var problem: String?
 
     var body: some View {
         let job = store.draft(for: ask)
-        let text = job.flatMap(store.draftText) ?? "The draft is empty: the agent left no final message."
+        let posted = store.postedAsks.contains(ask.notice)
+        let posting = store.postingAsks.contains(ask.notice)
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 IconButton(symbol: "chevron.left", help: "Back to the list", action: close)
@@ -133,20 +155,21 @@ struct DraftView: View {
                     Text(ask.title).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(ask.url) }
             }
             .padding(.horizontal, 14)
-            ScrollView {
-                Text(text)
-                    .font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(.horizontal, 14)
-            }
-            .scrollIndicators(.never)
-            Text("Bton never posts it. Copy it, open the issue and paste it as your comment: the ask clears at the next sync after you reply.")
-                .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $text)
+                .font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.never)
+                .padding(8)
+                .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 14)
+                .disabled(posting || posted)
+            if let problem { ProblemText(text: problem).padding(.horizontal, 14) }
+            Text(posted ? "Posted as your comment. The ask clears when the next sync reads it."
+                 : "Edit it here if you like. Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own.")
+                .font(.meta).foregroundStyle(posted ? Theme.success : Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
             HStack(spacing: 8) {
@@ -157,10 +180,32 @@ struct DraftView: View {
                     NSPasteboard.general.setString(text, forType: .string)
                     withAnimation(Motion.snappy) { copied = true }
                 }
-                PillButton(title: "Open on GitHub") { NSWorkspace.shared.open(ask.url) }
+                if confirming {
+                    PillButton(title: "Cancel", symbol: "xmark", prominent: false) { withAnimation(Motion.snappy) { confirming = false } }
+                }
+                PillButton(title: posted ? "Posted" : posting ? "Posting..." : confirming ? "Post as \(store.me ?? "me")" : "Post reply",
+                           symbol: posted ? "checkmark" : "paperplane",
+                           disabled: posted || posting || job == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    if confirming { post(job) } else { withAnimation(Motion.snappy) { confirming = true } }
+                }
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 10)
+        }
+        .onAppear { text = store.draftEdits[ask.notice] ?? job.flatMap(store.draftText) ?? "" }
+        .onChange(of: text) { store.draftEdits[ask.notice] = text }
+    }
+
+    private func post(_ job: Job?) {
+        guard let job else { return }
+        problem = nil
+        Task {
+            do {
+                try await store.postReply(text, to: ask, draft: job)
+            } catch {
+                problem = "Not posted: \(error.localizedDescription)"
+            }
+            confirming = false
         }
     }
 }

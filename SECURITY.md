@@ -52,7 +52,9 @@ The threat model is a team that trusts its collaborators, not a public repo open
 - An issue reply draft (only when the owner presses Draft reply) runs under the same denials as
   the supervisor. The issue's text never enters its prompt or argv: Bton writes the thread to
   `issue.md` in the job's scratch directory, and the agent reads it as data. Bton only lists
-  asks from OWNER, MEMBER or COLLABORATOR authors and never posts the draft.
+  asks from OWNER, MEMBER or COLLABORATOR authors. The draft is posted only when the owner
+  presses Post reply and confirms, as the owner's own `gh` comment, its text read from a file
+  (never argv); the agent itself cannot post.
 - No token is stored: `gh` holds the credential.
 - Bton writes on GitHub only: lease refs, the rotation's assignee, review and decision comments
   of a `post: comment` move, removal of a decided move's labels, and failure and staleness

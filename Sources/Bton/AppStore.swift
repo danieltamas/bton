@@ -28,6 +28,12 @@ final class AppStore {
     private(set) var issueAsks: [IssueAsk] = []
     /// Every ask notified this run (`IssueAsk.notice`), so a mention edited out and back is not new.
     @ObservationIgnored var notifiedAsks: Set<String> = []
+    /// Asks I replied to from Bton (`IssueAsk.notice`), shown as posted until a sync reads the reply.
+    var postedAsks: Set<String> = []
+    /// Replies being posted now: one at a time per ask, whichever view pressed it.
+    var postingAsks: Set<String> = []
+    /// My edits to each draft (`IssueAsk.notice`), kept while Bton runs so leaving the draft loses nothing.
+    @ObservationIgnored var draftEdits: [String: String] = [:]
     let icon = MenuBarIcon()
     /// Each watched repo's flow as last read from its default branch.
     private(set) var flows: [String: FlowStatus] = [:]
@@ -80,7 +86,7 @@ final class AppStore {
     }
 
     private var config = BtonConfig.initial
-    private var github: GitHubClient?
+    private(set) var github: GitHubClient?
     private(set) var engine: Engine?
     private var loop: Task<Void, Never>?
     private var focusLoop: Task<Void, Never>?

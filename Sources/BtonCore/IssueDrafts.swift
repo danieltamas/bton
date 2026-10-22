@@ -1,6 +1,6 @@
 import Foundation
 
-/// The owner's answer to an issue ask, drafted by a read-only agent and never posted by Bton.
+/// The owner's answer to an issue ask, drafted by a read-only agent; posted only when the owner presses Post reply.
 public enum IssueDrafts {
     public static let move = "draft"
     public static let defaultAgent = "claude"

@@ -101,6 +101,12 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }
 
+    /// The owner's reply on an issue, posted only when they press Post reply. The body is read
+    /// from a file, never passed in argv.
+    public func commentOnIssue(repo: String, number: Int, bodyFile: URL) async throws {
+        _ = try await gh(["issue", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
+    }
+
     public func addAssignee(_ login: String, repo: String, number: Int) async throws {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-assignee", login])
     }
