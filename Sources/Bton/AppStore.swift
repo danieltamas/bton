@@ -359,9 +359,10 @@ final class AppStore {
 
     /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
-    func failedOnHead(_ pr: PullRequest, move: String) -> Bool {
+    /// The move's run on this head that failed and may run again, if one did.
+    func failedOnHead(_ pr: PullRequest, move: String) -> Job? {
         let key = JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move, head: pr.headSha)
-        return jobs.first { $0.key == key }?.canRetry(among: jobs) ?? false
+        return jobs.first { $0.key == key }.flatMap { $0.canRetry(among: jobs) ? $0 : nil }
     }
 
     func runNow(_ pr: PullRequest, move: String) async {

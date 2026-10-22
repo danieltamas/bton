@@ -50,6 +50,8 @@ private struct PullRequestRow: View {
     var body: some View {
         let moveColor = pr.move.map { Theme.color(forMove: $0.name) }
         let mine = pr.move.flatMap { move in me.map(move.isMine) } ?? false
+        // Any agent on it, here, on another Mac or a schedule's: no second start while it works.
+        let busy = job != nil || pr.isWorking || store.schedule(workingOn: pr) != nil
         HoverCard(accent: mine ? moveColor : nil, action: { NSWorkspace.shared.open(pr.url) }) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -77,14 +79,22 @@ private struct PullRequestRow: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     if let move = pr.move {
                         if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
+                        // A start already asked for still shows while another agent works it.
                         if job == nil, store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
                             StartingLabel(repo: pr.repo)
-                        } else if job == nil, let me, let flow = store.flows[pr.repo]?.flow,
-                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me),
-                           let title = RunNowButton.title(for: now, failed: store.failedOnHead(pr, move: now)) {
-                            RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
-                                         color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
-                                Task { await store.runNow(pr, move: now) }
+                        } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
+                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me) {
+                            let failed = store.failedOnHead(pr, move: now)
+                            if let title = RunNowButton.title(for: now, failed: failed != nil) {
+                                RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
+                                             color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
+                                    Task { await store.runNow(pr, move: now) }
+                                }
+                                if let detail = failed?.detail {
+                                    Text("Last \(now) on this head stopped: \(detail)")
+                                        .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
+                                        .lineLimit(3).frame(maxWidth: 220, alignment: .trailing).textSelection(.enabled)
+                                }
                             }
                         }
                     }
@@ -103,7 +113,7 @@ private struct PullRequestRow: View {
         }
         .contextMenu {
             // Only a move this Mac's agent takes can start; the rest are people's.
-            if job == nil, let move = pr.move, move.hasDispatch, let me, move.isMine(me) {
+            if !busy, let move = pr.move, move.hasDispatch, let me, move.isMine(me) {
                 Button("Run Next") { Task { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") } }
             }
             Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
@@ -131,7 +141,7 @@ private struct RunNowButton: View {
     /// once per head, so one that failed on this head waits for a Retry.
     static func title(for move: String, failed: Bool) -> String? {
         switch move {
-        case "merge": "Merge"
+        case "merge": failed ? "Retry merge" : "Merge"
         case "resolve": "Fix conflicts"
         default: failed ? "Retry \(move)" : nil
         }

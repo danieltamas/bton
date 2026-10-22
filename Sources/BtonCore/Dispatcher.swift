@@ -154,8 +154,9 @@ actor Dispatcher {
             for check in checks ?? [] {
                 let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: .seconds(600))
                 guard status == 0 else {
-                    await postFailure(candidate, text: "`\(check.joined(separator: " "))` exited \(status)")
-                    return await finish(job, status: .failed, detail: "\(check.first ?? "check") exited \(status)")
+                    let failure = "`\(check.joined(separator: " "))` exited \(status)"
+                    await postFailure(candidate, text: failure)
+                    return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
                 }
             }
             if let command = candidate.command, candidate.agent == nil {
