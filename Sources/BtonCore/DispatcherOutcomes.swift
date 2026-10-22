@@ -1,6 +1,7 @@
 import Foundation
 
-/// What a job leaves behind: its scratch directory, a check failure on the PR, a resolve's push.
+/// What a job leaves behind: its scratch directory, a check failure on the PR, a resolve's push,
+/// the work label.
 extension Dispatcher {
     /// A Claude agent's own directory for notes and temporary files, gone when its job ends.
     static func scratch(_ id: UUID) -> URL {
@@ -37,5 +38,24 @@ extension Dispatcher {
             }
             return head
         }
+    }
+
+    /// On while the lease is held: added after the claim and kept on the job (saved first, so a
+    /// restart still knows it), removed before the release, so it never comes off another Mac's
+    /// claim. A failure is only noted.
+    func addWorkLabel(to job: Job) async -> Job {
+        guard let label = workLabels[job.key.repo.lowercased()], let item = LeaseItem(job.key.item), item.kind == "pr" else { return job }
+        var job = job
+        job.workLabel = label
+        try? jobs.save(job)
+        await WorkLabels.set(true, label: label, item: item, repo: job.key.repo, github: github,
+                             note: { [jobs, id = job.id] in jobs.note(id, $0) })
+        return job
+    }
+
+    func removeWorkLabel(from job: Job) async {
+        guard let item = LeaseItem(job.key.item) else { return }
+        await WorkLabels.set(false, label: job.workLabel, item: item, repo: job.key.repo, github: github,
+                             note: { [jobs, id = job.id] in jobs.note(id, $0) })
     }
 }

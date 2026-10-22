@@ -121,6 +121,17 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-assignee", login])
     }
 
+    /// Creates the label once when the repo lacks it (the add fails), then adds it again.
+    public func addLabel(_ label: String, repo: String, number: Int) async throws {
+        let add = ["pr", "edit", String(number), "--repo", repo, "--add-label", label]
+        do {
+            _ = try await gh(add)
+        } catch {
+            _ = try? await gh(["label", "create", label, "--repo", repo, "--description", "A Bton is working on this PR"])
+            _ = try await gh(add)
+        }
+    }
+
     public func removeLabel(_ label: String, repo: String, number: Int) async throws {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--remove-label", label])
     }

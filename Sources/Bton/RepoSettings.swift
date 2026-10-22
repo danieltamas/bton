@@ -19,6 +19,14 @@ extension AppStore {
         try updateRepo(slug) { $0.environment = environment.isEmpty ? nil : environment }
     }
 
+    /// The label a PR carries while a Bton works it; empty turns it off.
+    func setWorkLabel(_ label: String, for slug: String) throws {
+        guard label.isEmpty || WatchedRepo.isLabelName(label) else {
+            throw SettingsError.invalid("A label is 1 to 50 characters, with no comma, control character or space at either end.")
+        }
+        try updateRepo(slug) { $0.workLabel = label.isEmpty ? nil : label }
+    }
+
     /// Whether my PRs that conflict with their base are resolved on their own; nil is on.
     func setResolveConflicts(_ on: Bool, for slug: String) throws {
         try updateRepo(slug) { $0.resolveConflicts = on ? nil : false }

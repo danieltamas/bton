@@ -26,14 +26,18 @@ actor Dispatcher {
     private var stopping: Set<UUID> = []
     /// Each watched repo's environment, by lowercased slug, to redact what a job posts.
     private var environments: [String: [String: String]] = [:]
+    /// Each watched repo's work label, by lowercased slug.
+    private(set) var workLabels: [String: String] = [:]
     /// Called after every job ends, so the next one starts without waiting for the next tick.
     private var jobEnded: (@Sendable () -> Void)?
 
     func onJobEnded(_ handler: @escaping @Sendable () -> Void) { jobEnded = handler }
 
-    func useEnvironments(of repos: [WatchedRepo]) {
+    func useRepos(_ repos: [WatchedRepo]) {
         environments = Dictionary(repos.map { ($0.slug.lowercased(), $0.environment ?? [:]) }) { first, _ in first }
+        workLabels = Dictionary(repos.compactMap { repo in repo.workLabel.map { (repo.slug.lowercased(), $0) } }) { first, _ in first }
     }
+
 
     init(github: GitHubClient, leases: LeaseStore, jobs: JobStore, log: @escaping @Sendable (String) -> Void) {
         self.github = github
@@ -104,6 +108,7 @@ actor Dispatcher {
         // Not awaited: checks and a merge command run for minutes, and the sync that started them
         // would hold every refresh and button behind them. The saved job already counts as running.
         work[id] = Task {
+            let job = await self.addWorkLabel(to: job)
             await self.run(job, candidate, clone: clone, flow: flow, agents: agents, environment: environment)
             self.work[id] = nil
         }
@@ -362,7 +367,10 @@ actor Dispatcher {
         jobs.stopHelpers(job.id)
         // Only once nothing of the agent is left: a survivor would go on writing to the old file.
         if job.pid.map({ kill(-$0, 0) != 0 }) ?? true { jobs.trim(job.id) }
-        if let lease = held.removeValue(forKey: job.id) { try? await leases.release(lease) }
+        if let lease = held.removeValue(forKey: job.id) {
+            await removeWorkLabel(from: job)
+            try? await leases.release(lease)
+        }
         lost[job.id] = nil
         stopping.remove(job.id)
         locks.removeValue(forKey: job.id)?.release()

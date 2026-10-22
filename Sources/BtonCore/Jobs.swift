@@ -58,6 +58,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     /// A supervisor's note for this move's next run: on this head for a PR, the next run for a
     /// schedule. Kept here, beside the retry it goes with, so a restart neither loses nor repeats it.
     public var steer: String?
+    /// The work label this job put on its PR, so it comes off as added even if Settings changed it.
+    public var workLabel: String?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,

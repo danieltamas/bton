@@ -74,6 +74,7 @@ struct ReposPane: View {
                             .foregroundStyle(Theme.textTertiary).lineLimit(1).truncationMode(.head)
                         BranchPicker(repo: repo, problem: $problem)
                         EnvironmentEditor(repo: repo)
+                        WorkLabelEditor(repo: repo)
                         RepoSwitch(symbol: "play.circle", title: "Start the flow's moves on every sync",
                                    help: "Off (the default): a sync only reads the PRs, and agents start here from your schedules and from Run now, Merge and Retry.",
                                    isOn: repo.startsMoves, problem: $problem) { try store.setStartMoves($0, for: repo.slug) }
@@ -241,6 +242,54 @@ private struct EnvironmentEditor: View {
     private func save() {
         do {
             try store.setEnvironment(text, for: repo.slug)
+            text = ""
+            problem = nil
+            editing = false
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// The label teammates without Bton see on a PR a Bton is working on; off until named.
+private struct WorkLabelEditor: View {
+    @Environment(AppStore.self) private var store
+    let repo: WatchedRepo
+    @State private var editing = false
+    @State private var text = ""
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "tag").font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
+                Text(repo.workLabel.map { "Work label: \($0)" } ?? "No work label")
+                    .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1).truncationMode(.tail)
+                Button(editing ? "Cancel" : "Edit") {
+                    text = editing ? "" : repo.workLabel ?? ""
+                    problem = nil
+                    editing.toggle()
+                }
+                .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
+            }
+            if editing {
+                TextField("bton: working", text: $text)
+                    .textFieldStyle(.plain).font(.system(size: 12))
+                    .padding(8)
+                    .background(Theme.core, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .onSubmit(save)
+                Text("A PR carries this label while a Bton on any Mac works it, so teammates see it on GitHub. Empty turns it off.")
+                    .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+                if let problem { ProblemText(text: problem) }
+                PillButton(title: "Save", symbol: "checkmark") { save() }
+            }
+        }
+        .animation(Motion.snappy, value: editing)
+    }
+
+    private func save() {
+        do {
+            try store.setWorkLabel(text, for: repo.slug)
             text = ""
             problem = nil
             editing = false

@@ -100,6 +100,9 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// the repo's PRs, and an agent starts there only from a schedule or a move the owner asked
     /// for (Run now, Merge, Fix conflicts, Retry). Nil is off.
     public var startMoves: Bool?
+    /// A label on each PR while a Bton, on any Mac, holds its lease: teammates without Bton see
+    /// which PRs an agent works on. Display only; nothing reads it back. Nil is off.
+    public var workLabel: String?
 
     public var resolvesConflicts: Bool { resolveConflicts != false }
     public var startsMoves: Bool { startMoves == true }
@@ -160,6 +163,14 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
             if value.unicodeScalars.contains("\n") { return "\(key) has a line break" }
         }
         return nil
+    }
+
+    /// A label GitHub takes as one name: `gh` splits `--add-label` on commas.
+    public static func isLabelName(_ name: String) -> Bool {
+        // A leading dash would read as an option to `gh label create`.
+        (1...50).contains(name.count) && !name.contains(",") && !name.hasPrefix("-")
+            && name.trimmingCharacters(in: .whitespacesAndNewlines) == name
+            && !name.unicodeScalars.contains { $0.properties.generalCategory == .control }
     }
 
     /// A plain branch name: it goes into a GitHub API query and a git ref, so nothing either

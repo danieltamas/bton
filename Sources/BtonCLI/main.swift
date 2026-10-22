@@ -19,6 +19,10 @@ func fail(_ message: String, status: Int32 = 2) -> Never {
     exit(status)
 }
 
+func warn(_ message: String) {
+    FileHandle.standardError.write(Data(("warning: " + message + "\n").utf8))
+}
+
 // Line-buffered, so `watch` output reaches a log file even when the process is killed.
 setvbuf(stdout, nil, _IOLBF, 0)
 
@@ -86,15 +90,38 @@ case "lease":
     do {
         let github = try GitHubClient()
         let store = try LeaseStore(home: BtonHome(), holder: try await github.viewer(), github: github)
+        // The repo's work label follows a schedule agent's claim too, and the release takes off the
+        // label the claim added; a failure only warns.
+        let config = try? JSONDecoder().decode(BtonConfig.self, from: Data(contentsOf: BtonHome().configURL))
+        let configured = config.flatMap { WorkLabels.label(for: repo, in: $0) }
+        let label = { (on: Bool, label: String?) async in
+            await WorkLabels.set(on, label: label, item: item, repo: repo, github: github, note: { @Sendable in warn($0) })
+        }
         switch action {
         case "claim":
             switch try await store.claim(item, in: repo, job: job ?? UUID()) {
-            case let .claimed(lease): print(lease.record.job.uuidString)
+            case let .claimed(lease):
+                print(lease.record.job.uuidString)
+                if let configured {
+                    let saved = WorkLabels.claimFile(job: lease.record.job, repo: repo, item: item, home: BtonHome())
+                    try? FileManager.default.createDirectory(at: saved.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? Data(configured.utf8).write(to: saved)
+                }
+                await label(true, configured)
             case let .notClaimed(holder): fail("held by \(holder.map(describe) ?? "someone else")", status: 1)
             }
         case "renew", "release":
             let lease = try await store.current(item, in: repo, job: job!)
-            if action == "renew" { _ = try await store.renew(lease) } else { try await store.release(lease) }
+            if action == "renew" {
+                _ = try await store.renew(lease)
+            } else {
+                // Off before the release, so it never comes off a claim made right after it.
+                let saved = WorkLabels.claimFile(job: lease.record.job, repo: repo, item: item, home: BtonHome())
+                let added = (try? String(contentsOf: saved, encoding: .utf8)).flatMap { WatchedRepo.isLabelName($0) ? $0 : nil }
+                await label(false, added ?? configured)
+                try await store.release(lease)
+                try? FileManager.default.removeItem(at: saved)
+            }
         case "check":
             switch try await store.state(of: item, in: repo) {
             case .absent: print("absent")

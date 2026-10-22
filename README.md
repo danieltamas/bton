@@ -66,7 +66,8 @@ Post reply comments it on the issue as you (after a confirm), or copy it. Nothin
 unless you press it.
 
 **One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
-GitHub hands each move to exactly one Mac.
+GitHub hands each move to exactly one Mac. Name a work label for a repo (Settings > Repos) and a PR
+carries it while any Bton works on it, so teammates without Bton see it on GitHub.
 
 **Conflicts fix themselves.** When your PR falls behind its base and conflicts, an agent merges
 the base in, resolves, tests and pushes. Any PR of yours GitHub can merge gets a Merge button

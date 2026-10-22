@@ -28,6 +28,8 @@ public actor Engine {
     let jobs: JobStore
     let log: @Sendable (String) -> Void
     private var dispatcher: Dispatcher?
+    /// When each labelled PR's lease was last read for the work label cleanup, by "repo#number".
+    private var labelReadAt: [String: Date] = [:]
     private var assigned: Set<String> = []
     /// Stale notices posted by this instance, so one lagging read never posts one twice.
     private var noticed: Set<String> = []
@@ -171,6 +173,7 @@ public actor Engine {
                 do {
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, repos: config.repos)
+                    await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         if let stale = flow.stale {
@@ -359,16 +362,42 @@ public actor Engine {
         }
     }
 
+    /// A label whose holder crashed or lost its lease comes off once the lease is free or gone. The
+    /// PRs read longest ago go first, so ten held ones never hide the rest. A lease claimed while
+    /// this ran gets its label back.
+    private func clearWorkLabels(_ prs: [PullRequest], repo: WatchedRepo, leases: LeaseStore) async {
+        guard let label = repo.workLabel else { return }
+        let oldestFirst = prs.filter { $0.labels.contains { $0.caseInsensitiveCompare(label) == .orderedSame } }
+            .sorted { lastRead(repo.slug, $0.number) < lastRead(repo.slug, $1.number) }
+        for pr in oldestFirst.prefix(WorkLabels.maxReadsPerSync) { labelReadAt[Self.labelKey(repo.slug, pr.number)] = .now }
+        let state = { (number: Int) async throws -> LeaseState in
+            guard let item = LeaseItem("pr-\(number)") else { throw LeaseError.failed("pr-\(number) is not a lease item") }
+            return try await leases.state(of: item, in: repo.slug)
+        }
+        for number in await WorkLabels.stale(oldestFirst, label: label, state: state) {
+            guard let item = LeaseItem("pr-\(number)") else { continue }
+            let pr = Self.labelKey(repo.slug, number)
+            let note = { [log] (text: String) in log("\(pr): \(text)") }
+            await WorkLabels.set(false, label: label, item: item, repo: repo.slug, github: github, note: note)
+            if case .held? = try? await state(number) {
+                await WorkLabels.set(true, label: label, item: item, repo: repo.slug, github: github, note: note)
+            }
+        }
+    }
+
+    private static func labelKey(_ repo: String, _ number: Int) -> String { "\(repo)#\(number)" }
+    private func lastRead(_ repo: String, _ number: Int) -> Date { labelReadAt[Self.labelKey(repo, number)] ?? .distantPast }
+
     private func dispatcher(me: String, repos: [WatchedRepo]) async throws -> Dispatcher {
         if let dispatcher {
-            await dispatcher.useEnvironments(of: repos)
+            await dispatcher.useRepos(repos)
             return dispatcher
         }
         let leases = try LeaseStore(home: home, holder: me, github: github)
         let made = Dispatcher(github: github, leases: leases, jobs: jobs, log: log)
         if let jobEnded { await made.onJobEnded(jobEnded) }
         // Before adopting: a job that ended while Bton was down posts its review at once.
-        await made.useEnvironments(of: repos)
+        await made.useRepos(repos)
         await made.adopt()
         dispatcher = made
         return made
