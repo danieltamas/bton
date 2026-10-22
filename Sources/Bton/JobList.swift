@@ -49,13 +49,17 @@ private struct JobRow: View {
                     HStack(spacing: 6) {
                         Text(title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
                         Chip(text: job.status.rawValue, color: color)
+                        ForEach(job.flags ?? [], id: \.self) { flag in
+                            if let label = flag.label { Chip(text: label, color: Theme.danger, style: .outline) }
+                        }
                     }
                     if job.agent != nil { ModelBadges(job: job) }
                     Text([job.agent == nil ? "command" : nil, job.key.repo.split(separator: "/").last.map(String.init),
-                          store.work.summary(of: job), job.detail]
+                          store.work.summary(of: job), job.detail, job.verdict.map(\.summary)]
                         .compactMap { $0 }.joined(separator: " · "))
                         .font(.meta).foregroundStyle(job.status == .failed ? Theme.danger.opacity(0.85) : Theme.textTertiary)
                         .lineLimit(2)
+                        .help(job.verdict?.note ?? "")
                 }
                 Spacer(minLength: 4)
                 if hovering {
@@ -122,5 +126,28 @@ private struct JobRow: View {
                 }
             }
         }
+    }
+}
+
+extension JobFlag {
+    /// The chip's text; nil where the status chip already says it.
+    var label: String? {
+        switch self {
+        case .timedOut: "timed out"
+        case .leaseLost: "lease lost"
+        case .noVerdict: "no verdict"
+        case .postFailed: "not posted"
+        case .agentFailed: "agent crashed"
+        case .failed: nil
+        case .repeated: "failed again"
+        case .costly: "costly"
+        }
+    }
+}
+
+extension SupervisorVerdict {
+    /// `retry: retried`, `escalate: <note>`: what the supervisor said and what came of it.
+    var summary: String {
+        action.rawValue + ": " + (outcome ?? note)
     }
 }

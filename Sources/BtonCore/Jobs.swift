@@ -47,11 +47,22 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var review: ReviewTarget?
     /// The owner asked for this failed or stopped move to run again on the same head.
     public var retry: Bool?
+    /// What the watchdog found when the job ended; nil when nothing.
+    public var flags: [JobFlag]?
+    /// A supervise job's flagged job.
+    public var supervises: UUID?
+    /// A supervisor's note was in this job's prompt, so no supervisor looks at it again.
+    public var steered: Bool?
+    /// A supervise job's answer, parsed from its final message.
+    public var verdict: SupervisorVerdict?
+    /// A supervisor's note for this move's next run: on this head for a PR, the next run for a
+    /// schedule. Kept here, beside the retry it goes with, so a restart neither loses nor repeats it.
+    public var steer: String?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
                 usage: [String: TokenUsage] = [:], cost: Decimal? = nil, deadline: Date? = nil,
-                review: ReviewTarget? = nil, retry: Bool? = nil) {
+                review: ReviewTarget? = nil, retry: Bool? = nil, supervises: UUID? = nil, steered: Bool? = nil) {
         self.id = id
         self.key = key
         self.agent = agent
@@ -66,6 +77,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
         self.deadline = deadline
         self.review = review
         self.retry = retry
+        self.supervises = supervises
+        self.steered = steered
     }
 
     /// A failed or stopped PR job that is its key's latest. A schedule's key names its own time,
@@ -122,6 +135,21 @@ public struct JobStore: Sendable {
         let all = all()
         guard var job = all.first(where: { $0.id == id }), job.canRetry(among: all) else { return false }
         job.retry = true
+        try save(job)
+        return true
+    }
+
+    /// A supervisor's retry: a PR's failed move runs again on its head, a schedule at its next run,
+    /// either with the note. Asking twice with the same note changes nothing.
+    public func requestSteeredRetry(_ id: UUID, note: String) throws -> Bool {
+        let all = all()
+        guard var job = all.first(where: { $0.id == id }) else { return false }
+        if job.steer == note { return true }
+        if job.key.item.hasPrefix("pr-") {
+            guard job.canRetry(among: all) else { return false }
+            job.retry = true
+        }
+        job.steer = note
         try save(job)
         return true
     }

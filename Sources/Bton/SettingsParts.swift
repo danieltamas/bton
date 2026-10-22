@@ -105,6 +105,34 @@ struct GlassEditor: View {
     }
 }
 
+/// A pop-up menu in the same recessed style, its current choice as the title.
+struct MenuField: View {
+    let title: String
+    let options: [String]
+    let pick: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { option in Button(option) { pick(option) } }
+        } label: {
+            HStack {
+                Text(title).font(.system(size: 12.5)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .background(Theme.canvas.opacity(0.7), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .frame(maxWidth: .infinity)
+    }
+}
+
 struct FieldLabel: View {
     let text: String
 

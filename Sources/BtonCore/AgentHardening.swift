@@ -77,16 +77,17 @@ public enum AgentHardening {
     /// gets `quietCodex`; another agent's is returned as it is. `model` replaces the template's own `--model`, so a run never
     /// follows whatever `~/.claude/settings.json` says that day. `helpersConfig` is Bton's own MCP
     /// server file for the job's helpers, loaded and allowed beside the template's. `scratch` is the
-    /// job's own directory outside the repository, which every tool may write.
+    /// job's own directory outside the repository, which every tool may write. `denying` adds to
+    /// Bton's denied tools, for Claude only.
     public static func hardened(_ template: [String], model: String? = nil, helpersConfig: String? = nil,
-                                scratch: String? = nil) -> [String] {
+                                scratch: String? = nil, denying: [String] = []) -> [String] {
         guard let first = template.first else { return template }
         if isCodex(first) { return quietCodex(template, userConfig: codexUserConfig()) }
         guard isClaude(first) else { return template }
         var argv = [first]
         var systemPrompt: String?
         var settings: String?
-        var denied = deniedTools
+        var denied = deniedTools + denying
         var mcpConfigs: [String] = []
         var positional: [String] = []
         var rest = ArraySlice(template.dropFirst().flatMap(splitManaged))

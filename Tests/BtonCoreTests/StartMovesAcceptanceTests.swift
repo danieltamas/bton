@@ -195,7 +195,7 @@ struct StartMovesAcceptanceTests {
     }
 }
 
-private struct StartMovesFixture {
+struct StartMovesFixture {
     let leases: RetryLeaseFixture
     let home: BtonHome
     var repo: String { leases.repo }

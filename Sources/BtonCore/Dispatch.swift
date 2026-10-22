@@ -13,7 +13,7 @@ public struct DispatchCandidate: Sendable {
     public let key: JobKey
     /// nil for a command move (merge).
     public let agent: String?
-    public let prompt: String?
+    public var prompt: String?
     public let command: [String]?
     /// Bton posts the agent's final message as the review comment.
     public let postComment: Bool
@@ -25,6 +25,12 @@ public struct DispatchCandidate: Sendable {
     /// The flow's `checks` do not run first: a rule's `"checks": false`, and every resolve, whose
     /// PR conflicts with its base and would fail a merge check.
     public var skipsChecks = false
+    /// A supervise job's flagged job.
+    public var supervises: UUID?
+    /// A supervisor's note was added to the prompt.
+    public var steered = false
+    /// Tools denied to this job's Claude on top of Bton's own.
+    public var denied: [String] = []
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }
@@ -266,13 +272,15 @@ public enum DispatchPlanner {
     /// searched for placeholders.
     /// `playbook` goes first in a Claude agent's system prompt; codex has no such flag, so it
     /// leads the task there. Another CLI gets the prompt alone, as its template expects.
+    /// `denying` adds to a Claude agent's denied tools.
     public static func argv(_ template: [String], prompt: String, session: UUID, instructions: String? = nil,
                             values: [String: String] = [:], model: String? = nil,
-                            helpersConfig: String? = nil, scratch: String? = nil, playbook: String? = nil) -> [String] {
+                            helpersConfig: String? = nil, scratch: String? = nil, playbook: String? = nil,
+                            denying: [String] = []) -> [String] {
         // The repo's values go in before hardening, so `{clone}/mcp.json` is an absolute path
         // to it; the prompt goes in last, in the same single pass as the session.
         let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model,
-                                               helpersConfig: helpersConfig, scratch: scratch)
+                                               helpersConfig: helpersConfig, scratch: scratch, denying: denying)
         let isCodex = template.first.map(AgentHardening.isCodex) == true
         let task = isCodex ? playbook.map { $0 + "\n\nYour task:\n" + prompt } ?? prompt : prompt
         var argv = hardened.map { fill($0, ["{prompt}": task, "{session}": session.uuidString.lowercased()]) }

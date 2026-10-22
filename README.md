@@ -53,6 +53,12 @@ diff once, targeted tests first, every finding with evidence, scoped re-reviews,
 and the edge cases of each move (rebased heads, lockfiles and migrations, flaky tests, wrong
 findings, conflicts where both sides changed behaviour). Your flow and your CLAUDE.md still win.
 
+**A watchdog and a supervisor.** Bton flags every job that failed, timed out, lost its lease or
+cost far more than that move usually does, on its row and in a notification. Turn on the
+Supervisor (Settings > Supervisor) and an agent looks at each flagged job once: it retries the
+move with a note on what to do differently, or tells you what needs a human. It only reads: no
+shell, no edits, no GitHub writes. It stops at a daily budget.
+
 **One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
 GitHub hands each move to exactly one Mac.
 

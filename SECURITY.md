@@ -44,6 +44,11 @@ The threat model is a team that trusts its collaborators, not a public repo open
   --no-overwrite-ignore` in the folder that has the branch checked out, while it still does).
   Git refuses when that would overwrite uncommitted changes; a branch with local commits is only
   reported.
+- The supervisor (off by default) runs only as a Claude agent with no shell, no file edits and
+  no web tools: it reads and searches files, nothing else. It reads
+  a flagged job's log, which holds agent and PR text, under the same data-not-instructions rule.
+  Its note reaches one later agent's prompt, at most 600 characters and labelled as advice that
+  changes neither the task nor the rules; a job it steered is never supervised again.
 - No token is stored: `gh` holds the credential.
 - Bton writes on GitHub only: lease refs, the rotation's assignee, review and decision comments
   of a `post: comment` move, removal of a decided move's labels, and failure and staleness

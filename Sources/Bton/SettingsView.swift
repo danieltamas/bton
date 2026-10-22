@@ -32,6 +32,7 @@ struct SettingsView: View {
         case .repos: ReposPane()
         case .agents: AgentsPane()
         case .schedules: SchedulesPane()
+        case .supervisor: SupervisorPane()
         case .prices: PricesPane()
         }
     }
@@ -84,6 +85,7 @@ extension SettingsPane {
         case .repos: "folder"
         case .agents: "cpu"
         case .schedules: "clock.arrow.circlepath"
+        case .supervisor: Theme.symbol(forMove: Supervision.move)
         case .prices: "dollarsign.circle"
         }
     }
@@ -94,6 +96,7 @@ extension SettingsPane {
         case .repos: Color(hex: 0x7AA2FF)
         case .agents: Color(hex: 0xC792FF)
         case .schedules: Theme.color(forMove: "schedule")
+        case .supervisor: Theme.color(forMove: Supervision.move)
         case .prices: Color(hex: 0xFFB547)
         }
     }

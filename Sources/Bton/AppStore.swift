@@ -31,6 +31,7 @@ final class AppStore {
     var repos: [WatchedRepo] { config.repos }
     var schedules: [ScheduleEntry] { config.schedules }
     var agents: [String: AgentTemplate] { config.agents }
+    var supervisor: SupervisorSettings? { config.supervisor }
     var pollSeconds: Int { config.pollSeconds }
     var maxAgents: Int { config.maxAgents }
     private(set) var prices = PriceList(models: [:])
@@ -443,8 +444,14 @@ extension AppStore {
             Notifier.post(title: "\(pr.move?.name ?? "Move") · #\(pr.number)", body: pr.title, id: "move-\(pr.id)")
         }
         let wasRunning = Set(before.jobs.filter { $0.status == .running }.map(\.id))
-        for job in jobs where job.status == .failed && wasRunning.contains(job.id) {
-            Notifier.post(title: "Job failed · \(job.key.item) \(job.key.move)", body: job.detail ?? "", id: "job-\(job.id)")
+        for job in jobs where wasRunning.contains(job.id) && job.status != .running {
+            let flags = (job.flags ?? []).compactMap(\.label)
+            if let verdict = job.verdict, [.escalate, .propose].contains(verdict.action) {
+                Notifier.post(title: "Supervisor \(verdict.action.rawValue) · \(job.key.item)", body: verdict.note, id: "job-\(job.id)")
+            } else if job.status == .failed || !flags.isEmpty {
+                Notifier.post(title: "Job \(job.status == .failed ? "failed" : "flagged") · \(job.key.item) \(job.key.move)",
+                              body: (flags + [job.detail].compactMap { $0 }).joined(separator: " · "), id: "job-\(job.id)")
+            }
         }
         for pr in merged where !before.merged.contains(pr.id) && pr.author.caseInsensitiveCompare(me) == .orderedSame {
             Notifier.post(title: "Merged · #\(pr.number)", body: pr.title, id: "merged-\(pr.id)")
@@ -476,7 +483,8 @@ enum SettingsError: Error, LocalizedError {
 }
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general = "General", repos = "Repos", agents = "Agents", schedules = "Schedules", prices = "Prices"
+    case general = "General", repos = "Repos", agents = "Agents", schedules = "Schedules", supervisor = "Supervisor",
+         prices = "Prices"
     var id: Self { self }
 }
 

@@ -40,6 +40,7 @@ enum Theme {
         case "decide": Color(hex: 0xC792FF)
         case "finish": neutral
         case "schedule": Color(hex: 0x5CC8FF)
+        case "supervise": Color(hex: 0xFF8FB1)
         default: neutral
         }
     }
@@ -53,6 +54,7 @@ enum Theme {
         case "decide": "signpost.right"
         case "finish": "pencil.line"
         case "schedule": "clock.arrow.circlepath"
+        case "supervise": "binoculars"
         default: "circle.dashed"
         }
     }

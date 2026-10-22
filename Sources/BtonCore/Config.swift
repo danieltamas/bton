@@ -11,6 +11,8 @@ public struct BtonConfig: Codable, Sendable {
     /// never started.
     public var agents: [String: AgentTemplate]
     public var schedules: [ScheduleEntry]
+    /// nil or not enabled: no supervisor agent runs; the watchdog's flags still show.
+    public var supervisor: SupervisorSettings? = nil
 
     /// Where the skeleton kept its config; read once, moved to `$BTON_HOME`.
     public static let legacyURL = FileManager.default.homeDirectoryForCurrentUser

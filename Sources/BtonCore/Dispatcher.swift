@@ -86,7 +86,8 @@ actor Dispatcher {
             log("\(candidate.key): lease not held (\(error.localizedDescription))")
             return .busy
         }
-        let job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running)
+        let job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
+                      supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         guard let lock = LocalLock(jobs.lockURL(id)) else {
             try? await leases.release(lease)
             return .busy
@@ -196,7 +197,9 @@ actor Dispatcher {
             }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model,
-                                                     helpersConfig: helpers?.config, scratch: scratch, playbook: PRPlaybook.text(for: candidate.key.move)),
+                                                     helpersConfig: helpers?.config, scratch: scratch,
+                                                     playbook: candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move),
+                                                     denying: candidate.denied),
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,
                                 environment: helpers == nil ? [:] : ["MCP_TOOL_TIMEOUT": String(Helpers.toolTimeoutMilliseconds)])
@@ -246,8 +249,13 @@ actor Dispatcher {
         guard exitStatus(job.id) == 0 else {
             return await finish(job, status: .failed, detail: "agent exited \(exitStatus(job.id).map(String.init) ?? "abnormally")")
         }
-        guard let review = job.review else { return await finish(job, status: .succeeded, detail: nil) }
         let output = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
+        if job.key.move == Supervision.move {
+            job.verdict = Supervision.verdict(fromFinalMessage: output)
+            return await finish(job, status: job.verdict == nil ? .failed : .succeeded,
+                                detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
+        }
+        guard let review = job.review else { return await finish(job, status: .succeeded, detail: nil) }
         guard let body = DispatchPlanner.reviewComment(fromFinalMessage: output, headings: review.headings,
                                                        head: review.head) else {
             return await finish(job, status: .failed, detail: "final message names no review heading for the current head")
@@ -341,6 +349,8 @@ actor Dispatcher {
         }
         job.endedAt = .now
         await refreshCost(&job)
+        let flags = Watchdog.flags(for: job, among: jobs.all())
+        job.flags = flags.isEmpty ? nil : flags
         try? jobs.save(job)
         jobs.note(job.id, job.status.rawValue + (job.detail.map { ": \($0)" } ?? "")
                   + (job.cost.map { ", cost $\($0)" } ?? ""))

@@ -43,6 +43,8 @@ public actor Engine {
     /// Automatic resolves a lease refused, and when: another Mac holds or ran that head, so the flow's
     /// move goes on for a while before the resolve is tried again.
     private var declined: [JobKey: Date] = [:]
+    /// Steered retries are put back in line once, at the first tick after a start.
+    var restoredRetries = false
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
@@ -148,6 +150,7 @@ public actor Engine {
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
             await refreshPricesIfDue()
+            applyVerdicts()
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
             // Read but not acted on: its run-next picks wait, like an unread repo's.
             var unplanned = unread
@@ -183,6 +186,14 @@ public actor Engine {
                                                          defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
                                                          runNow: runNow, changedAt: changedAt)
                         .map { ($0, clone, nil) }
+                    // One supervisor at a time: the first repo with a flagged job takes this tick's.
+                    if !pending.contains(where: { $0.candidate.key.move == Supervision.move }),
+                       let supervise = Supervision.candidate(settings: config.supervisor, agents: config.agents, jobs: jobs.all(),
+                                                             repo: read.repo.slug, pullRequests: read.pullRequests,
+                                                             defaultBranch: read.repo.branch ?? read.defaultBranch,
+                                                             me: read.viewer, log: supervisorLog) {
+                        pending.append((supervise, clone, read.flow))
+                    }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
                     unplanned.insert(read.repo.slug.lowercased())
@@ -202,8 +213,9 @@ public actor Engine {
                                                           agents: config.agents, first: next)
                     guard !selected.isEmpty else { break }
                     let dispatcher = try await dispatcher(me: me, repos: config.repos)
-                    for candidate in selected {
-                        guard let entry = pending.first(where: { $0.candidate.key == candidate.key }) else { continue }
+                    for chosen in selected {
+                        guard let entry = pending.first(where: { $0.candidate.key == chosen.key }) else { continue }
+                        let candidate = Supervision.steered(chosen, jobs: jobs.all())
                         let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
                         switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
                                                          environment: environment) {
@@ -275,7 +287,7 @@ public actor Engine {
     }
 
     /// A Merge or Fix conflicts runs instead of the PR's flow move, also when retried from Jobs.
-    private func ask(_ key: JobKey) {
+    func ask(_ key: JobKey) {
         if key.move == "merge" || key.move == "resolve" { asked[Self.pick(repo: key.repo, item: key.item)] = key }
     }
 

@@ -218,24 +218,7 @@ struct ScheduleEditor: View {
     }
 
     private func menu(_ title: String, options: [String], pick: @escaping (String) -> Void) -> some View {
-        Menu {
-            ForEach(options, id: \.self) { option in Button(option) { pick(option) } }
-        } label: {
-            HStack {
-                Text(title).font(.system(size: 12.5)).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.horizontal, 11).padding(.vertical, 8)
-            .background(Theme.canvas.opacity(0.7), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .frame(maxWidth: .infinity)
+        MenuField(title: title, options: options, pick: pick)
     }
 
     private func save() {
