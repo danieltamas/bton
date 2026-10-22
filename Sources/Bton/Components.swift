@@ -293,6 +293,8 @@ struct PillButton: View {
     var prominent = true
     var disabled = false
     let action: () -> Void
+    /// Also off when a parent says `.disabled(...)`: it looks off either way.
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     var body: some View {
@@ -318,9 +320,9 @@ struct PillButton: View {
             .fixedSize()
         }
         .buttonStyle(PressStyle(scale: 0.97))
-        .opacity(disabled ? 0.4 : 1)
+        .opacity(disabled || !isEnabled ? 0.4 : 1)
         .disabled(disabled)
-        .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
+        .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering && isEnabled && !disabled } }
     }
 }
 
