@@ -90,10 +90,14 @@ private struct PullRequestRow: View {
                                              color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
                                     Task { await store.runNow(pr, move: now) }
                                 }
-                                if let detail = failed?.detail {
-                                    Text("Last \(now) on this head stopped: \(detail)")
-                                        .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
-                                        .lineLimit(3).frame(maxWidth: 220, alignment: .trailing).textSelection(.enabled)
+                                if let failed, let detail = failed.detail {
+                                    Button { withAnimation(Motion.spring) { store.watchingJob = failed.id } } label: {
+                                        Text("Last \(now) on this head stopped: \(detail)")
+                                            .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
+                                            .lineLimit(3).frame(maxWidth: 220, alignment: .trailing)
+                                    }
+                                    .buttonStyle(PressStyle())
+                                    .help("Open the job and the agent's report")
                                 }
                             }
                         }
@@ -142,7 +146,7 @@ private struct RunNowButton: View {
     static func title(for move: String, failed: Bool) -> String? {
         switch move {
         case "merge": failed ? "Retry merge" : "Merge"
-        case "resolve": "Fix conflicts"
+        case "resolve": failed ? "Retry fix conflicts" : "Fix conflicts"
         default: failed ? "Retry \(move)" : nil
         }
     }

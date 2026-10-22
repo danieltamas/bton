@@ -95,6 +95,19 @@ public enum DispatchPlanner {
         return made
     }
 
+    /// A resolve that left the PR at the head it started on pushed nothing: its agent stopped,
+    /// for a ruling or a fork, and its report says why. Unconfirmed is a failure too.
+    public static func resolveOutcome(startedAt head: String,
+                                      liveHead: () async throws -> String) async -> (status: Job.Status, detail: String?) {
+        do {
+            return try await liveHead() == head
+                ? (.failed, "pushed nothing: the agent stopped without resolving; its report says why")
+                : (.succeeded, nil)
+        } catch {
+            return (.failed, "could not confirm the push: \(error.localizedDescription)")
+        }
+    }
+
     public static func resolvePrompt(number: Int, base: String) -> String {
         // Unattended, so every step is one the agent's allowed tools run without asking: an agent
         // left to improvise made its own worktree outside the sandbox and stalled on prompts.

@@ -90,6 +90,16 @@ public struct GitHubClient: Sendable {
         return try JSONDecoder().decode(Row.self, from: data).nameWithOwner
     }
 
+    /// The PR's head commit on GitHub now.
+    public func pullRequestHead(repo: String, number: Int) async throws -> String {
+        try Self.decodeHead(try await gh(["pr", "view", String(number), "--repo", repo, "--json", "headRefOid"]))
+    }
+
+    static func decodeHead(_ data: Data) throws -> String {
+        struct Row: Decodable { let headRefOid: String }
+        return try JSONDecoder().decode(Row.self, from: data).headRefOid
+    }
+
     public func mergedPullRequests(repo: String, limit: Int = 30) async throws -> [MergedPullRequest] {
         let data = try await gh(["pr", "list", "--repo", repo, "--state", "merged", "--limit", String(limit),
                                  "--json", "number,title,author,url,mergedAt,headRefName,headRefOid"])

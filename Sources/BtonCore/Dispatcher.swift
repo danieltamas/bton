@@ -219,11 +219,6 @@ actor Dispatcher {
         }
     }
 
-    /// A Claude agent's own directory for notes and temporary files, gone when its job ends.
-    static func scratch(_ id: UUID) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(id.uuidString.lowercased())", isDirectory: true)
-    }
-
     /// Polls the agent until it exits, refreshing the cost meanwhile; stops it at its deadline or
     /// when the lease is lost. A review job then posts the final message.
     private func watch(_ job: Job) async {
@@ -252,6 +247,12 @@ actor Dispatcher {
         if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
         guard exitStatus(job.id) == 0 else {
             return await finish(job, status: .failed, detail: "agent exited \(exitStatus(job.id).map(String.init) ?? "abnormally")")
+        }
+        if job.key.move == "resolve" {
+            let outcome = await resolveOutcome(of: job)
+            // A Stop pressed while GitHub was read stands over what it said.
+            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         let output = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
         if job.key.move == Supervision.move {
@@ -481,21 +482,6 @@ actor Dispatcher {
             return result.status
         } catch ProcessRunner.Failure.timedOut {
             throw DispatchError.timedOut(argv.joined(separator: " "), minutes: Int(timeout.components.seconds / 60))
-        }
-    }
-
-    /// One comment per key, carrying Bton's marker so it never changes a move.
-    private func postFailure(_ candidate: DispatchCandidate, text: String) async {
-        guard let pr = candidate.pr else { return }
-        let body = "Bton did not start `\(candidate.move.name)` on \(pr.headSha.prefix(7)): \(text).\n\n"
-            + BtonMarker.line("check-failed \(candidate.key)")
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
-        defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            try body.write(to: file, atomically: true, encoding: .utf8)
-            try await github.comment(repo: candidate.key.repo, number: pr.number, bodyFile: file)
-        } catch {
-            log("\(candidate.key): could not post the check failure: \(error.localizedDescription)")
         }
     }
 }
