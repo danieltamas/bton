@@ -55,7 +55,7 @@ actor Dispatcher {
             // Renewed at once: while Bton was down the lease may have run out, and the CAS on its
             // sha proves nobody took it meanwhile.
             guard let item = LeaseItem(job.key.item),
-                  let current = try? await leases.current(item, in: job.key.repo, job: job.id),
+                  let current = try? await leases.current(item, in: job.key.repo, job: job.id, anyHost: true),
                   let lease = try? await leases.renew(current), lease.isLive(at: .now + Self.renewMargin) else {
                 await terminate(job.id, pid: pid)
                 await finish(job, status: .failed, detail: "lease lost while Bton was not running")

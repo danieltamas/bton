@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 
 /// What a lease is for: `pr-304`, `issue-212`.
 public struct LeaseItem: Hashable, Sendable, CustomStringConvertible {
@@ -110,7 +111,37 @@ public struct LeaseStore: Sendable {
     let remoteURL: @Sendable (String) -> String
     private let runner = ProcessRunner()
 
-    public init(home: BtonHome, holder: String, host: String = ProcessInfo.processInfo.hostName,
+    /// This Mac's Bonjour name (`Dani.local`), set in Sharing. `ProcessInfo.hostName` asks DNS,
+    /// which answers differently as networks and VPNs come and go, so a claim and its release
+    /// from two processes could name two hosts and the release would be refused.
+    public static var thisMac: String {
+        SCDynamicStoreCopyLocalHostName(nil).map { "\($0 as String).local" } ?? ProcessInfo.processInfo.hostName
+    }
+
+    /// The name this Mac's leases carry: `thisMac` the first time, kept in `host` so the app and
+    /// every CLI process name the same host even after a rename or a failed lookup. It is written
+    /// whole beside the file and linked into place, so the first writer wins and nobody reads half
+    /// a name; a name file that cannot be read fails rather than fall back to another name.
+    public static func host(in home: BtonHome) throws -> String {
+        let file = home.url.appendingPathComponent("host")
+        if let name = try savedHost(file) { return name }
+        try home.prepare()
+        let draft = home.url.appendingPathComponent("host.\(UUID().uuidString)")
+        try Data((thisMac + "\n").utf8).write(to: draft)
+        defer { try? FileManager.default.removeItem(at: draft) }
+        _ = Darwin.link(draft.path, file.path)
+        guard let name = try savedHost(file) else { throw LeaseError.failed("\(file.path) could not be written") }
+        return name
+    }
+
+    private static func savedHost(_ file: URL) throws -> String? {
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        let name = try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw LeaseError.failed("\(file.path) is empty") }
+        return name
+    }
+
+    public init(home: BtonHome, holder: String, host: String? = nil,
                 ttl: Duration = .seconds(900), github: GitHubClient,
                 remoteURL: @escaping @Sendable (String) -> String = { "https://github.com/\($0).git" }) throws {
         try home.prepare()
@@ -118,7 +149,7 @@ public struct LeaseStore: Sendable {
                                                 withIntermediateDirectories: true)
         self.home = home
         self.holder = holder
-        self.host = host
+        self.host = try host ?? Self.host(in: home)
         self.ttl = ttl
         self.github = github
         self.remoteURL = remoteURL
@@ -169,11 +200,13 @@ public struct LeaseStore: Sendable {
         }
     }
 
-    /// The live lease of `job`, for a process that did not claim it itself (the CLI's renew and release).
-    public func current(_ item: LeaseItem, in repo: String, job: UUID) async throws -> Lease {
+    /// The live lease of `job`, for a process that did not claim it itself (the CLI's renew and
+    /// release). `anyHost` is for a job this Mac's own store and lock already prove is its own,
+    /// whatever name its lease was written under.
+    public func current(_ item: LeaseItem, in repo: String, job: UUID, anyHost: Bool = false) async throws -> Lease {
         try await failingClosed {
             guard let (sha, record) = try await read(item, in: repo), record.job == job, !record.released,
-                  record.holder.caseInsensitiveCompare(holder) == .orderedSame, record.host == host
+                  record.holder.caseInsensitiveCompare(holder) == .orderedSame, anyHost || record.host == host
             else { throw LeaseError.notHolder }
             return Lease(repo: repo, item: item, sha: sha, record: record)
         }
@@ -326,7 +359,7 @@ final class LocalLock: Sendable {
         let descriptor = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { return nil }
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
-            close(descriptor)
+            Darwin.close(descriptor)
             return nil
         }
         self.descriptor = descriptor
