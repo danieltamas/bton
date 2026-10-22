@@ -206,7 +206,7 @@ public struct LeaseStore: Sendable {
     public func current(_ item: LeaseItem, in repo: String, job: UUID, anyHost: Bool = false) async throws -> Lease {
         try await failingClosed {
             guard let (sha, record) = try await read(item, in: repo), record.job == job, !record.released,
-                  record.holder.caseInsensitiveCompare(holder) == .orderedSame, anyHost || record.host == host
+                  record.holder.caseInsensitiveCompare(holder) == .orderedSame, anyHost || record.host.caseInsensitiveCompare(host) == .orderedSame
             else { throw LeaseError.notHolder }
             return Lease(repo: repo, item: item, sha: sha, record: record)
         }
