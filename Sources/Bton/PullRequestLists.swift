@@ -6,6 +6,7 @@ import SwiftUI
 struct PullRequestList: View {
     @Environment(AppStore.self) private var store
     let items: [PullRequest]
+    let asks: [IssueAsk]
     let showRepo: Bool
     let me: String?
     let jobs: [Job]
@@ -13,15 +14,16 @@ struct PullRequestList: View {
 
     var body: some View {
         let running = jobs.filter { $0.status == .running }
-        if items.isEmpty && running.isEmpty && store.lastRefresh == nil {
+        if items.isEmpty && running.isEmpty && asks.isEmpty && store.lastRefresh == nil {
             EmptyState(symbol: "arrow.triangle.2.circlepath", title: "Reading GitHub", detail: "Open pull requests show here in a moment.")
-        } else if items.isEmpty && running.isEmpty {
+        } else if items.isEmpty && running.isEmpty && asks.isEmpty {
             EmptyState(symbol: "checkmark.seal", title: "No open pull requests", detail: "New ones show here within a sync.")
         } else {
             RowStack(items: ordered) { pr in
                 PullRequestRow(pr: pr, showRepo: showRepo, me: me,
                                job: running.first { $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" })
             } header: {
+                if !asks.isEmpty { IssueAskSection(asks: asks, showRepo: showRepo) }
                 if !running.isEmpty { ActiveStrip(jobs: running, schedules: schedules).padding(.bottom, 8) }
             }
         }

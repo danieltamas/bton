@@ -17,6 +17,8 @@ public actor Engine {
         public var unread: Set<String> = []
         /// Each read repo's default branch on GitHub (main), by slug.
         public var defaultBranches: [String: String] = [:]
+        /// Questions put to me on open issues, newest first.
+        public var issueAsks: [IssueAsk] = []
 
         public init() {}
     }
@@ -45,6 +47,12 @@ public actor Engine {
     private var declined: [JobKey: Date] = [:]
     /// Steered retries are put back in line once, at the first tick after a start.
     var restoredRetries = false
+    /// Each repo's open issues as last read, by lowercased slug: a failed read keeps the last.
+    var openIssues: [String: [OpenIssue]] = [:]
+    /// The repos whose issues this tick read: only a current thread starts a draft.
+    var issuesReadThisTick: Set<String> = []
+    /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
+    var draftRequests: [IssueAsk] = []
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
@@ -122,6 +130,7 @@ public actor Engine {
             var reads: [(repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
                          pullRequests: [PullRequest], merged: [MergedPullRequest])] = []
             var failures: [String] = [], unread: Set<String> = []
+            issuesReadThisTick = []
             for repo in config.repos {
                 // One repo GitHub won't read leaves the others' work to start.
                 do {
@@ -140,6 +149,7 @@ public actor Engine {
                     snapshot.merged += merged
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
+                    await readIssues(repo.slug)
                 } catch {
                     failures.append("\(repo.slug): \(error.localizedDescription)")
                     unread.insert(repo.slug.lowercased())
@@ -147,6 +157,7 @@ public actor Engine {
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
+            snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
             await refreshPricesIfDue()
@@ -194,6 +205,8 @@ public actor Engine {
                                                              me: read.viewer, log: supervisorLog) {
                         pending.append((supervise, clone, read.flow))
                     }
+                    pending += draftCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
+                                               me: read.viewer, agents: config.agents).map { ($0, clone, nil) }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
                     unplanned.insert(read.repo.slug.lowercased())
@@ -205,7 +218,7 @@ public actor Engine {
                 let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
                 let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
                     .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
-                var started: Set<String> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
+                var started: Set<String> = [], startedKeys: Set<JobKey> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
                 // A pick whose lease is held elsewhere frees its slot for the next candidate.
                 while true {
                     let open = pending.map(\.candidate).filter { !refused.contains($0.key) }
@@ -219,7 +232,9 @@ public actor Engine {
                         let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
                         switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
                                                          environment: environment) {
-                        case .started: started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                        case .started:
+                            started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                            startedKeys.insert(candidate.key)
                         case .busy: refused.insert(candidate.key)
                         case .ran: refused.insert(candidate.key); ran.insert(candidate.key)
                         }
@@ -227,6 +242,9 @@ public actor Engine {
                 }
                 // A pick whose move already ran elsewhere would wait forever, or hand its place to another move.
                 let ranPicks = Set(ran.map { Self.pick(repo: $0.repo, item: $0.item) })
+                // Only the ask that ran: a newer one on the same issue, asked meanwhile, stays.
+                let drafted = startedKeys.union(ran)
+                draftRequests.removeAll { drafted.contains(IssueDrafts.key(for: $0)) }
                 next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }

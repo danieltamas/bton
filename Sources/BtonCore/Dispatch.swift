@@ -31,6 +31,9 @@ public struct DispatchCandidate: Sendable {
     public var steered = false
     /// Tools denied to this job's Claude on top of Bton's own.
     public var denied: [String] = []
+    /// Files written to a Claude job's scratch directory before it starts, by name: text the agent
+    /// reads as data, kept out of its prompt.
+    public var attachments: [String: String] = [:]
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }

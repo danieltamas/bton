@@ -41,6 +41,7 @@ enum Theme {
         case "finish": neutral
         case "schedule": Color(hex: 0x5CC8FF)
         case "supervise": Color(hex: 0xFF8FB1)
+        case "draft": mint
         default: neutral
         }
     }
@@ -55,6 +56,7 @@ enum Theme {
         case "finish": "pencil.line"
         case "schedule": "clock.arrow.circlepath"
         case "supervise": "binoculars"
+        case "draft": "text.bubble"
         default: "circle.dashed"
         }
     }

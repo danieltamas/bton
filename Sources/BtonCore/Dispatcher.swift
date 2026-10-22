@@ -192,7 +192,10 @@ actor Dispatcher {
             if let helpers { instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n") }
             var scratch: String?
             if isClaude {
-                try FileManager.default.createDirectory(at: Self.scratch(job.id), withIntermediateDirectories: true)
+                // Made anew and private: a path already there, a link above all, fails the job.
+                try FileManager.default.createDirectory(at: Self.scratch(job.id), withIntermediateDirectories: false,
+                                                        attributes: [.posixPermissions: 0o700])
+                try Self.attach(candidate.attachments, in: Self.scratch(job.id))
                 scratch = Self.scratch(job.id).path
             }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,

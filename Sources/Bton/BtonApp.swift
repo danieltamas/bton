@@ -26,8 +26,9 @@ struct BtonApp: App {
             RootView()
                 .environment(store)
         } label: {
-            // How many moves wait for me as a person (decide, finish, an unassigned review of mine).
-            let waiting = store.humanMovesForMe.count
+            // How many moves wait for me as a person (decide, finish, an unassigned review of mine),
+            // and how many issues ask me something.
+            let waiting = store.waitingOnMe
             HStack(spacing: 2) {
                 Image(nsImage: store.icon.image)
                 if waiting > 0 { Text("\(waiting)") }

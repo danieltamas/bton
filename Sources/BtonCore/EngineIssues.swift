@@ -1,0 +1,44 @@
+import Foundation
+
+extension Engine {
+    /// A repo's open issues; a failure keeps the last read and never stops the repo's PR work.
+    func readIssues(_ repo: String) async {
+        do {
+            openIssues[repo.lowercased()] = try await github.openIssues(repo: repo)
+            issuesReadThisTick.insert(repo.lowercased())
+        } catch {
+            log("\(repo): issues not read: \(error.localizedDescription)")
+        }
+    }
+
+    func issueAsks(in repos: [WatchedRepo], me: String?) -> [IssueAsk] {
+        guard let me else { return [] }
+        return IssueAsks.asks(repos.flatMap { openIssues[$0.slug.lowercased()] ?? [] }, me: me)
+    }
+
+    /// Drafts the owner's reply to an ask at the next sync, first in line.
+    public func requestDraft(_ ask: IssueAsk) {
+        draftRequests.removeAll { $0.id == ask.id }
+        draftRequests.append(ask)
+        runNext(repo: ask.repo, item: "issue-\(ask.number)")
+    }
+
+    /// The draft jobs this repo's requests ask for, from the issues as read this tick. A request
+    /// whose ask is gone or changed, or whose draft already ran, ends here; one whose issues were
+    /// not read this tick waits for a read, rather than start on a thread that may be answered.
+    func draftCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate]) -> [DispatchCandidate] {
+        guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
+        let issues = openIssues[repo.lowercased()] ?? []
+        let ran = Set(jobs.all().map(\.key))
+        var made: [DispatchCandidate] = []
+        draftRequests.removeAll { ask in
+            guard ask.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
+            guard let issue = issues.first(where: { $0.number == ask.number }),
+                  let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch, me: me),
+                  !ran.contains(candidate.key) else { return true }
+            made.append(candidate)
+            return false
+        }
+        return made
+    }
+}

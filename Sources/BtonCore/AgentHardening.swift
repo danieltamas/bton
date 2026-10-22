@@ -130,6 +130,8 @@ public enum AgentHardening {
         }
         if let model { argv += ["--model", model] }
         argv += ["--setting-sources", "user", "--strict-mcp-config"]
+        // A job that denies tools is read-only: the template's MCP servers may write, so none load.
+        if !denying.isEmpty { mcpConfigs = [] }
         let helpers = helpersConfig.flatMap { $0.hasPrefix("/") ? $0 : nil }
         if let helpers, !mcpConfigs.contains(helpers) { mcpConfigs.append(helpers) }
         if !mcpConfigs.isEmpty { argv += ["--mcp-config"] + mcpConfigs }

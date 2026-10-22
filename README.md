@@ -59,6 +59,11 @@ Supervisor (Settings > Supervisor) and an agent looks at each flagged job once: 
 move with a note on what to do differently, or tells you what needs a human. It only reads: no
 shell, no edits, no GitHub writes. It stops at a daily budget.
 
+**Questions on issues.** When a teammate mentions you on an open issue, it shows under "Asked on
+issues" on the PRs tab, counts in what is waiting on you and notifies you. Press Draft reply and
+a read-only agent reads the thread and the code and drafts your answer; you copy it and post it
+yourself. Bton never comments on an issue.
+
 **One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
 GitHub hands each move to exactly one Mac.
 

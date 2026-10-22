@@ -49,6 +49,10 @@ The threat model is a team that trusts its collaborators, not a public repo open
   a flagged job's log, which holds agent and PR text, under the same data-not-instructions rule.
   Its note reaches one later agent's prompt, at most 600 characters and labelled as advice that
   changes neither the task nor the rules; a job it steered is never supervised again.
+- An issue reply draft (only when the owner presses Draft reply) runs under the same denials as
+  the supervisor. The issue's text never enters its prompt or argv: Bton writes the thread to
+  `issue.md` in the job's scratch directory, and the agent reads it as data. Bton only lists
+  asks from OWNER, MEMBER or COLLABORATOR authors and never posts the draft.
 - No token is stored: `gh` holds the credential.
 - Bton writes on GitHub only: lease refs, the rotation's assignee, review and decision comments
   of a `post: comment` move, removal of a decided move's labels, and failure and staleness

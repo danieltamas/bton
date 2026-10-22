@@ -22,6 +22,12 @@ final class AppStore {
     let local = LocalSync()
     /// The job whose session the window shows in place of its list.
     var watchingJob: UUID?
+    /// The issue ask whose drafted reply the window shows in place of its list.
+    var readingDraft: IssueAsk?
+    /// Questions put to me on open issues, newest first.
+    private(set) var issueAsks: [IssueAsk] = []
+    /// Every ask notified this run (`IssueAsk.notice`), so a mention edited out and back is not new.
+    @ObservationIgnored var notifiedAsks: Set<String> = []
     let icon = MenuBarIcon()
     /// Each watched repo's flow as last read from its default branch.
     private(set) var flows: [String: FlowStatus] = [:]
@@ -53,6 +59,9 @@ final class AppStore {
         }
     }
 
+    /// What the menu bar and the bento count: my human moves and the issue asks.
+    var waitingOnMe: Int { humanMovesForMe.count + issueAsks.count }
+
     var costToday: Decimal {
         jobs.filter { Calendar.current.isDateInToday($0.startedAt) }.reduce(0) { $0 + ($1.cost ?? 0) }
     }
@@ -72,7 +81,7 @@ final class AppStore {
 
     private var config = BtonConfig.initial
     private var github: GitHubClient?
-    private var engine: Engine?
+    private(set) var engine: Engine?
     private var loop: Task<Void, Never>?
     private var focusLoop: Task<Void, Never>?
 
@@ -387,7 +396,7 @@ final class AppStore {
     func isNext(repo: String, item: String) -> Bool { next.contains("\(repo.lowercased())#\(item)") }
 
     /// The row shows "starting" at the click, not after the sync that may already be running.
-    private func markStarting(repo: String, item: String) {
+    func markStarting(repo: String, item: String) {
         let pick = "\(repo.lowercased())#\(item)"
         if !next.contains(pick) { next.insert(pick, at: 0) }
     }
@@ -403,7 +412,8 @@ final class AppStore {
         isRefreshing = true
         defer { isRefreshing = false }
         defer { icon.update(mode: problem != nil ? .problem : runningJobs > 0 ? .working : .idle, synced: problem == nil) }
-        let before = (moves: Set(humanMovesForMe.map(\.id)), jobs: jobs, merged: Set(merged.map(\.id)), first: lastRefresh == nil)
+        let before = Before(moves: Set(humanMovesForMe.map(\.id)), jobs: jobs, merged: Set(merged.map(\.id)),
+                            first: lastRefresh == nil)
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
         let snapshot = await engine.tick { read in await self.apply(read) }
         apply(snapshot)
@@ -431,31 +441,8 @@ final class AppStore {
         let unread = { (repo: String) in snapshot.unread.contains(repo.lowercased()) }
         openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
         merged = snapshot.merged + merged.filter { unread($0.repo) }
+        issueAsks = snapshot.issueAsks
         lastRefresh = snapshot.at
-    }
-}
-
-extension AppStore {
-    /// What changed since the last tick and concerns me: a move now waiting for me, a job that
-    /// failed, my PR merged. Nothing on the first tick, which would replay the whole state.
-    fileprivate func notify(since before: (moves: Set<String>, jobs: [Job], merged: Set<String>, first: Bool)) {
-        guard !before.first, let me else { return }
-        for pr in humanMovesForMe where !before.moves.contains(pr.id) {
-            Notifier.post(title: "\(pr.move?.name ?? "Move") · #\(pr.number)", body: pr.title, id: "move-\(pr.id)")
-        }
-        let wasRunning = Set(before.jobs.filter { $0.status == .running }.map(\.id))
-        for job in jobs where wasRunning.contains(job.id) && job.status != .running {
-            let flags = (job.flags ?? []).compactMap(\.label)
-            if let verdict = job.verdict, [.escalate, .propose].contains(verdict.action) {
-                Notifier.post(title: "Supervisor \(verdict.action.rawValue) · \(job.key.item)", body: verdict.note, id: "job-\(job.id)")
-            } else if job.status == .failed || !flags.isEmpty {
-                Notifier.post(title: "Job \(job.status == .failed ? "failed" : "flagged") · \(job.key.item) \(job.key.move)",
-                              body: (flags + [job.detail].compactMap { $0 }).joined(separator: " · "), id: "job-\(job.id)")
-            }
-        }
-        for pr in merged where !before.merged.contains(pr.id) && pr.author.caseInsensitiveCompare(me) == .orderedSame {
-            Notifier.post(title: "Merged · #\(pr.number)", body: pr.title, id: "merged-\(pr.id)")
-        }
     }
 }
 

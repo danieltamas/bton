@@ -36,6 +36,7 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .animation(Motion.spring, value: tab)
                 .animation(Motion.spring, value: store.watchingJob)
+                .animation(Motion.spring, value: store.readingDraft)
             footer
         }
         .frame(width: 404, height: Self.height)
@@ -118,11 +119,13 @@ struct RootView: View {
     private var bento: some View {
         HStack(spacing: 8) {
             let waiting = store.humanMovesForMe
-            let hasFlow = store.flows.values.contains { $0.flow != nil }
-            Bezel(glow: waiting.isEmpty ? nil : Theme.mint) {
+            let asked = !store.issueAsks.isEmpty
+            // An issue that asks me needs no flow to count.
+            let hasFlow = asked || store.flows.values.contains { $0.flow != nil }
+            Bezel(glow: store.waitingOnMe == 0 ? nil : Theme.mint) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Eyebrow(text: "Waiting on you", color: waiting.isEmpty ? Theme.textTertiary : Theme.mint)
-                    Text(hasFlow ? "\(waiting.count)" : "–").font(.statValue).foregroundStyle(Theme.textPrimary)
+                    Eyebrow(text: "Waiting on you", color: store.waitingOnMe == 0 ? Theme.textTertiary : Theme.mint)
+                    Text(hasFlow ? "\(store.waitingOnMe)" : "–").font(.statValue).foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText())
                     HStack(spacing: 4) {
                         if store.lastRefresh == nil {
@@ -130,13 +133,14 @@ struct RootView: View {
                         } else if !hasFlow {
                             Text("No team flow yet: add .bton/flow.json to the branch PRs merge into (Settings → Repos).")
                                 .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
-                        } else if waiting.isEmpty {
+                        } else if waiting.isEmpty && !asked {
                             Text("No PR needs you to review, fix or merge it").font(.meta).foregroundStyle(Theme.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
                             ForEach(Array(Set(waiting.compactMap(\.move?.name))).sorted(), id: \.self) { name in
                                 Chip(text: name, symbol: Theme.symbol(forMove: name), color: Theme.color(forMove: name))
                             }
+                            if asked { Chip(text: "asked", symbol: "questionmark.bubble", color: Theme.mint) }
                         }
                     }
                 }
@@ -145,7 +149,7 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity)
             .onTapGesture { withAnimation(Motion.spring) { tab = .pullRequests } }
-            .help("PRs whose next step is yours and no agent of yours can take it")
+            .help("PRs whose next step is yours and no agent of yours can take it, and issues that ask you something")
 
             VStack(spacing: 8) {
                 smallTile(eyebrow: "Agents", value: "\(store.runningJobs)", suffix: "of \(store.maxAgents)",
@@ -186,6 +190,7 @@ struct RootView: View {
                     withAnimation(Motion.spring) {
                         tab = item
                         store.watchingJob = nil
+                        store.readingDraft = nil
                     }
                 } label: {
                     HStack(spacing: 5) {
@@ -227,7 +232,7 @@ struct RootView: View {
         let search = SearchQuery(query)
         if !search.isEmpty, tab != .schedule { return listed(search).count(for: tab) }
         return switch tab {
-        case .pullRequests: store.openPullRequests.count
+        case .pullRequests: store.openPullRequests.count + store.issueAsks.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
         // The list is GitHub's latest 30 whatever their age, so its length says nothing.
@@ -246,6 +251,7 @@ struct RootView: View {
             pullRequests: store.openPullRequests.filter {
                 keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author])
             },
+            asks: store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) },
             jobs: store.jobs.filter { job in
                 let item = job.key.item
                 let numbers = item.hasPrefix("pr-") ? Int(item.dropFirst(3)).map { [$0] } ?? [] : store.work.numbers(of: job)
@@ -260,7 +266,10 @@ struct RootView: View {
 
     @ViewBuilder private var content: some View {
         let showRepo = store.repos.count > 1
-        if let id = store.watchingJob, let job = store.jobs.first(where: { $0.id == id }) {
+        if let ask = store.readingDraft {
+            DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let id = store.watchingJob, let job = store.jobs.first(where: { $0.id == id }) {
             SessionView(job: job, title: jobTitle(job, schedules: store.schedules)) {
                 withAnimation(Motion.spring) { store.watchingJob = nil }
             }
@@ -283,7 +292,7 @@ struct RootView: View {
                 noMatch(search, lists: lists)
             } else {
                 switch tab {
-                case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
+                case .pullRequests: PullRequestList(items: lists.pullRequests, asks: lists.asks, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
@@ -305,6 +314,7 @@ struct RootView: View {
 
     struct Listed {
         let pullRequests: [PullRequest]
+        let asks: [IssueAsk]
         let jobs: [Job]
         let merged: [MergedPullRequest]
         /// The repo's jobs whatever the search: the PR list's strip shows every running agent.
@@ -312,7 +322,7 @@ struct RootView: View {
 
         func count(for tab: Tab) -> Int {
             switch tab {
-            case .pullRequests: pullRequests.count
+            case .pullRequests: pullRequests.count + asks.count
             case .jobs: jobs.count
             case .schedule: 0
             case .merged: merged.count
@@ -322,7 +332,8 @@ struct RootView: View {
 
     /// Every repo that has a PR, a job or a merge listed, in a stable order.
     private var listedRepos: [String] {
-        Array(Set(store.openPullRequests.map(\.repo) + store.jobs.map(\.key.repo) + store.merged.map(\.repo))).sorted()
+        Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.jobs.map(\.key.repo)
+            + store.merged.map(\.repo))).sorted()
     }
 
     private func repoFilter(selected: String?) -> some View {
