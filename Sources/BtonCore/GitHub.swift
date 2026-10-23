@@ -23,10 +23,16 @@ public struct GitHubClient: Sendable {
     private let runner = ProcessRunner()
 
     public init() throws {
-        guard let path = Self.ghCandidates.first(where: FileManager.default.isExecutableFile) else {
+        guard let path = Self.locateGh(resolve: Executables.resolve, candidates: Self.ghCandidates) else {
             throw Failure.ghNotFound
         }
         ghPath = path
+    }
+
+    /// The `gh` the agents' PATH finds (a custom Homebrew prefix linked into ~/.local/bin counts),
+    /// else the first of the usual places that has one.
+    static func locateGh(resolve: (String) -> String?, candidates: [String]) -> String? {
+        resolve("gh") ?? candidates.first(where: FileManager.default.isExecutableFile)
     }
 
     /// A given `gh`, such as a test's stand-in.

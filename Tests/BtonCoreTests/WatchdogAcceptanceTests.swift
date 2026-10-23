@@ -16,7 +16,7 @@ enum WatchdogFixture {
 
 struct WatchdogAcceptanceTests {
     @Test func jobFlagsHaveStableCodableNames() throws {
-        let names = ["timedOut", "leaseLost", "noVerdict", "postFailed", "agentFailed", "failed", "repeated", "costly"]
+        let names = ["timedOut", "leaseLost", "noVerdict", "postFailed", "agentFailed", "failed", "repeated", "costly", "loggedOut"]
         #expect(JobFlag.allCases.map(\.rawValue) == names)
         let data = try JSONEncoder().encode(JobFlag.allCases)
         #expect(try JSONDecoder().decode([JobFlag].self, from: data) == JobFlag.allCases)

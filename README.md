@@ -88,7 +88,11 @@ timer, in a clean worktree. A schedule's row names the PR it is on and the PRs i
 schedule's agent can claim a PR with `bton lease claim`, so no move starts there while it works.
 
 **Find any PR.** Search by number, title or login across open PRs, jobs and Merged. A move of
-yours that failed gets a Retry on its row.
+yours that failed gets a Retry on its row, and so does a failed issue draft.
+
+**A failure says why.** A job whose agent exits names the last line it printed. When an agent's
+login expired, its jobs wait instead of failing one after another: a notice says how to log in
+again, and its jobs start once you press I've logged in.
 
 <table>
   <tr>
@@ -105,7 +109,10 @@ yours that failed gets a Retry on its row.
 
 1. **Install** with the line above. You need macOS 14+, [`gh`](https://cli.github.com) logged in,
    and [Claude Code](https://docs.anthropic.com/en/docs/claude-code). [Codex](https://github.com/openai/codex)
-   is optional.
+   is optional. Bton looks for programs on your PATH and in `~/.local/bin`, `/opt/homebrew/bin` and
+   `/usr/local/bin`; the installer links a `gh` from elsewhere (a custom Homebrew prefix) into
+   `~/.local/bin`. An agent installed with nvm takes its full path in Settings, Agents, so its
+   `node` is found beside it.
 2. **Add a repo:** menu bar icon, gear, Repos, drop the project folder.
 3. **Commit a flow:** copy [`examples/team.flow.json`](examples/team.flow.json) to
    `.bton/flow.json` on the branch PRs merge into, with your team's logins.

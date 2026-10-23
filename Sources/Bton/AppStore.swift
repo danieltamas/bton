@@ -12,6 +12,8 @@ final class AppStore {
     private(set) var jobs: [Job] = []
     private(set) var lastRefresh: Date?
     private(set) var problem: String?
+    /// Agents whose CLI login expired: their jobs wait until I log in again.
+    private(set) var loggedOut: [String] = []
     private(set) var isRefreshing = false
     /// A refresh asked for while one runs: it runs right after, never dropped.
     private var refreshAgain = false
@@ -442,6 +444,7 @@ final class AppStore {
         jobs = snapshot.jobs.reversed()
         next = snapshot.next
         problem = snapshot.problem
+        loggedOut = snapshot.loggedOut
         // A failed read keeps the last good lists rather than blanking them: every list when the
         // tick itself failed, an unread repo's own entries otherwise.
         guard snapshot.problem == nil || !snapshot.unread.isEmpty else { return }

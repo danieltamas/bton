@@ -131,7 +131,7 @@ public enum Helpers {
             let group = OSAllocatedUnfairLock<Int32?>(initialState: nil)
             defer { group.withLock { $0 }.map { try? FileManager.default.removeItem(at: jobs.helperGroupURL(job, group: $0)) } }
             let output = try await ProcessRunner().run(executable, Array(argv.dropFirst()), in: cwd,
-                                                       environment: ["PATH": Executables.searchPath, "BTON_HELPER": "1"],
+                                                       environment: ["PATH": Executables.searchPath(for: executable), "BTON_HELPER": "1"],
                                                        timeout: timeout) { pid in
                 group.withLock { $0 = pid }
                 FileManager.default.createFile(atPath: jobs.helperGroupURL(job, group: pid).path, contents: nil)

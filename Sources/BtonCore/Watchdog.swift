@@ -3,7 +3,7 @@ import Foundation
 /// What went wrong with an ended job, read from its status, detail and cost: the Jobs row and the
 /// notification show it, and a flagged job is what the supervisor looks at.
 public enum JobFlag: String, Codable, Sendable, CaseIterable {
-    case timedOut, leaseLost, noVerdict, postFailed, agentFailed, failed, repeated, costly
+    case timedOut, leaseLost, noVerdict, postFailed, agentFailed, failed, repeated, costly, loggedOut
 }
 
 /// The deterministic half of supervision: no model, the same flags for the same jobs every time.
@@ -33,6 +33,7 @@ public enum Watchdog {
         if detail.hasPrefix("final message names no") { return .noVerdict }
         if detail.hasPrefix("posting the review failed") || detail.hasPrefix("decision posted; remove") { return .postFailed }
         if detail.hasPrefix("agent exited") { return .agentFailed }
+        if detail.hasPrefix("agent logged out") { return .loggedOut }
         return .failed
     }
 

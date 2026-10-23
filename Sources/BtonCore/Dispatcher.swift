@@ -92,13 +92,14 @@ actor Dispatcher {
         }
         let job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
-        guard let lock = LocalLock(jobs.lockURL(id)) else {
-            try? await leases.release(lease)
+        // The agent may have logged out while the lease was claimed: its job waits with the others.
+        guard !isLoggedOut(candidate.agent), let lock = LocalLock(jobs.lockURL(id)) else {
+            try? await leases.release(lease, ran: false)
             return .busy
         }
         guard (try? jobs.save(job)) != nil else {
             lock.release()
-            try? await leases.release(lease)
+            try? await leases.release(lease, ran: false)
             return .busy
         }
         locks[id] = lock
@@ -251,7 +252,8 @@ actor Dispatcher {
         if let pid = job.pid, kill(-pid, 0) == 0 { await terminate(job.id, pid: pid) }
         if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
         guard exitStatus(job.id) == 0 else {
-            return await finish(job, status: .failed, detail: "agent exited \(exitStatus(job.id).map(String.init) ?? "abnormally")")
+            return await finish(job, status: .failed, detail: AgentFailure.detail(
+                status: exitStatus(job.id), output: AgentFailure.tail(of: jobs.outputURL(job.id)), log: AgentFailure.tail(of: jobs.logURL(job.id))))
         }
         if job.key.move == "resolve" {
             let outcome = await resolveOutcome(of: job)
@@ -433,13 +435,14 @@ actor Dispatcher {
         process.arguments = ["-c", "\"$@\"; echo $? > \"$BTON_EXIT_FILE\"", "bton-agent", executable] + argv.dropFirst()
         process.currentDirectoryURL = worktree
         let bton = [
-            "PATH": Executables.searchPath, "BTON_EXIT_FILE": jobs.exitURL(id).path, "BTON_JOB": id.uuidString,
+            "PATH": Executables.searchPath(for: executable), "BTON_EXIT_FILE": jobs.exitURL(id).path, "BTON_JOB": id.uuidString,
         ].merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }.merging(environment) { $1 }
         process.environment = ProcessInfo.processInfo.environment
             .merging(DispatchPlanner.processEnvironment(repo: repoEnvironment, bton: bton)) { $1 }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = try FileHandle.appending(to: jobs.outputURL(id))
         process.standardError = try FileHandle.appending(to: jobs.logURL(id))
+        jobs.note(id, AgentFailure.startNote)
         try process.run()
         processes[id] = process
         return process.processIdentifier
@@ -484,7 +487,7 @@ actor Dispatcher {
         handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8))
         do {
             let result = try await runner.run(executable, Array(argv.dropFirst()), in: directory,
-                                              environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath]),
+                                              environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath(for: executable)]),
                                               timeout: timeout)
             handle.write(result.stdout + Data(result.stderr.utf8))
             return result.status

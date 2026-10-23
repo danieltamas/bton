@@ -8,6 +8,10 @@ extension Dispatcher {
         FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(id.uuidString.lowercased())", isDirectory: true)
     }
 
+    func isLoggedOut(_ agent: String?) -> Bool {
+        agent.map { AgentLogins.held(jobs: jobs.all(), loggedInAt: AgentLogins.load(home: jobs.home)).contains($0) } ?? false
+    }
+
     /// One comment per key, carrying Bton's marker so it never changes a move.
     func postFailure(_ candidate: DispatchCandidate, text: String) async {
         guard let pr = candidate.pr else { return }

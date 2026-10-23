@@ -19,6 +19,8 @@ public actor Engine {
         public var defaultBranches: [String: String] = [:]
         /// Questions put to me on open issues, newest first.
         public var issueAsks: [IssueAsk] = []
+        /// Agents whose CLI login expired: none of their jobs starts until I log in again.
+        public var loggedOut: [String] = []
 
         public init() {}
     }
@@ -160,6 +162,7 @@ public actor Engine {
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
             snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
+            snapshot.loggedOut = heldAgents().sorted()
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
             await refreshPricesIfDue()
@@ -224,13 +227,21 @@ public actor Engine {
                 var started: Set<String> = [], startedKeys: Set<JobKey> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
                 // A pick whose lease is held elsewhere frees its slot for the next candidate.
                 while true {
-                    let open = pending.map(\.candidate).filter { !refused.contains($0.key) }
+                    // Read again each round: an agent may have logged out while the last round started jobs.
+                    let held = heldAgents()
+                    let open = pending.map(\.candidate).filter { candidate in
+                        !refused.contains(candidate.key) && !(candidate.agent.map(held.contains) ?? false)
+                    }
                     let selected = DispatchPlanner.select(open, jobs: jobs.all(), maxAgents: config.maxAgents,
                                                           agents: config.agents, first: next)
                     guard !selected.isEmpty else { break }
                     let dispatcher = try await dispatcher(me: me, repos: config.repos)
                     for chosen in selected {
                         guard let entry = pending.first(where: { $0.candidate.key == chosen.key }) else { continue }
+                        if let agent = chosen.agent, heldAgents().contains(agent) {
+                            refused.insert(chosen.key)
+                            continue
+                        }
                         let candidate = Supervision.steered(chosen, jobs: jobs.all())
                         let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
                         switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
@@ -291,12 +302,21 @@ public actor Engine {
         await dispatcher?.stop(id)
     }
 
-    /// Runs a failed or stopped PR move again on its head, first in line.
+    /// Runs a failed or stopped PR move again on its head, or an issue draft on its comment, first in line.
     public func retry(_ id: UUID) throws -> Bool {
         guard let job = jobs.all().first(where: { $0.id == id }), try jobs.requestRetry(id) else { return false }
         runNext(repo: job.key.repo, item: job.key.item)
         ask(job.key)
         return true
+    }
+
+    func heldAgents() -> Set<String> {
+        AgentLogins.held(jobs: jobs.all(), loggedInAt: AgentLogins.load(home: home))
+    }
+
+    /// I logged the agent in again: its jobs start from the next sync.
+    public func markLoggedIn(_ agent: String) throws {
+        try AgentLogins.markLoggedIn(agent, at: .now, home: home)
     }
 
     /// Starts a PR's move now (the panel's Merge and Fix conflicts): first in line, and again

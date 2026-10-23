@@ -92,7 +92,7 @@ private struct IssueAskRow: View {
                         Text("Draft ready: read it, edit it if you like, and post it from View draft.")
                             .font(.meta).foregroundStyle(Theme.mint).fixedSize(horizontal: false, vertical: true)
                     } else if let job, job.status == .failed || job.status == .cancelled {
-                        Text("Draft \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? ""). A new question starts a new one.")
+                        Text("Draft \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? "").")
                             .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -118,9 +118,16 @@ private struct IssueAskRow: View {
             .help("Watch the agent draft the reply")
         } else if let job, job.status == .succeeded {
             PillButton(title: "View draft", symbol: "text.bubble") { withAnimation(Motion.spring) { store.readingDraft = ask } }
-        } else if job == nil, store.isNext(repo: ask.repo, item: "issue-\(ask.number)") {
+        } else if store.isNext(repo: ask.repo, item: "issue-\(ask.number)") {
             StartingLabel(repo: ask.repo)
-        } else if job == nil {
+        } else if let job {
+            if store.canRetry(job) {
+                PillButton(title: "Retry draft", symbol: "arrow.clockwise", disabled: store.draftBlocked != nil) {
+                    Task { await store.retry(job) }
+                }
+                .help(store.draftBlocked ?? "Draft the reply again, on the same question")
+            }
+        } else {
             let blocked = ask.draftable ? store.draftBlocked
                 : "Opened by someone without write access to the repo: Bton runs no agent on it"
             PillButton(title: "Draft reply", symbol: "sparkles", disabled: blocked != nil) {

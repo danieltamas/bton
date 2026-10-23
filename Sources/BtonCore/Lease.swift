@@ -183,10 +183,11 @@ public struct LeaseStore: Sendable {
         }
     }
 
-    public func release(_ lease: Lease) async throws {
+    /// `ran: false` gives back a lease whose job never started: its key stays claimable without a rerun.
+    public func release(_ lease: Lease, ran: Bool = true) async throws {
         try await failingClosed {
             let released = LeaseRecord(holder: lease.record.holder, host: lease.record.host, job: lease.record.job,
-                                       expires: lease.record.expires, released: true, key: lease.record.key,
+                                       expires: lease.record.expires, released: true, key: ran ? lease.record.key : nil,
                                        done: lease.record.done)
             guard try await write(released, item: lease.item, repo: lease.repo, expecting: lease.sha) != nil
             else { throw LeaseError.lost }

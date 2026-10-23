@@ -148,7 +148,9 @@ public enum Supervision {
         let looked = Set(jobs.compactMap(\.supervises))
         let supervised = Set(jobs.filter { $0.key.move == move }.map(\.key))
         let flagged = jobs.filter { job in
+            // An expired login is the owner's to fix: a supervisor's retry would fail the same way.
             guard job.key.repo.caseInsensitiveCompare(repo) == .orderedSame, job.flags?.isEmpty == false,
+                  job.flags?.contains(.loggedOut) == false,
                   job.status != .running, job.key.move != move, job.steered != true,
                   let ended = job.endedAt, ended >= now.addingTimeInterval(-window),
                   !looked.contains(job.id), !supervised.contains(key(for: job)) else { return false }

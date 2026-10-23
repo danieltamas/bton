@@ -39,10 +39,29 @@ download() {
   echo "$work/out/Bton.app"
 }
 
+# Bton opened from Finder gets no shell PATH: it finds gh in ~/.local/bin and Homebrew's usual
+# places, so a gh anywhere else (a custom Homebrew prefix) gets a link in ~/.local/bin.
+link_gh() {
+  local gh dir
+  gh=$(command -v gh)
+  dir=$(dirname "$gh")
+  case $dir in
+    /opt/homebrew/bin | /usr/local/bin | /usr/bin | /bin | "$HOME/.local/bin") return ;;
+  esac
+  local link=$HOME/.local/bin/gh
+  # A gh already there stays; a link to one that moved is replaced.
+  [[ -x $link ]] && return
+  if [[ -L $link ]]; then rm "$link"; fi
+  [[ -e $link ]] && fail "$link is not a gh Bton can run: remove it and run this again"
+  mkdir -p "$HOME/.local/bin" && ln -s "$gh" "$link" || fail "could not link $gh into ~/.local/bin"
+  echo "Linked $gh into ~/.local/bin, where Bton finds it" >&2
+}
+
 main() {
   [[ $(uname -s) == Darwin ]] || fail "Bton runs on macOS only"
   command -v gh >/dev/null || fail "Bton drives GitHub through gh: brew install gh, then gh auth login"
   gh auth status >/dev/null 2>&1 || fail "gh is not logged in: gh auth login"
+  link_gh
 
   local app
   work=$(mktemp -d -t bton-install)

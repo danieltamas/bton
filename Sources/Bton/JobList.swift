@@ -138,6 +138,7 @@ extension JobFlag {
         case .noVerdict: "no verdict"
         case .postFailed: "not posted"
         case .agentFailed: "agent crashed"
+        case .loggedOut: "logged out"
         case .failed: nil
         case .repeated: "failed again"
         case .costly: "costly"

@@ -30,6 +30,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             header
             if let problem = store.problem { notice(problem) }
+            ForEach(store.loggedOut, id: \.self) { LoginNotice(agent: $0) }
             bento.padding(.horizontal, 14).padding(.top, 4)
             tabIsland.padding(.top, 14).padding(.bottom, 10)
             content

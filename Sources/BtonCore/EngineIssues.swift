@@ -29,13 +29,19 @@ extension Engine {
     func draftCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate]) -> [DispatchCandidate] {
         guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
-        let ran = Set(jobs.all().map(\.key))
+        let all = jobs.all()
+        let ran = Set(all.map(\.key))
+        // A draft I pressed Retry on asks again, as long as its comment is still the ask.
+        for ask in IssueAsks.asks(issues, me: me)
+        where DispatchPlanner.isRetry(IssueDrafts.key(for: ask), jobs: all) && !draftRequests.contains(where: { $0.id == ask.id }) {
+            draftRequests.append(ask)
+        }
         var made: [DispatchCandidate] = []
         draftRequests.removeAll { ask in
             guard ask.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
             guard let issue = issues.first(where: { $0.number == ask.number }),
                   let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch, me: me),
-                  !ran.contains(candidate.key) else { return true }
+                  !ran.contains(candidate.key) || DispatchPlanner.isRetry(candidate.key, jobs: all) else { return true }
             made.append(candidate)
             return false
         }

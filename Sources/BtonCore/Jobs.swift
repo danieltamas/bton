@@ -83,10 +83,11 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
         self.steered = steered
     }
 
-    /// A failed or stopped PR job that is its key's latest. A schedule's key names its own time,
+    /// A failed or stopped PR job or issue draft that is its key's latest. A schedule's key names its own time,
     /// so it never comes round again to retry.
     public func canRetry(among jobs: [Job]) -> Bool {
-        [.failed, .cancelled].contains(status) && retry != true && key.item.hasPrefix("pr-")
+        [.failed, .cancelled].contains(status) && retry != true
+            && (key.item.hasPrefix("pr-") || key.item.hasPrefix("issue-") && key.move == IssueDrafts.move)
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
     }
 }
