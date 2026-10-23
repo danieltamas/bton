@@ -1,6 +1,38 @@
 import BtonCore
 import Foundation
 
+/// Whether a newer release is out, for About and the menu's update indicator. Owned by the app, so
+/// opening the window or About again within 15 minutes reuses the answer, and closing them does not
+/// cancel a check in flight.
+@MainActor @Observable
+final class ReleaseWatch {
+    static let shared = ReleaseWatch()
+
+    static let build: BtonRelease.Build = {
+        let info = Bundle.main.infoDictionary
+        return BtonRelease.build(version: info?["CFBundleShortVersionString"] as? String ?? "0.0.0",
+                                 source: info?["BtonSource"] as? String)
+    }()
+
+    private(set) var check = ReleaseCheck()
+    private(set) var checking = false
+
+    /// Asks GitHub when the last answer is 15 minutes old; `force` is About's Check again.
+    func refresh(force: Bool = false) {
+        guard !checking, force || check.isDue(now: .now) else { return }
+        checking = true
+        Task {
+            do {
+                let latest = try await GitHubClient().latestReleaseTag()
+                check.record(latestTag: latest, build: Self.build, at: .now)
+            } catch {
+                check.record(failure: error.localizedDescription, at: .now)
+            }
+            checking = false
+        }
+    }
+}
+
 /// About's Update, owned by the app: leaving the pane neither forgets an install that runs nor
 /// offers a second one.
 @MainActor @Observable

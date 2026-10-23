@@ -19,8 +19,8 @@
 curl -fsSL https://raw.githubusercontent.com/danieltamas/bton/main/install.sh | bash
 ```
 
-To update, press Update in Settings, About when a newer release is out (from v0.5.1), or run
-the same line again.
+To update, press Update in Settings, About when a newer release is out (from v0.5.1; from v0.5.4
+an arrow in the menu's header says one is), or run the same line again.
 
 <p align="center">
   <img src="docs/media/hero.png" alt="Bton" width="860">

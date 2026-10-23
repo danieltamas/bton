@@ -102,6 +102,40 @@ extension BtonRelease {
     }
 }
 
+/// The latest-release answer About and the menu's update indicator share: GitHub is asked at most
+/// once per `interval`, and a failed check keeps the last answer, so a network blip does not hide
+/// an update that is out.
+public struct ReleaseCheck: Equatable, Sendable {
+    public static let interval: TimeInterval = 15 * 60
+
+    public private(set) var standing: BtonRelease.Standing?
+    public private(set) var failure: String?
+    public private(set) var lastAttempt: Date?
+
+    public init() {}
+
+    /// A clock set back counts as due, so a wrong lastAttempt never stops the checks.
+    public func isDue(now: Date) -> Bool {
+        guard let lastAttempt else { return true }
+        return now < lastAttempt || now.timeIntervalSince(lastAttempt) >= Self.interval
+    }
+
+    public mutating func record(latestTag: String, build: BtonRelease.Build, at date: Date) {
+        standing = BtonRelease.standing(of: build, latestTag: latestTag)
+        failure = nil
+        lastAttempt = date
+    }
+
+    public mutating func record(failure: String, at date: Date) {
+        self.failure = failure
+        lastAttempt = date
+    }
+
+    public var newerRelease: String? {
+        if case let .behind(latest) = standing { latest } else { nil }
+    }
+}
+
 extension GitHubClient {
     public func latestReleaseTag() async throws -> String {
         try Self.decodeLatestRelease(try await gh(["api", "repos/\(BtonRelease.repo)/releases/latest"]))

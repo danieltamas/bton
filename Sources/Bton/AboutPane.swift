@@ -4,18 +4,8 @@ import SwiftUI
 
 /// Who made Bton and why, its repo, this build, and whether a newer release is out.
 struct AboutPane: View {
-    @State private var standing: Standing = .checking
     private let updater = Updater.shared
-
-    private enum Standing: Equatable {
-        case checking, known(BtonRelease.Standing), failed(String)
-    }
-
-    private static let build: BtonRelease.Build = {
-        let info = Bundle.main.infoDictionary
-        return BtonRelease.build(version: info?["CFBundleShortVersionString"] as? String ?? "0.0.0",
-                                 source: info?["BtonSource"] as? String)
-    }()
+    private let releases = ReleaseWatch.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -33,14 +23,14 @@ struct AboutPane: View {
                         }
                     }
                     Spacer()
-                    if case let .known(known) = standing, BtonRelease.canUpdate(bundlePath: Bundle.main.bundlePath, standing: known),
+                    if let known = releases.check.standing, BtonRelease.canUpdate(bundlePath: Bundle.main.bundlePath, standing: known),
                        case let .behind(latest) = known {
                         PillButton(title: updater.installing == nil ? "Update to \(latest)" : "Updating...", symbol: "arrow.down.circle",
                                    disabled: updater.installing != nil) { updater.install(latest) }
                             .help("Installs \(latest) the way install.sh does, then Bton restarts. Running agents keep going.")
                     }
                     PillButton(title: "Check again", symbol: "arrow.clockwise", prominent: false,
-                               disabled: standing == .checking || updater.installing != nil) { Task { await check() } }
+                               disabled: releases.checking || updater.installing != nil) { releases.refresh(force: true) }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,11 +57,11 @@ struct AboutPane: View {
                 }
             }
         }
-        .task { await check() }
+        .onAppear { releases.refresh() }
     }
 
     private static var versionLine: String {
-        let build = Self.build
+        let build = ReleaseWatch.build
         var line = "v\(build.version)"
         if build.commitsAfter > 0 { line += " + \(build.commitsAfter) commit\(build.commitsAfter == 1 ? "" : "s")" }
         if let commit = build.commit { line += " (\(commit))" }
@@ -81,23 +71,29 @@ struct AboutPane: View {
     }
 
     @ViewBuilder private var standingLine: some View {
-        switch standing {
-        case .checking:
+        if releases.checking {
             label("Checking GitHub for the latest release...", color: Theme.textTertiary, symbol: "arrow.triangle.2.circlepath")
-        case .known(.latest):
+        } else if let failure = releases.check.failure {
+            label("Could not check: \(failure)", color: Theme.danger, symbol: "exclamationmark.triangle")
+        } else if let standing = releases.check.standing {
+            known(standing)
+        }
+    }
+
+    @ViewBuilder private func known(_ standing: BtonRelease.Standing) -> some View {
+        switch standing {
+        case .latest:
             label("Latest release", color: Theme.success, symbol: "checkmark.seal")
-        case let .known(.behind(latest)):
+        case let .behind(latest):
             HStack(spacing: 8) {
                 label("\(latest) is out", color: Theme.unassigned, symbol: "arrow.down.circle")
                 Button("See the release") { NSWorkspace.shared.open(BtonRelease.url.appendingPathComponent("releases/tag/\(latest)")) }
                     .buttonStyle(.link).font(.meta)
             }
-        case .known(.ahead):
+        case .ahead:
             label("Newer than the latest release", color: Theme.mint, symbol: "arrow.up.circle")
-        case .known(.unknown):
+        case .unknown:
             label("This version cannot be compared with the latest release", color: Theme.textTertiary, symbol: "questionmark.circle")
-        case let .failed(reason):
-            label("Could not check: \(reason)", color: Theme.danger, symbol: "exclamationmark.triangle")
         }
     }
 
@@ -107,15 +103,5 @@ struct AboutPane: View {
 
     private func link(_ title: String, _ url: URL) -> some View {
         PillButton(title: title, symbol: "arrow.up.right", prominent: false) { NSWorkspace.shared.open(url) }
-    }
-
-    private func check() async {
-        standing = .checking
-        do {
-            let latest = try await GitHubClient().latestReleaseTag()
-            standing = .known(BtonRelease.standing(of: Self.build, latestTag: latest))
-        } catch {
-            standing = .failed(error.localizedDescription)
-        }
     }
 }

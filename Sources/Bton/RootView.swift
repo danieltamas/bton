@@ -11,6 +11,7 @@ enum Tab: String, CaseIterable, Identifiable {
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openSettings) private var openSettingsWindow
+    @Environment(\.stillImage) private var stillImage
     @State private var tab: Tab
     /// The repo the PR, job and merged lists are narrowed to; nil shows every repo.
     @State private var repo: String?
@@ -44,6 +45,9 @@ struct RootView: View {
         .background(Backdrop())
         .background(WindowVisibility(visible: $visible))
         .environment(\.panelVisible, visible)
+        // Each opening asks at most once per 15 minutes; ReleaseWatch keeps the answer between them.
+        // The README's screenshots never ask.
+        .task(id: visible) { if visible && !stillImage { ReleaseWatch.shared.refresh() } }
         .preferredColorScheme(.dark)
     }
 
@@ -64,6 +68,11 @@ struct RootView: View {
                 syncLine
             }
             Spacer()
+            if let newer = ReleaseWatch.shared.check.newerRelease {
+                IconButton(symbol: "arrow.down.circle", help: "\(newer) is out: update it in Settings > About",
+                           tint: Theme.unassigned) { openSettings(.about) }
+                    .transition(.opacity)
+            }
             // No spinner: the sync line's dot pulses while a sync runs, and a sync can last as long as a check.
             IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
             IconButton(symbol: "gearshape", help: "Settings") { openSettings(.general) }
