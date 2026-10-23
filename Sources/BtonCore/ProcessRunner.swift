@@ -11,10 +11,13 @@ public struct ProcessRunner: Sendable {
     public init() {}
 
     /// A non-zero exit is returned, not thrown: what it means is the caller's call. `environment`
-    /// is added to this process's own. `started` gets the child's process group as it starts.
+    /// is added to this process's own. `started` gets the child's process group as it starts;
+    /// `output` gets each chunk of stdout and stderr as it is read, so a run that is stopped
+    /// still shows how far it got.
     public func run(_ executable: String, _ arguments: [String], in directory: URL? = nil,
                     environment: [String: String] = [:], timeout: Duration,
-                    started: (@Sendable (Int32) -> Void)? = nil) async throws -> ProcessOutput {
+                    started: (@Sendable (Int32) -> Void)? = nil,
+                    output: (@Sendable (Data) -> Void)? = nil) async throws -> ProcessOutput {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -47,8 +50,8 @@ public struct ProcessRunner: Sendable {
         return try await withTaskCancellationHandler {
             // Both pipes drain while the child runs: a child that fills one 64 KB pipe buffer
             // while nobody reads it never exits.
-            async let out = Self.drain(stdout.fileHandleForReading)
-            async let err = Self.drain(stderr.fileHandleForReading)
+            async let out = Self.drain(stdout.fileHandleForReading, output)
+            async let err = Self.drain(stderr.fileHandleForReading, output)
             let (outData, errData) = await (out, err)
             for await _ in exits {}
             watchdog.cancel()
@@ -62,11 +65,18 @@ public struct ProcessRunner: Sendable {
         }
     }
 
-    /// Reads on a dispatch thread, not the cooperative pool, since `readToEnd` blocks until EOF.
-    private static func drain(_ handle: FileHandle) async -> Data {
+    /// Reads on a dispatch thread, not the cooperative pool, since reading blocks until EOF.
+    private static func drain(_ handle: FileHandle, _ output: (@Sendable (Data) -> Void)?) async -> Data {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                continuation.resume(returning: (try? handle.readToEnd()) ?? Data())
+                guard let output else { return continuation.resume(returning: (try? handle.readToEnd()) ?? Data()) }
+                var data = Data()
+                // `availableData` returns what a pipe holds now and is empty only at EOF.
+                while case let chunk = handle.availableData, !chunk.isEmpty {
+                    output(chunk)
+                    data.append(chunk)
+                }
+                continuation.resume(returning: data)
             }
         }
     }

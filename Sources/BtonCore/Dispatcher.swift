@@ -11,7 +11,7 @@ actor Dispatcher {
     let leases: LeaseStore
     let jobs: JobStore
     let log: @Sendable (String) -> Void
-    private let runner = ProcessRunner()
+    let runner = ProcessRunner()
     /// Agents this instance started; Foundation reaps a child only while its Process lives.
     private var processes: [UUID: Process] = [:]
     /// Per job this instance runs, from the claim to `finish`: the lease as last written, the task
@@ -157,8 +157,10 @@ actor Dispatcher {
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
+            // Each check gets the move's own time limit: a team's suite can take longer than any
+            // fixed limit, and the flow's `timeoutMinutes` is where the team says how long a move may take.
             for check in checks ?? [] {
-                let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: .seconds(600))
+                let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: candidate.timeout)
                 guard status == 0 else {
                     let failure = "`\(check.joined(separator: " "))` exited \(status)"
                     await postFailure(candidate, text: failure)
@@ -242,7 +244,8 @@ actor Dispatcher {
                 try? jobs.save(job)
                 lastCost = clock.now
             }
-            if let deadline = job.deadline, Date.now >= deadline {
+            // One that exited during the sleep is judged below, by when it exited.
+            if let deadline = job.deadline, Date.now >= deadline, isAlive(job.id, pid: pid) {
                 await terminate(job.id, pid: pid)
                 return await finish(job, status: .failed, detail: "timed out")
             }
@@ -251,6 +254,11 @@ actor Dispatcher {
         // What the agent left running in the background (a dev server, a watcher) goes with it.
         if let pid = job.pid, kill(-pid, 0) == 0 { await terminate(job.id, pid: pid) }
         if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+        // By the exit file's time, not the poll's: an agent that exited inside its limit while this
+        // slept passes, and one that ran past it while Bton was down does not.
+        if let deadline = job.deadline, let exited = exitTime(job.id), exited > deadline {
+            return await finish(job, status: .failed, detail: "timed out")
+        }
         guard exitStatus(job.id) == 0 else {
             return await finish(job, status: .failed, detail: AgentFailure.detail(
                 status: exitStatus(job.id), output: AgentFailure.tail(of: jobs.outputURL(job.id)), log: AgentFailure.tail(of: jobs.logURL(job.id))))
@@ -471,28 +479,12 @@ actor Dispatcher {
         kill(-pid, signal)
     }
 
+    private func exitTime(_ id: UUID) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: jobs.exitURL(id).path))?[.modificationDate] as? Date
+    }
+
     private func exitStatus(_ id: UUID) -> Int32? {
         (try? String(contentsOf: jobs.exitURL(id), encoding: .utf8))
             .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-    }
-
-    private func runLogged(_ argv: [String], in directory: URL, job id: UUID, environment: [String: String],
-                           timeout: Duration) async throws -> Int32 {
-        guard let first = argv.first, let executable = Executables.resolve(first) else {
-            throw DispatchError.agentNotFound(argv.first ?? "")
-        }
-        // The command is logged as it starts, so a log that stops shows what is still running.
-        let handle = try FileHandle.appending(to: jobs.logURL(id))
-        defer { try? handle.close() }
-        handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8))
-        do {
-            let result = try await runner.run(executable, Array(argv.dropFirst()), in: directory,
-                                              environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath(for: executable)]),
-                                              timeout: timeout)
-            handle.write(result.stdout + Data(result.stderr.utf8))
-            return result.status
-        } catch ProcessRunner.Failure.timedOut {
-            throw DispatchError.timedOut(argv.joined(separator: " "), minutes: Int(timeout.components.seconds / 60))
-        }
     }
 }

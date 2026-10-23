@@ -21,7 +21,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `reviewers` | Optional logins for the reviewer rotation (below). |
 | `moves` | Ordered list of `{ "move", "when": [predicate...], "who" }`. First match wins. |
 | `dispatch` | Per move name, what Bton starts for it (below). A move without an entry is a human's. |
-| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after 10 minutes. |
+| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. |
 | `intake` | Optional: how an agent takes a new issue. Parsed, not dispatched yet. |
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
@@ -130,7 +130,8 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
   says): an agent cannot run codex from its own Bash, since the
   sandbox keeps codex from its service. A helper missing on this Mac is skipped with a note in
   the job's log. Write the prompt to say "ask codex", not "run codex".
-- `timeoutMinutes`: default 60.
+- `timeoutMinutes`: default 60. Each of the flow's `checks` run before the move gets the same
+  allowance on its own; check time does not use up the command's or the agent's.
 - `"checks": false`: the flow's `checks` do not run before this move. A `resolve` agent works
   on a PR that conflicts with its base, which a merge check such as `git merge-tree` refuses.
 
