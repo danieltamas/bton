@@ -6,7 +6,6 @@ import SwiftUI
 struct PullRequestList: View {
     @Environment(AppStore.self) private var store
     let items: [PullRequest]
-    let asks: [IssueAsk]
     let showRepo: Bool
     let me: String?
     let jobs: [Job]
@@ -14,16 +13,15 @@ struct PullRequestList: View {
 
     var body: some View {
         let running = jobs.filter { $0.status == .running }
-        if items.isEmpty && running.isEmpty && asks.isEmpty && store.lastRefresh == nil {
+        if items.isEmpty && running.isEmpty && store.lastRefresh == nil {
             EmptyState(symbol: "arrow.triangle.2.circlepath", title: "Reading GitHub", detail: "Open pull requests show here in a moment.")
-        } else if items.isEmpty && running.isEmpty && asks.isEmpty {
+        } else if items.isEmpty && running.isEmpty {
             EmptyState(symbol: "checkmark.seal", title: "No open pull requests", detail: "New ones show here within a sync.")
         } else {
             RowStack(items: ordered) { pr in
                 PullRequestRow(pr: pr, showRepo: showRepo, me: me,
                                job: running.first { $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" })
             } header: {
-                if !asks.isEmpty { IssueAskSection(asks: asks, showRepo: showRepo) }
                 if !running.isEmpty { ActiveStrip(jobs: running, schedules: schedules).padding(.bottom, 8) }
             }
         }
@@ -78,27 +76,37 @@ private struct PullRequestRow: View {
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 6) {
                     if let move = pr.move {
-                        if !move.hasDispatch, let me, move.isMine(me) { HumanMoveButton(pr: pr, move: move, me: me) } else { MoveChip(move: move, me: me) }
+                        let starting = job == nil && store.isNext(repo: pr.repo, item: "pr-\(pr.number)")
+                        let now = starting || busy ? nil : startable(move)
+                        let failed = now.flatMap { store.failedOnHead(pr, move: $0) }
+                        if !move.hasDispatch, let me, move.isMine(me) {
+                            HumanMoveButton(pr: pr, move: move, me: me)
+                        } else if let now, now == move.name, !RunNowButton.starts(now), let me {
+                            // The agent's move runs here, in Bton: the pill starts it.
+                            StartMoveButton(move: move, me: me, failed: failed != nil) {
+                                Task { await store.runNow(pr, move: now) }
+                            }
+                        } else {
+                            MoveChip(move: move, me: me)
+                        }
                         // A start already asked for still shows while another agent works it.
-                        if job == nil, store.isNext(repo: pr.repo, item: "pr-\(pr.number)") {
+                        if starting {
                             StartingLabel(repo: pr.repo)
-                        } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
-                           let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me) {
-                            let failed = store.failedOnHead(pr, move: now)
-                            if let title = RunNowButton.title(for: now, failed: failed != nil) {
-                                RunNowButton(title: title, symbol: Theme.symbol(forMove: now),
+                        } else if let now {
+                            if RunNowButton.starts(now) {
+                                RunNowButton(title: RunNowButton.title(for: now, failed: failed != nil), symbol: Theme.symbol(forMove: now),
                                              color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
                                     Task { await store.runNow(pr, move: now) }
                                 }
-                                if let failed, let detail = failed.detail {
-                                    Button { withAnimation(Motion.spring) { store.watchingJob = failed.id } } label: {
-                                        Text("Last \(now) on this head stopped: \(detail)")
-                                            .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
-                                            .lineLimit(3).frame(maxWidth: 220, alignment: .trailing)
-                                    }
-                                    .buttonStyle(PressStyle())
-                                    .help("Open the job and the agent's report")
+                            }
+                            if let failed, let detail = failed.detail {
+                                Button { withAnimation(Motion.spring) { store.watchingJob = failed.id } } label: {
+                                    Text("Last \(now) on this head stopped: \(detail)")
+                                        .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
+                                        .lineLimit(3).frame(maxWidth: 220, alignment: .trailing)
                                 }
+                                .buttonStyle(PressStyle())
+                                .help("Open the job and the agent's report")
                             }
                         }
                     }
@@ -123,6 +131,17 @@ private struct PullRequestRow: View {
             Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
         }
     }
+
+    /// The move a press starts now, if the row offers one: see `DispatchPlanner.offersStart`.
+    private func startable(_ move: Move) -> String? {
+        guard let me, let flow = store.flows[pr.repo]?.flow,
+              let now = RunNowButton.move(for: pr, current: move, flow: flow, me: me) else { return nil }
+        let key = JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: now, head: pr.headSha)
+        let startsMoves = store.repos.first { $0.slug.caseInsensitiveCompare(pr.repo) == .orderedSame }?.startsMoves ?? false
+        return DispatchPlanner.offersStart(now, current: move.name, startsMoves: startsMoves,
+                                           ranOnHead: store.jobs.contains { $0.key == key },
+                                           failedOnHead: store.failedOnHead(pr, move: now) != nil) ? now : nil
+    }
 }
 
 /// Starts a move of mine at once, again if it failed on this head.
@@ -141,14 +160,11 @@ private struct RunNowButton: View {
         return FlowEngine.isDispatchable(current, pr: pr, flow: flow, me: me) ? current.name : nil
     }
 
-    /// Only moves a person would otherwise go to GitHub for get a button; the rest run on their own,
-    /// once per head, so one that failed on this head waits for a Retry.
-    static func title(for move: String, failed: Bool) -> String? {
-        switch move {
-        case "merge": failed ? "Retry merge" : "Merge"
-        case "resolve": failed ? "Retry fix conflicts" : "Fix conflicts"
-        default: failed ? "Retry \(move)" : nil
-        }
+    /// Merge and resolve get a button of their own; the PR's flow move starts from its pill.
+    static func starts(_ move: String) -> Bool { move == "merge" || move == "resolve" }
+
+    static func title(for move: String, failed: Bool) -> String {
+        move == "merge" ? (failed ? "Retry merge" : "Merge") : (failed ? "Retry fix conflicts" : "Fix conflicts")
     }
 
     var body: some View {
@@ -273,16 +289,38 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
 struct MoveChip: View {
     let move: Move
     let me: String?
+    /// In place of the move's own glyph: what pressing it does.
+    var symbol: String?
 
     var body: some View {
         let color = Theme.color(forMove: move.name)
         if let owner = move.owner {
             let mine = me.map(move.isMine) ?? false
-            Chip(text: mine ? "\(move.name) · you" : "\(move.name) · \(owner)", symbol: Theme.symbol(forMove: move.name),
+            Chip(text: mine ? "\(move.name) · you" : "\(move.name) · \(owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
                  color: mine ? color : color.opacity(0.85), style: mine ? .filled : .tinted)
         } else {
             Chip(text: "\(move.name) · unassigned", symbol: Theme.symbol(forMove: move.name), color: Theme.unassigned, style: .dashed)
         }
+    }
+}
+
+/// A move of mine that this Mac's agent does: the pill starts it now, again if it failed on this head.
+private struct StartMoveButton: View {
+    let move: Move
+    let me: String
+    let failed: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            MoveChip(move: move, me: me, symbol: failed ? "arrow.clockwise" : "play.fill")
+                .brightness(hovering ? 0.08 : 0)
+        }
+        .buttonStyle(PressStyle())
+        .pointingHandCursor()
+        .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
+        .help(failed ? "Run \(move.name) again on this head" : "Start the \(move.name) agent now")
     }
 }
 

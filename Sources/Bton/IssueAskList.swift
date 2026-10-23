@@ -46,17 +46,19 @@ extension AppStore {
     }
 }
 
-/// Questions put to me on issues, above the PRs: Bton drafts a reply, I post it.
-struct IssueAskSection: View {
+/// Questions put to me on issues, in their own tab: Bton drafts a reply, I post it.
+struct IssueAskList: View {
+    @Environment(AppStore.self) private var store
     let asks: [IssueAsk]
     let showRepo: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Eyebrow(text: "Asked on issues", color: Theme.mint).padding(.leading, 4)
-            ForEach(asks) { ask in IssueAskRow(ask: ask, showRepo: showRepo) }
+        if asks.isEmpty {
+            EmptyState(symbol: "questionmark.bubble", title: store.lastRefresh == nil ? "Reading GitHub" : "No questions for you",
+                       detail: "An open issue where a teammate mentions you and you have not answered since shows here.")
+        } else {
+            RowStack(items: asks) { ask in IssueAskRow(ask: ask, showRepo: showRepo) }
         }
-        .padding(.bottom, 8)
     }
 }
 

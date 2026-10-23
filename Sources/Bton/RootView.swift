@@ -3,7 +3,7 @@ import BtonCore
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case pullRequests = "PRs", jobs = "Jobs", schedule = "Schedule", merged = "Merged"
+    case pullRequests = "PRs", issues = "Issues", jobs = "Jobs", schedule = "Schedule", merged = "Merged"
     var id: Self { self }
 }
 
@@ -141,7 +141,10 @@ struct RootView: View {
                             ForEach(Array(Set(waiting.compactMap(\.move?.name))).sorted(), id: \.self) { name in
                                 Chip(text: name, symbol: Theme.symbol(forMove: name), color: Theme.color(forMove: name))
                             }
-                            if asked { Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint) }
+                            if asked {
+                                Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint)
+                                    .onTapGesture { show(.issues) }
+                            }
                         }
                     }
                 }
@@ -149,13 +152,14 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity)
-            .onTapGesture { withAnimation(Motion.spring) { tab = .pullRequests } }
+            // Questions alone wait on the Issues tab.
+            .onTapGesture { show(waiting.isEmpty && asked ? .issues : .pullRequests) }
             .help("PRs whose next step is yours and no agent of yours can take it, and issues that ask you something")
 
             VStack(spacing: 8) {
                 smallTile(eyebrow: "Agents", value: "\(store.runningJobs)", suffix: "of \(store.maxAgents)",
                           dot: store.runningJobs > 0 ? Theme.color(for: .running) : nil)
-                    .onTapGesture { withAnimation(Motion.spring) { tab = .jobs } }
+                    .onTapGesture { show(.jobs) }
                 // The week sits on its own line, so neither figure is cut as costs grow.
                 smallTile(eyebrow: "Today", value: store.costToday.usd(), suffix: "week \(store.costThisWeek.usd(cents: false))", dot: nil)
             }
@@ -184,19 +188,23 @@ struct RootView: View {
 
     // MARK: tabs
 
+    /// Every tab's count while they all fit the panel; otherwise only the open tab's, so a busy day
+    /// never pushes a tab off the edge.
     private var tabIsland: some View {
+        ViewThatFits(in: .horizontal) {
+            tabs(counted: { _ in true })
+            tabs(counted: { $0 == tab })
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private func tabs(counted: @escaping (Tab) -> Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(Tab.allCases) { item in
-                Button {
-                    withAnimation(Motion.spring) {
-                        tab = item
-                        store.watchingJob = nil
-                        store.readingDraft = nil
-                    }
-                } label: {
+                Button { show(item) } label: {
                     HStack(spacing: 5) {
                         Text(item.rawValue).font(.system(size: 12, weight: .semibold))
-                        if count(for: item) > 0 {
+                        if counted(item), count(for: item) > 0 {
                             Text("\(count(for: item))").font(.system(size: 9.5, weight: .bold)).monospacedDigit()
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background((tab == item ? Theme.mint.opacity(0.22) : Color.white.opacity(0.09)), in: Capsule())
@@ -206,7 +214,7 @@ struct RootView: View {
                     // Never narrower than its label: the spare width is shared out, a short one never wraps.
                     .fixedSize()
                     .foregroundStyle(tab == item ? Theme.mint : Theme.textSecondary)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 7)
                     .frame(maxWidth: .infinity)
                     .background {
@@ -226,14 +234,23 @@ struct RootView: View {
         .padding(3)
         .background(Theme.core, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-        .padding(.horizontal, 14)
+    }
+
+    /// Opens a tab's list, closing a job or draft that would otherwise stay over it.
+    private func show(_ item: Tab) {
+        withAnimation(Motion.spring) {
+            tab = item
+            store.watchingJob = nil
+            store.readingDraft = nil
+        }
     }
 
     private func count(for tab: Tab) -> Int {
         let search = SearchQuery(query)
         if !search.isEmpty, tab != .schedule { return listed(search).count(for: tab) }
         return switch tab {
-        case .pullRequests: store.openPullRequests.count + store.issueAsks.count
+        case .pullRequests: store.openPullRequests.count
+        case .issues: store.issueAsks.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
         // The list is GitHub's latest 30 whatever their age, so its length says nothing.
@@ -293,8 +310,9 @@ struct RootView: View {
                 noMatch(search, lists: lists)
             } else {
                 switch tab {
-                case .pullRequests: PullRequestList(items: lists.pullRequests, asks: lists.asks, showRepo: showRepo, me: store.me,
+                case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
+                case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo)
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
                 case .merged: MergedList(items: lists.merged, showRepo: showRepo)
@@ -305,11 +323,11 @@ struct RootView: View {
 
     /// Where else the search finds something, so a merged PR searched under PRs is one click away.
     private func noMatch(_ search: SearchQuery, lists: Listed) -> some View {
-        let elsewhere = [Tab.pullRequests, .jobs, .merged].filter { lists.count(for: $0) > 0 }
+        let elsewhere = [Tab.pullRequests, .issues, .jobs, .merged].filter { lists.count(for: $0) > 0 }
             .map { "\($0.rawValue) (\(lists.count(for: $0)))" }
         return EmptyState(symbol: "magnifyingglass", title: "Nothing here matches \(search.text)",
                           detail: elsewhere.isEmpty
-                              ? "Search covers open PRs, this Mac's jobs and GitHub's latest merged PRs."
+                              ? "Search covers open PRs, questions on issues, this Mac's jobs and GitHub's latest merged PRs."
                               : "Found in " + elsewhere.joined(separator: ", ") + ".")
     }
 
@@ -323,7 +341,8 @@ struct RootView: View {
 
         func count(for tab: Tab) -> Int {
             switch tab {
-            case .pullRequests: pullRequests.count + asks.count
+            case .pullRequests: pullRequests.count
+            case .issues: asks.count
             case .jobs: jobs.count
             case .schedule: 0
             case .merged: merged.count

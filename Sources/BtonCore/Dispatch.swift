@@ -95,6 +95,15 @@ public enum DispatchPlanner {
         return made
     }
 
+    /// Whether a PR row offers to start `move` now. Merge and resolve always are. The PR's own flow
+    /// move is when it failed on this head, or when its repo starts no moves on its own and nothing
+    /// ran it on this head yet: otherwise Bton starts it, or already did.
+    public static func offersStart(_ move: String, current: String, startsMoves: Bool, ranOnHead: Bool, failedOnHead: Bool) -> Bool {
+        if move == "merge" || move == "resolve" { return true }
+        guard move == current else { return false }
+        return failedOnHead || (!startsMoves && !ranOnHead)
+    }
+
     /// A resolve that left the PR at the head it started on pushed nothing: its agent stopped,
     /// for a ruling or a fork, and its report says why. Unconfirmed is a failure too.
     public static func resolveOutcome(startedAt head: String,

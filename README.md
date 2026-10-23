@@ -48,8 +48,9 @@ The menu bar counts what is waiting on you.
 
 **Agents when you say so.** A sync only reads your PRs. Agents start from your schedules and from
 the buttons you press: a worktree at the PR's head, your repo's checks, then Claude Code, Codex or
-any CLI you configure. Turn on "Start the flow's moves on every sync" for a repo and every move
-that is yours there starts by itself.
+any CLI you configure. A move of yours that an agent takes (a review, a fix) shows as a pill with
+a play mark: press it and the agent starts in Bton, no trip to GitHub. Turn on "Start the flow's
+moves on every sync" for a repo and every move that is yours there starts by itself.
 
 **A playbook built in.** Every agent Bton starts follows the same way of working a PR: read the
 diff once, targeted tests first, every finding with evidence, scoped re-reviews, short comments,
@@ -62,9 +63,8 @@ Supervisor (Settings > Supervisor) and an agent looks at each flagged job once: 
 move with a note on what to do differently, or tells you what needs a human. It only reads: no
 shell, no edits, no GitHub writes. It stops at a daily budget.
 
-**Questions on issues.** When a teammate mentions you on an open issue, it shows under "Asked on
-issues" on the PRs tab, counts in what is waiting on you and notifies you. Press Draft reply and
-a read-only agent reads the thread and the code and drafts your answer. Edit it in place, then
+**Questions on issues.** When a teammate mentions you on an open issue, it shows on the Issues
+tab, counts in what is waiting on you and notifies you. Press Draft reply and a read-only agent reads the thread and the code and drafts your answer. Edit it in place, then
 Post reply comments it on the issue as you (after a confirm), or copy it. Nothing is posted
 unless you press it.
 

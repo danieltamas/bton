@@ -101,6 +101,11 @@ enum DemoShots {
             pr(418, "Raise image CDN timeouts", by: "lee", minutes: 7,
                move: Move(name: "review", owner: "jonas", ownerFromRotation: true, tier: "quick fix", hasDispatch: true)),
         ]
+        snapshot.issueAsks = [
+            IssueAsk(repo: repo, number: 388, title: "Apple Pay button missing on Safari 17",
+                     url: URL(string: "https://github.com/\(repo)/issues/388")!, asker: "lee",
+                     askedAt: now.addingTimeInterval(-34 * 60), commentID: "demo-388"),
+        ]
         snapshot.jobs = [
             job("pr-395", "fix", agent: "claude", minutes: 26 * 60, took: 38, status: .succeeded, cost: 21.80),
             job("pr-398", "merge", agent: nil, minutes: 190, took: 3, status: .failed, detail: "`bash scripts/check.sh` exited 1"),
