@@ -101,6 +101,14 @@ public struct GitHubClient: Sendable {
         try Self.decodeHead(try await gh(["pr", "view", String(number), "--repo", repo, "--json", "headRefOid"]))
     }
 
+    /// The PR's head commit and state ("OPEN", "MERGED", "CLOSED") on GitHub now.
+    public func pullRequestHeadAndState(repo: String, number: Int) async throws -> (head: String, state: String) {
+        struct Row: Decodable { let headRefOid: String, state: String }
+        let row = try JSONDecoder().decode(Row.self, from: try await gh(["pr", "view", String(number), "--repo", repo,
+                                                                          "--json", "headRefOid,state"]))
+        return (row.headRefOid, row.state)
+    }
+
     static func decodeHead(_ data: Data) throws -> String {
         struct Row: Decodable { let headRefOid: String }
         return try JSONDecoder().decode(Row.self, from: data).headRefOid

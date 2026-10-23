@@ -176,6 +176,13 @@ actor Dispatcher {
                                                           ghPath: github.ghPath, runner: runner, fresh: true,
                                                           note: { [jobs, id = job.id] in jobs.note(id, $0) })
                 jobs.note(job.id, "command runs in \(trusted.path), \(base) as merged")
+                // Last, so only seconds separate the read from the command; the command pins `{head}`
+                // to close those.
+                if let pr = candidate.pr,
+                   let refusal = try await headRefusal(repo: candidate.key.repo, pr: pr.number, expected: candidate.key.head, job: job.id) {
+                    _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
+                    return await finish(job, status: .failed, detail: refusal)
+                }
                 let status = try await runLogged(command, in: trusted, job: job.id, environment: environment, timeout: candidate.timeout)
                 if await !Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner) {
                     jobs.note(job.id, "kept \(trusted.path): the command left changes in it")

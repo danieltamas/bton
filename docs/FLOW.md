@@ -111,7 +111,7 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
   "review": { "agent": { "quick fix": "codex", "feature": "claude" }, "prompt": "...", "post": "comment",
               "helpers": ["codex"], "timeoutMinutes": 60 },
   "fix": { "agent": "claude", "prompt": "..." },
-  "merge": { "command": ["bash", "scripts/wt", "merge", "{number}"] }
+  "merge": { "command": ["gh", "pr", "merge", "{number}", "--squash", "--match-head-commit", "{head}"] }
 }
 ```
 
@@ -121,9 +121,13 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
   substituted: PR and issue text never goes into a prompt or an argv.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
   line is a review (rules above) naming the current head.
-- `command`: an argv run in the worktree instead of an agent (merge). A merge command should
-  pin the head the checks ran on (`gh pr merge {number} --squash --match-head-commit {head}`),
-  so a push between the checks and the merge is refused.
+- `command`: an argv run instead of an agent (merge), in a fresh worktree of the base. After the
+  checks, right before the command, Bton re-reads the PR on GitHub and runs it only if the PR is
+  still open at the head the move started on (`{head}`); a moved head, a closed PR or a failed
+  read fails the job and nothing runs. The command should still pin that head
+  (`gh pr merge {number} --squash --match-head-commit {head}`) to close the seconds between the
+  read and the merge. A team's own merge script must do the same: pass it `{head}` and have it
+  refuse any other head.
 - `helpers`: up to three agents of this Mac's `agents` config that a Claude agent may ask for a
   second opinion through Bton's `ask` tool (`mcp__bton__ask`). Bton runs the helper itself,
   outside the agent's sandbox, Claude and codex read-only (any other program as its template
