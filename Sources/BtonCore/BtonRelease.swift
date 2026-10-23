@@ -61,6 +61,47 @@ public enum BtonRelease {
     }
 }
 
+/// The About pane's Update: the installer bundled in the app, pinned to the release the pane showed.
+extension BtonRelease {
+    public static let installedPath = "/Applications/Bton.app"
+
+    public struct UpdateRun: Equatable, Sendable {
+        public let executable: String
+        public let arguments: [String]
+        public let environment: [String: String]
+    }
+
+    /// The release's x.y.z from its tag, in the only form install.sh's BTON_VERSION takes; nil for
+    /// anything else, since the tag comes from GitHub.
+    public static func updateVersion(latestTag: String) -> String? {
+        guard latestTag.wholeMatch(of: /v?[0-9]+\.[0-9]+\.[0-9]+/) != nil else { return nil }
+        return latestTag.hasPrefix("v") ? String(latestTag.dropFirst()) : latestTag
+    }
+
+    /// Only the installed app updates itself: a build folder copy is not what the installer replaces.
+    public static func canUpdate(bundlePath: String, standing: Standing) -> Bool {
+        guard bundlePath == installedPath || bundlePath == installedPath + "/",
+              case let .behind(latest) = standing else { return false }
+        return updateVersion(latestTag: latest) != nil
+    }
+
+    /// `bash <installer>`: the path is an argument, never parsed by a shell.
+    public static func updateRun(installer: String, latestTag: String, searchPath: String) -> UpdateRun? {
+        guard installer.hasPrefix("/"), let version = updateVersion(latestTag: latestTag) else { return nil }
+        return UpdateRun(executable: "/bin/bash", arguments: [installer],
+                         environment: ["BTON_VERSION": version, "PATH": searchPath])
+    }
+
+    /// Why the installer stopped: its last line, without install.sh's "bton: " prefix.
+    public static func updateFailure(log: String) -> String {
+        let line = log.split(whereSeparator: \.isNewline).map { line -> String in
+            let plain = AgentFailure.plain(String(line))
+            return plain.hasPrefix("bton:") ? plain.dropFirst("bton:".count).trimmingCharacters(in: .whitespaces) : plain
+        }.last { !$0.isEmpty }
+        return line.map { String($0.prefix(AgentFailure.reasonLimit)) } ?? "the installer stopped without saying why"
+    }
+}
+
 extension GitHubClient {
     public func latestReleaseTag() async throws -> String {
         try Self.decodeLatestRelease(try await gh(["api", "repos/\(BtonRelease.repo)/releases/latest"]))

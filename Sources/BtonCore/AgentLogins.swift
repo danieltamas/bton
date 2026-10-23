@@ -61,7 +61,7 @@ public enum AgentFailure {
     }
 
     /// Without terminal escapes, control characters and invisible ones (bidi marks, zero-width).
-    private static func plain(_ line: String) -> String {
+    static func plain(_ line: String) -> String {
         let unescaped = line.replacingOccurrences(of: "\u{1B}\\[[0-?]*[ -/]*[@-~]", with: "", options: .regularExpression)
         let scalars = unescaped.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
         return String(scalars).trimmingCharacters(in: .whitespaces)

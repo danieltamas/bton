@@ -5,6 +5,7 @@ import SwiftUI
 /// Who made Bton and why, its repo, this build, and whether a newer release is out.
 struct AboutPane: View {
     @State private var standing: Standing = .checking
+    private let updater = Updater.shared
 
     private enum Standing: Equatable {
         case checking, known(BtonRelease.Standing), failed(String)
@@ -27,10 +28,19 @@ struct AboutPane: View {
                         Text(Self.versionLine).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textSecondary)
                             .textSelection(.enabled)
                         standingLine
+                        if let problem = updater.problem {
+                            label("Update failed: \(problem)", color: Theme.danger, symbol: "exclamationmark.triangle")
+                        }
                     }
                     Spacer()
+                    if case let .known(known) = standing, BtonRelease.canUpdate(bundlePath: Bundle.main.bundlePath, standing: known),
+                       case let .behind(latest) = known {
+                        PillButton(title: updater.installing == nil ? "Update to \(latest)" : "Updating...", symbol: "arrow.down.circle",
+                                   disabled: updater.installing != nil) { updater.install(latest) }
+                            .help("Installs \(latest) the way install.sh does, then Bton restarts. Running agents keep going.")
+                    }
                     PillButton(title: "Check again", symbol: "arrow.clockwise", prominent: false,
-                               disabled: standing == .checking) { Task { await check() } }
+                               disabled: standing == .checking || updater.installing != nil) { Task { await check() } }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
