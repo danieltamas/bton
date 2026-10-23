@@ -79,6 +79,28 @@ take_lock() {
   rmdir "$lock.takeover"
 }
 
+# Quits every running process named $1 and waits until they are gone, so `open` starts the new
+# app instead of showing the old one. -a: About's Update runs this script as Bton's child, and
+# pkill skips its own ancestors without it. Returns 1 when one is still running after SIGKILL, or
+# when the processes cannot be listed: only pkill's and pgrep's "no match" (1) means none is left.
+stop_running() {
+  local name=$1 signal deadline status
+  for signal in TERM KILL; do
+    status=0
+    pkill "-$signal" -a -x "$name" 2>/dev/null || status=$?
+    case $status in 0) ;; 1) return 0 ;; *) return 1 ;; esac
+    # By the clock, not a count of probes: on a busy Mac each pgrep takes a while itself.
+    deadline=$((SECONDS + 10))
+    while ((SECONDS < deadline)); do
+      status=0
+      pgrep -a -x "$name" >/dev/null || status=$?
+      case $status in 0) ;; 1) return 0 ;; *) return 1 ;; esac
+      sleep 0.2
+    done
+  done
+  return 1
+}
+
 # Removes the work folder, and the lock only while it is this install's.
 cleanup() {
   rm -rf "${work:-}"
@@ -110,7 +132,7 @@ main() {
   rm -rf "$staged" "$previous"
   ditto "$app" "$staged" || { rm -rf "$staged"; fail "could not copy Bton.app to /Applications"; }
   # A running Bton keeps its agents: they outlive the app, and the new one adopts them.
-  pkill -x Bton 2>/dev/null || true
+  stop_running Bton || { rm -rf "$staged"; fail "could not quit the running Bton: quit it and run this again"; }
   if [[ -e $target ]]; then mv "$target" "$previous"; fi
   if ! mv "$staged" "$target"; then
     if [[ -e $previous ]]; then mv "$previous" "$target"; fi
