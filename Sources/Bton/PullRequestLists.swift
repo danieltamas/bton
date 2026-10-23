@@ -12,7 +12,8 @@ struct PullRequestList: View {
     let schedules: [ScheduleEntry]
 
     var body: some View {
-        let running = jobs.filter { $0.status == .running }
+        // A reply being drafted shows on the Issues tab.
+        let running = jobs.filter { $0.status == .running && !$0.isIssueDraft }
         if items.isEmpty && running.isEmpty && store.lastRefresh == nil {
             EmptyState(symbol: "arrow.triangle.2.circlepath", title: "Reading GitHub", detail: "Open pull requests show here in a moment.")
         } else if items.isEmpty && running.isEmpty {

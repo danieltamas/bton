@@ -46,18 +46,29 @@ extension AppStore {
     }
 }
 
+extension Job {
+    var isIssueDraft: Bool { key.move == IssueDrafts.move && key.item.hasPrefix("issue-") }
+}
+
 /// Questions put to me on issues, in their own tab: Bton drafts a reply, I post it.
 struct IssueAskList: View {
     @Environment(AppStore.self) private var store
     let asks: [IssueAsk]
     let showRepo: Bool
+    let jobs: [Job]
+    let schedules: [ScheduleEntry]
 
     var body: some View {
-        if asks.isEmpty {
+        let drafting = jobs.filter { $0.status == .running && $0.isIssueDraft }
+        if asks.isEmpty && drafting.isEmpty {
             EmptyState(symbol: "questionmark.bubble", title: store.lastRefresh == nil ? "Reading GitHub" : "No questions for you",
                        detail: "An open issue where a teammate mentions you and you have not answered since shows here.")
         } else {
-            RowStack(items: asks) { ask in IssueAskRow(ask: ask, showRepo: showRepo) }
+            RowStack(items: asks) { ask in
+                IssueAskRow(ask: ask, showRepo: showRepo)
+            } header: {
+                if !drafting.isEmpty { ActiveStrip(jobs: drafting, schedules: schedules).padding(.bottom, 8) }
+            }
         }
     }
 }

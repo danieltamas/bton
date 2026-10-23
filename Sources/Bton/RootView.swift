@@ -312,7 +312,7 @@ struct RootView: View {
                 switch tab {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
-                case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo)
+                case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
                 case .merged: MergedList(items: lists.merged, showRepo: showRepo)
