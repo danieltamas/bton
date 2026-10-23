@@ -51,76 +51,85 @@ private struct PullRequestRow: View {
         let mine = pr.move.flatMap { move in me.map(move.isMine) } ?? false
         // Any agent on it, here, on another Mac or a schedule's: no second start while it works.
         let busy = job != nil || pr.isWorking || store.schedule(workingOn: pr) != nil
+        let starting = pr.move != nil && job == nil && store.isNext(repo: pr.repo, item: "pr-\(pr.number)")
+        let now = starting || busy ? nil : pr.move.flatMap(startable)
+        let failed = now.flatMap { store.failedOnHead(pr, move: $0) }
         HoverCard(accent: mine ? moveColor : nil, action: { NSWorkspace.shared.open(pr.url) }) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.textTertiary)
-                        if showRepo { RepoName(repo: pr.repo) }
-                        if let tier = pr.move?.tier, !tier.isEmpty {
-                            Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
-                        }
-                        if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
-                        if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
-                    }
-                    Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Avatar(login: pr.author)
-                        Text(pr.author).foregroundStyle(Theme.textSecondary)
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary)
-                    }
-                    .font(.meta)
-                }
-                Spacer(minLength: 4)
-                VStack(alignment: .trailing, spacing: 6) {
-                    if let move = pr.move {
-                        let starting = job == nil && store.isNext(repo: pr.repo, item: "pr-\(pr.number)")
-                        let now = starting || busy ? nil : startable(move)
-                        let failed = now.flatMap { store.failedOnHead(pr, move: $0) }
-                        if !move.hasDispatch, let me, move.isMine(me) {
-                            HumanMoveButton(pr: pr, move: move, me: me)
-                        } else if let now, now == move.name, !RunNowButton.starts(now), let me {
-                            // The agent's move runs here, in Bton: the pill starts it.
-                            StartMoveButton(move: move, me: me, failed: failed != nil) {
-                                Task { await store.runNow(pr, move: now) }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.textTertiary)
+                            if showRepo { RepoName(repo: pr.repo) }
+                            if let tier = pr.move?.tier, !tier.isEmpty {
+                                Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
                             }
-                        } else {
-                            MoveChip(move: move, me: me)
+                            if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
+                            if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
                         }
-                        // A start already asked for still shows while another agent works it.
-                        if starting {
-                            StartingLabel(repo: pr.repo)
-                        } else if let now {
-                            if RunNowButton.starts(now) {
-                                RunNowButton(title: RunNowButton.title(for: now, failed: failed != nil), symbol: Theme.symbol(forMove: now),
-                                             color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
+                        Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        // One line: a long login truncates, the time never wraps.
+                        HStack(spacing: 6) {
+                            Avatar(login: pr.author)
+                            Text(pr.author).foregroundStyle(Theme.textSecondary).truncationMode(.tail)
+                            Text("·").foregroundStyle(Theme.textTertiary)
+                            RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary).fixedSize()
+                        }
+                        .font(.meta).lineLimit(1)
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if let move = pr.move {
+                            if !move.hasDispatch, let me, move.isMine(me) {
+                                HumanMoveButton(pr: pr, move: move, me: me)
+                            } else if let now, now == move.name, !RunNowButton.starts(now), let me {
+                                // The agent's move runs here, in Bton: the pill starts it.
+                                StartMoveButton(move: move, me: me, failed: failed != nil) {
                                     Task { await store.runNow(pr, move: now) }
                                 }
+                            } else {
+                                MoveChip(move: move, me: me)
                             }
-                            if let failed, let detail = failed.detail {
-                                Button { withAnimation(Motion.spring) { store.watchingJob = failed.id } } label: {
-                                    Text("Last \(now) on this head stopped: \(detail)")
-                                        .font(.meta).foregroundStyle(Theme.danger).multilineTextAlignment(.trailing)
-                                        .lineLimit(3).frame(maxWidth: 220, alignment: .trailing)
+                            // A start already asked for still shows while another agent works it.
+                            if starting {
+                                StartingLabel(repo: pr.repo)
+                            } else if let now {
+                                if RunNowButton.starts(now) {
+                                    RunNowButton(title: RunNowButton.title(for: now, failed: failed != nil), symbol: Theme.symbol(forMove: now),
+                                                 color: now == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: now)) {
+                                        Task { await store.runNow(pr, move: now) }
+                                    }
                                 }
-                                .buttonStyle(PressStyle())
-                                .help("Open the job and the agent's report")
                             }
                         }
-                    }
-                    if let job {
-                        ModelBadges(job: job, compact: true)
-                    } else if pr.isWorking || store.schedule(workingOn: pr) != nil {
-                        HStack(spacing: 5) {
-                            PulseDot(color: Theme.color(for: .running))
-                            Text("agent working").font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Theme.color(for: .running))
+                        if let job {
+                            ModelBadges(job: job, compact: true)
+                        } else if pr.isWorking || store.schedule(workingOn: pr) != nil {
+                            HStack(spacing: 5) {
+                                PulseDot(color: Theme.color(for: .running))
+                                Text("agent working").font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(Theme.color(for: .running))
+                            }
                         }
+                        if let cost = pr.cost { Cost(value: cost) }
                     }
-                    if let cost = pr.cost { Cost(value: cost) }
+                }
+                // The card's full width, so the reason never squeezes the title into a sliver.
+                if let now, let failed, let detail = failed.detail {
+                    Button { withAnimation(Motion.spring) { store.watchingJob = failed.id } } label: {
+                        Label("Last \(now) on this head stopped: \(detail)", systemImage: "exclamationmark.triangle")
+                            .font(.meta).foregroundStyle(Theme.danger).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 9).padding(.vertical, 6)
+                            .background(Theme.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .help("Open the job and the agent's report")
                 }
             }
         }
