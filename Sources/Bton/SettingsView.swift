@@ -22,7 +22,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 760, minHeight: 540)
         .background(Backdrop())
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(Theme.scheme)
         .animation(Motion.spring, value: store.settingsPane)
     }
 
@@ -95,11 +95,11 @@ extension SettingsPane {
     @MainActor var color: Color {
         switch self {
         case .general: Theme.mint
-        case .repos: Color(hex: 0x7AA2FF)
-        case .agents: Color(hex: 0xC792FF)
+        case .repos: Theme.hue(0x7AA2FF, light: 0x456DD3)
+        case .agents: Theme.hue(0xC792FF, light: 0x8E51C7)
         case .schedules: Theme.color(forMove: "schedule")
         case .supervisor: Theme.color(forMove: Supervision.move)
-        case .prices: Color(hex: 0xFFB547)
+        case .prices: Theme.hue(0xFFB547, light: 0x9E6801)
         case .about: Theme.neutral
         }
     }

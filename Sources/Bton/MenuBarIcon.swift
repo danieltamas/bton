@@ -20,8 +20,8 @@ final class MenuBarIcon {
     private static let size = NSSize(width: 22, height: 22)
     private static let fps = 15.0
     private static let rippleFrames = 14
-    private static let working = NSColor(Theme.color(for: .running))
     // Read at each drawing, so they follow the look.
+    private static var working: NSColor { NSColor(Theme.color(for: .running)) }
     private static var synced: NSColor { NSColor(Theme.mint) }
     private static var problem: NSColor { NSColor(Theme.unassigned) }
 

@@ -55,7 +55,7 @@ struct SegmentChip: View {
                 .foregroundStyle(selected ? Theme.canvas : Theme.textSecondary)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background {
-                    if selected { Capsule().fill(Theme.brand) } else { Capsule().fill(Color.white.opacity(0.06)) }
+                    if selected { Capsule().fill(Theme.brand) } else { Capsule().fill(Theme.wash.opacity(0.06)) }
                 }
                 .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
                 .contentShape(Capsule())

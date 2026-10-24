@@ -49,11 +49,11 @@ struct Bezel<Content: View>: View {
     private var pane: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return shape.fill(fill.shadow(.inner(color: Theme.highlight, radius: 0, y: 1)))
-            .overlay(shape.strokeBorder(Color.white.opacity(0.04), lineWidth: 1))
+            .overlay(shape.strokeBorder(Theme.paneInner, lineWidth: 1))
             .overlay(RoundedRectangle(cornerRadius: radius + 0.5, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1).padding(-0.5))
-            .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
-            .shadow(color: (glow ?? .black).opacity(glow == nil ? 0.45 : 0.25), radius: 14, y: 10)
+                .stroke(Theme.paneEdge, lineWidth: 1).padding(-0.5))
+            .shadow(color: Theme.paneShade.opacity(0.22), radius: 1, y: 1)
+            .shadow(color: glow?.opacity(0.25) ?? Theme.paneShade, radius: 14, y: 10)
     }
 }
 
@@ -313,7 +313,7 @@ struct IconButton: View {
                 .font(.system(size: size * 0.46, weight: .regular))
                 .foregroundStyle(hovering ? Theme.textPrimary : tint)
                 .frame(width: size, height: size)
-                .background(Color.white.opacity(hovering ? 0.10 : 0.05), in: Circle())
+                .background(Theme.wash.opacity(hovering ? 0.10 : 0.05), in: Circle())
                 .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5))
                 .contentShape(Circle())
         }
@@ -341,7 +341,7 @@ struct PillButton: View {
                 Image(systemName: symbol)
                     .font(.system(size: 9.5, weight: .bold))
                     .frame(width: 22, height: 22)
-                    .background((prominent ? Theme.canvas : Color.white).opacity(prominent ? 0.18 : 0.08), in: Circle())
+                    .background((prominent ? Theme.canvas : Theme.wash).opacity(prominent ? 0.18 : 0.08), in: Circle())
                     .offset(x: hovering ? 1.5 : 0, y: hovering ? -1 : 0)
                     .scaleEffect(hovering ? 1.06 : 1)
             }
@@ -350,9 +350,9 @@ struct PillButton: View {
             .padding(.vertical, 4)
             .foregroundStyle(prominent ? Theme.canvas : Theme.textPrimary)
             .background {
-                if prominent { Capsule().fill(Theme.brand) } else { Capsule().fill(Color.white.opacity(0.07)) }
+                if prominent { Capsule().fill(Theme.brand) } else { Capsule().fill(Theme.wash.opacity(0.07)) }
             }
-            .overlay(Capsule().strokeBorder(Color.white.opacity(prominent ? 0.25 : 0.08), lineWidth: 0.5))
+            .overlay(Capsule().strokeBorder(prominent ? Color.white.opacity(0.25) : Theme.wash.opacity(0.08), lineWidth: 0.5))
             .contentShape(Capsule())
             .fixedSize()
         }

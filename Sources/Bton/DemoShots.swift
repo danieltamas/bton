@@ -59,7 +59,7 @@ enum DemoShots {
 
     private static func pane(_ content: some View) -> some View {
         content.padding(28).frame(width: 640, alignment: .topLeading).background(Backdrop())
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(Theme.scheme)
     }
 
     // MARK: the made-up team

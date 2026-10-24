@@ -48,7 +48,7 @@ struct RootView: View {
         // Each opening asks at most once per 15 minutes; ReleaseWatch keeps the answer between them.
         // The README's screenshots never ask.
         .task(id: visible) { if visible && !stillImage { ReleaseWatch.shared.refresh() } }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(Theme.scheme)
     }
 
     // MARK: header
@@ -216,7 +216,7 @@ struct RootView: View {
                         if counted(item), count(for: item) > 0 {
                             Text("\(count(for: item))").font(.system(size: 9.5, weight: .bold)).monospacedDigit()
                                 .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background((tab == item ? Theme.mint.opacity(0.22) : Color.white.opacity(0.09)), in: Capsule())
+                                .background((tab == item ? Theme.mint.opacity(0.22) : Theme.wash.opacity(0.09)), in: Capsule())
                         }
                     }
                     .lineLimit(1)
@@ -242,7 +242,7 @@ struct RootView: View {
         }
         .padding(3)
         .background(Theme.core, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+        .overlay(Capsule().strokeBorder(Theme.wash.opacity(0.12), lineWidth: 0.5))
     }
 
     /// Opens a tab's list, closing a job or draft that would otherwise stay over it.

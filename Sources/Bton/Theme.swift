@@ -1,8 +1,7 @@
 import BtonCore
 import SwiftUI
 
-/// Bton's design tokens, from the look chosen under General (`Looks.swift`). Bton always draws
-/// dark, so a look has one value per token.
+/// Bton's design tokens, from the look chosen under General (`Looks.swift`).
 @MainActor
 enum Theme {
     private static var palette: Palette { Appearance.shared.look.palette }
@@ -17,6 +16,11 @@ enum Theme {
     static var highlight: Color { palette.highlight }
     static var finish: Finish { palette.finish }
     static var lit: Bool { palette.lit }
+    static var scheme: ColorScheme { palette.scheme }
+    static var wash: Color { palette.wash }
+    static var paneInner: Color { palette.paneInner }
+    static var paneEdge: Color { palette.paneEdge }
+    static var paneShade: Color { palette.paneShade }
 
     // Text
     static var textPrimary: Color { palette.textPrimary }
@@ -34,17 +38,23 @@ enum Theme {
     static var success: Color { palette.success }
     static var neutral: Color { palette.neutral }
 
+    /// A hue as the dark looks show it, and its deeper partner on a light canvas, where the
+    /// bright one would wash out.
+    static func hue(_ dark: UInt32, light: UInt32) -> Color {
+        Color(hex: scheme == .light ? light : dark)
+    }
+
     /// One hue per move, the same everywhere a move appears: PR rows, jobs, notifications.
     static func color(forMove name: String) -> Color {
         switch name {
-        case "review": Color(hex: 0x7AA2FF)
-        case "fix": Color(hex: 0xFFB547)
+        case "review": hue(0x7AA2FF, light: 0x456DD3)
+        case "fix": hue(0xFFB547, light: 0x9E6801)
         case "merge": success
         case "resolve": danger
-        case "decide": Color(hex: 0xC792FF)
+        case "decide": hue(0xC792FF, light: 0x8E51C7)
         case "finish": neutral
-        case "schedule": Color(hex: 0x5CC8FF)
-        case "supervise": Color(hex: 0xFF8FB1)
+        case "schedule": hue(0x5CC8FF, light: 0x047EAD)
+        case "supervise": hue(0xFF8FB1, light: 0xBB436E)
         case "draft": mint
         default: neutral
         }
@@ -67,15 +77,15 @@ enum Theme {
 
     static func color(forTier tier: String) -> Color {
         switch tier {
-        case "quick fix": Color(hex: 0x5CC8FF)
-        case "high-risk": Color(hex: 0xFF7A59)
-        default: Color(hex: 0x7AA2FF)
+        case "quick fix": hue(0x5CC8FF, light: 0x047EAD)
+        case "high-risk": hue(0xFF7A59, light: 0xCB390D)
+        default: hue(0x7AA2FF, light: 0x456DD3)
         }
     }
 
     static func color(for status: Job.Status) -> Color {
         switch status {
-        case .running: Color(hex: 0x4C8DFF)
+        case .running: hue(0x4C8DFF, light: 0x2A6DE1)
         case .succeeded: success
         case .failed: danger
         case .cancelled: neutral

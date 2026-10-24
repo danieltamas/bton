@@ -423,10 +423,13 @@ struct Avatar: View {
 
     var body: some View {
         let hue = Double(login.lowercased().unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }) / 360
+        // A light pane would show through a see-through disc and wash the initial out.
+        let light = Theme.scheme == .light
         Text(login.prefix(1).uppercased())
             .font(.system(size: 8.5, weight: .bold))
-            .foregroundStyle(Color(hue: hue, saturation: 0.55, brightness: 1))
+            .foregroundStyle(Color(hue: hue, saturation: light ? 0.75 : 0.55, brightness: light ? 0.45 : 1))
             .frame(width: 15, height: 15)
-            .background(Color(hue: hue, saturation: 0.6, brightness: 0.45).opacity(0.55), in: Circle())
+            .background(light ? Color(hue: hue, saturation: 0.2, brightness: 0.96)
+                              : Color(hue: hue, saturation: 0.6, brightness: 0.45).opacity(0.55), in: Circle())
     }
 }

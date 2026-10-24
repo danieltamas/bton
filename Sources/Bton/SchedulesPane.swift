@@ -35,7 +35,7 @@ struct SchedulesPane: View {
                 .frame(width: 540)
                 .background(Theme.canvasLift)
                 .environment(store)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(Theme.scheme)
         }
     }
 }
