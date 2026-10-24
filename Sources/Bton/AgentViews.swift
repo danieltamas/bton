@@ -140,31 +140,11 @@ struct ActiveStrip: View {
             }
             .padding(.leading, 4)
             ForEach(jobs) { job in
-                card(job)
-                    .contentShape(Rectangle())
+                ActiveCard(job: job, title: title(of: job))
                     .onTapGesture { withAnimation(Motion.spring) { store.watchingJob = job.id } }
+                    .pointingHandCursor()
                     .help("Watch what the agent does")
             }
-        }
-    }
-
-    private func card(_ job: Job) -> some View {
-        let color = Theme.color(forMove: job.key.move)
-        return Bezel(radius: 14, fill: Theme.core, glow: color) {
-            HStack(spacing: 10) {
-                GlyphDisc(symbol: Theme.symbol(forMove: job.key.move), color: color, size: 30)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title(of: job)).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                    ModelBadges(job: job, compact: true)
-                }
-                Spacer(minLength: 4)
-                VStack(alignment: .trailing, spacing: 3) {
-                    if let cost = job.cost { Cost(value: cost) }
-                    Text(job.startedAt, style: .timer).font(.system(size: 10.5).monospacedDigit())
-                        .foregroundStyle(Theme.textTertiary)
-                }
-            }
-            .padding(.horizontal, 11).padding(.vertical, 9)
         }
     }
 
@@ -182,5 +162,35 @@ struct ActiveStrip: View {
         }
         let number = job.key.item.hasPrefix("pr-") ? " #\(job.key.item.dropFirst(3))" : " \(job.key.item)"
         return verb + number + " · " + (job.key.repo.split(separator: "/").last.map(String.init) ?? job.key.repo)
+    }
+}
+
+/// A running job's card: its core lifts on hover, and a click opens the session.
+private struct ActiveCard: View {
+    let job: Job
+    let title: String
+    @State private var hovering = false
+
+    var body: some View {
+        let color = Theme.color(forMove: job.key.move)
+        Bezel(radius: 14, fill: hovering ? Theme.coreHover : Theme.core, glow: color) {
+            HStack(spacing: 10) {
+                GlyphDisc(symbol: Theme.symbol(forMove: job.key.move), color: color, size: 30)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    ModelBadges(job: job, compact: true)
+                }
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 3) {
+                    if let cost = job.cost { Cost(value: cost) }
+                    Text(job.startedAt, style: .timer).font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 11).padding(.vertical, 9)
+        }
+        .scaleEffect(hovering ? 1.006 : 1)
+        .contentShape(Rectangle())
+        .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
     }
 }

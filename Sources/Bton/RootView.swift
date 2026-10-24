@@ -153,6 +153,7 @@ struct RootView: View {
                             if asked {
                                 Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint)
                                     .onTapGesture { show(.issues) }
+                                    .pointingHandCursor()
                             }
                         }
                     }
@@ -163,12 +164,14 @@ struct RootView: View {
             .frame(maxWidth: .infinity)
             // Questions alone wait on the Issues tab.
             .onTapGesture { show(waiting.isEmpty && asked ? .issues : .pullRequests) }
+            .pointingHandCursor()
             .help("PRs whose next step is yours and no agent of yours can take it, and issues that ask you something")
 
             VStack(spacing: 8) {
                 smallTile(eyebrow: "Agents", value: "\(store.runningJobs)", suffix: "of \(store.maxAgents)",
                           dot: store.runningJobs > 0 ? Theme.color(for: .running) : nil)
                     .onTapGesture { show(.jobs) }
+                    .pointingHandCursor()
                 // The week sits on its own line, so neither figure is cut as costs grow.
                 smallTile(eyebrow: "Today", value: store.costToday.usd(), suffix: "week \(store.costThisWeek.usd(cents: false))", dot: nil)
             }
