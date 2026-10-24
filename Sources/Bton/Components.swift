@@ -248,9 +248,20 @@ struct PressStyle: ButtonStyle {
 }
 
 extension View {
-    /// The hand over anything clickable. Set on every move, since the window's own cursor
-    /// rects would take it back; nothing to undo when the view goes away mid-hover.
+    /// The hand over anything clickable. On macOS 15 SwiftUI owns the cursor, so a nested or
+    /// neighbouring region and AppKit's own cursor updates never put the arrow back mid-hover.
+    /// Before that it is set on every move, which a tooltip or a layout pass can still undo
+    /// until the mouse moves again.
+    @ViewBuilder
     func pointingHandCursor(_ enabled: Bool = true) -> some View {
+        if #available(macOS 15, *) {
+            pointerStyle(enabled ? .link : nil)
+        } else {
+            setsHandOnMove(enabled)
+        }
+    }
+
+    private func setsHandOnMove(_ enabled: Bool) -> some View {
         onContinuousHover { phase in
             guard enabled else { return }
             switch phase {
