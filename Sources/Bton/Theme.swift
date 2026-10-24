@@ -1,34 +1,38 @@
 import BtonCore
 import SwiftUI
 
-/// Bton's design tokens, taken from the app icon: a deep navy canvas lit by its blue-to-mint
-/// tube. Bton always draws dark, so every token is a single value.
+/// Bton's design tokens, from the look chosen under General (`Looks.swift`). Bton always draws
+/// dark, so a look has one value per token.
+@MainActor
 enum Theme {
+    private static var palette: Palette { Appearance.shared.look.palette }
+
     // Canvas and surfaces
-    static let canvas = Color(hex: 0x070B12)
-    static let canvasLift = Color(hex: 0x0C1320)
-    static let shell = Color.white.opacity(0.035)
-    static let hairline = Color.white.opacity(0.075)
-    static let core = Color(hex: 0x101826)
-    static let coreHover = Color(hex: 0x141E2F)
-    static let highlight = Color.white.opacity(0.11)
+    static var canvas: Color { palette.canvas }
+    static var canvasLift: Color { palette.canvasLift }
+    static var shell: Color { palette.shell }
+    static var hairline: Color { palette.hairline }
+    static var core: Color { palette.core }
+    static var coreHover: Color { palette.coreHover }
+    static var highlight: Color { palette.highlight }
+    static var finish: Finish { palette.finish }
+    static var lit: Bool { palette.lit }
 
     // Text
-    static let textPrimary = Color.white.opacity(0.94)
-    static let textSecondary = Color.white.opacity(0.58)
-    static let textTertiary = Color.white.opacity(0.36)
+    static var textPrimary: Color { palette.textPrimary }
+    static var textSecondary: Color { palette.textSecondary }
+    static var textTertiary: Color { palette.textTertiary }
 
     // Brand
-    static let mint = Color(hex: 0x4FE3C1)
-    static let blue = Color(hex: 0x3A7BF0)
-    static let brand = LinearGradient(colors: [blue, Color(hex: 0x2A9BEA), mint],
-                                      startPoint: .bottomLeading, endPoint: .topTrailing)
+    static var mint: Color { palette.mint }
+    static var blue: Color { palette.blue }
+    static var brand: LinearGradient { palette.brand }
 
     // Signals
-    static let unassigned = Color(hex: 0xFF9F43)
-    static let danger = Color(hex: 0xFF6B6B)
-    static let success = Color(hex: 0x3EE0A8)
-    static let neutral = Color(hex: 0x8A97AD)
+    static var unassigned: Color { palette.unassigned }
+    static var danger: Color { palette.danger }
+    static var success: Color { palette.success }
+    static var neutral: Color { palette.neutral }
 
     /// One hue per move, the same everywhere a move appears: PR rows, jobs, notifications.
     static func color(forMove name: String) -> Color {
@@ -46,7 +50,7 @@ enum Theme {
         }
     }
 
-    static func symbol(forMove name: String) -> String {
+    nonisolated static func symbol(forMove name: String) -> String {
         switch name {
         case "review": "eye"
         case "fix": "wrench.adjustable"
@@ -78,7 +82,7 @@ enum Theme {
         }
     }
 
-    static func symbol(for status: Job.Status) -> String {
+    nonisolated static func symbol(for status: Job.Status) -> String {
         switch status {
         case .running: "bolt.fill"
         case .succeeded: "checkmark"
@@ -125,15 +129,18 @@ extension Font {
     static let statSmall = Font.system(size: 17, weight: .semibold, design: .rounded)
 }
 
-/// The canvas every Bton surface sits on: navy, with the icon's two lights bleeding in from the top.
+/// The canvas every Bton surface sits on, with the icon's two lights bleeding in from the top
+/// in a look that has them.
 struct Backdrop: View {
     var body: some View {
         ZStack {
             Theme.canvas
-            RadialGradient(colors: [Theme.blue.opacity(0.22), .clear], center: .init(x: 0.1, y: -0.05),
-                           startRadius: 0, endRadius: 260)
-            RadialGradient(colors: [Theme.mint.opacity(0.12), .clear], center: .init(x: 0.95, y: 0.02),
-                           startRadius: 0, endRadius: 220)
+            if Theme.lit {
+                RadialGradient(colors: [Theme.blue.opacity(0.22), .clear], center: .init(x: 0.1, y: -0.05),
+                               startRadius: 0, endRadius: 260)
+                RadialGradient(colors: [Theme.mint.opacity(0.12), .clear], center: .init(x: 0.95, y: 0.02),
+                               startRadius: 0, endRadius: 220)
+            }
         }
         .ignoresSafeArea()
     }

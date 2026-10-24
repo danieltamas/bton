@@ -92,7 +92,7 @@ extension SettingsPane {
         }
     }
 
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
         case .general: Theme.mint
         case .repos: Color(hex: 0x7AA2FF)
@@ -129,6 +129,15 @@ private struct GeneralPane: View {
                     Text("\(store.maxAgents)").font(.statValue).foregroundStyle(Theme.textPrimary).monospacedDigit()
                         .contentTransition(.numericText()).frame(minWidth: 34)
                     IconButton(symbol: "plus", help: "More") { save { try store.setMaxAgents(store.maxAgents + 1) } }
+                }
+            }
+            SettingsCard(title: "Theme", detail: "How the menu and this window look. A colour means the same in each.") {
+                HStack(spacing: 6) {
+                    ForEach(Look.allCases) { look in
+                        SegmentChip(title: look.title, selected: Appearance.shared.look == look) {
+                            withAnimation(Motion.gentle) { Appearance.shared.choose(look) }
+                        }
+                    }
                 }
             }
             SettingsCard(title: "Open at login", detail: "Bton only dispatches while it runs.") {

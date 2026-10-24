@@ -21,8 +21,22 @@ final class MenuBarIcon {
     private static let fps = 15.0
     private static let rippleFrames = 14
     private static let working = NSColor(Theme.color(for: .running))
-    private static let synced = NSColor(Theme.mint)
-    private static let problem = NSColor(Theme.unassigned)
+    // Read at each drawing, so they follow the look.
+    private static var synced: NSColor { NSColor(Theme.mint) }
+    private static var problem: NSColor { NSColor(Theme.unassigned) }
+
+    init() { followLook() }
+
+    /// A new look redraws the glyph now, not at the next sync.
+    private func followLook() {
+        withObservationTracking { _ = Appearance.shared.look } onChange: { [weak self] in
+            // Called before the change lands: drawn once it has.
+            Task { @MainActor in
+                self?.draw()
+                self?.followLook()
+            }
+        }
+    }
 
     /// After every sync: the new mode, and a ripple when the sync went through.
     func update(mode: Mode, synced: Bool) {

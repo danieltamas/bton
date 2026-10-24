@@ -25,7 +25,7 @@ enum Vendor {
         }
     }
 
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
         case .anthropic: Color(hex: 0xD97757)
         case .openai: Color.white.opacity(0.92)

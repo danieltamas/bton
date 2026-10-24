@@ -7,8 +7,11 @@ import SwiftUI
 @MainActor
 enum DemoShots {
     static let flag = "--render-screenshots"
+    /// `--look solidGlass` draws them in another look; the saved choice is neither used nor changed.
+    static let lookFlag = "--look"
 
-    static func render(to directory: URL) throws {
+    static func render(to directory: URL, look: Look = .bton) throws {
+        Appearance.shared.look = look
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = AppStore()
         store.showDemo(snapshot, config: config)

@@ -8,8 +8,10 @@ struct BtonApp: App {
     /// The loop starts with the app, not with the menu: the window's content only exists while
     /// it is open, and Bton dispatches whether anyone looks or not.
     init() {
-        if let index = CommandLine.arguments.firstIndex(of: DemoShots.flag), index + 1 < CommandLine.arguments.count {
-            do { try DemoShots.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) } catch {
+        let arguments = CommandLine.arguments
+        if let index = arguments.firstIndex(of: DemoShots.flag), index + 1 < arguments.count {
+            let look = arguments.firstIndex(of: DemoShots.lookFlag).flatMap { $0 + 1 < arguments.count ? Look(rawValue: arguments[$0 + 1]) : nil }
+            do { try DemoShots.render(to: URL(fileURLWithPath: arguments[index + 1]), look: look ?? .bton) } catch {
                 FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
                 exit(1)
             }
