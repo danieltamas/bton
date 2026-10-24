@@ -230,7 +230,7 @@ struct RootView: View {
                         // The active tab is lit in the accent, so it reads at a glance.
                         if tab == item {
                             Capsule().fill(Theme.mint.opacity(0.14))
-                                .overlay(Capsule().strokeBorder(Theme.mint.opacity(0.5), lineWidth: 0.75))
+                                .overlay(CapsuleRing(width: 0.75).fill(Theme.mint.opacity(0.5), style: FillStyle(eoFill: true)))
                                 .shadow(color: Theme.mint.opacity(0.25), radius: 8)
                                 .matchedGeometryEffect(id: "tab", in: island)
                         }

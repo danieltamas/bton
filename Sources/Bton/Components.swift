@@ -57,6 +57,18 @@ struct Bezel<Content: View>: View {
     }
 }
 
+/// A capsule's outline as a ring to fill even-odd: the live panel drew a stroked one with a gap
+/// in its bottom edge.
+struct CapsuleRing: Shape {
+    var width: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Capsule().path(in: rect)
+        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
+        return path
+    }
+}
+
 /// A small capsule label. `filled` is for what is mine or needs me; `tinted` for the rest.
 /// `{clone}`, `{base}` and `{repo}`, filled from the repo a job works in prompts and agent argv
 /// alike; hovering one says what it becomes.
