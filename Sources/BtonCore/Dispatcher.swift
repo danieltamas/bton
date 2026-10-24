@@ -157,15 +157,11 @@ actor Dispatcher {
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
-            // Each check gets the move's own time limit: a team's suite can take longer than any
-            // fixed limit, and the flow's `timeoutMinutes` is where the team says how long a move may take.
-            for check in checks ?? [] {
-                let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: candidate.timeout)
-                guard status == 0 else {
-                    let failure = "`\(check.joined(separator: " "))` exited \(status)"
-                    await postFailure(candidate, text: failure)
-                    return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
-                }
+            if let checks, !checks.isEmpty,
+               let failure = try await runChecks(checks, job: &job, in: worktree, clone: clone, base: base,
+                                                 environment: environment, timeout: candidate.timeout) {
+                await postFailure(candidate, text: failure)
+                return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
             }
             if let command = candidate.command, candidate.agent == nil {
                 // The repo's scripts as merged into the base, never the PR's copy: a PR that edits its
@@ -385,8 +381,12 @@ actor Dispatcher {
         // Only once nothing of the agent is left: a survivor would go on writing to the old file.
         if job.pid.map({ kill(-$0, 0) != 0 }) ?? true { jobs.trim(job.id) }
         if let lease = held.removeValue(forKey: job.id) {
-            await removeWorkLabel(from: job)
-            try? await leases.release(lease)
+            // Not in a stopped job's cancelled task, which kills each process as it starts: the
+            // label and the lease would stay until the lease expired, and the PR read as busy.
+            await Task { [job] in
+                await self.removeWorkLabel(from: job)
+                try? await self.leases.release(lease)
+            }.value
         }
         lost[job.id] = nil
         stopping.remove(job.id)

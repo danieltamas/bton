@@ -29,10 +29,15 @@ enum Worktrees {
                         fresh: Bool = false, note: @Sendable (String) -> Void = { _ in }) async throws -> URL {
         try await git(["fetch", "--quiet", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"],
                       in: clone, ghPath: ghPath, runner: runner)
-        let tip = try await git(["rev-parse", "refs/remotes/origin/\(branch)"], in: clone, ghPath: ghPath, runner: runner)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let tip = try await tip(of: branch, clone: clone, ghPath: ghPath, runner: runner)
         return try await detached(clone.appendingPathComponent(".worktrees/bton-\(item)", isDirectory: true),
                                   at: tip, base: nil, clone: clone, ghPath: ghPath, runner: runner, fresh: fresh, note: note)
+    }
+
+    /// What `origin/<branch>` names in the clone, as last fetched.
+    static func tip(of branch: String, clone: URL, ghPath: String, runner: ProcessRunner) async throws -> String {
+        try await git(["rev-parse", "refs/remotes/origin/\(branch)"], in: clone, ghPath: ghPath, runner: runner)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Bton's own tree at `sha`. An earlier job's leftover changes go to the clone's `git stash`,
@@ -43,6 +48,14 @@ enum Worktrees {
     private static func detached(_ path: URL, at sha: String, base: String?, clone: URL, ghPath: String, runner: ProcessRunner,
                                  fresh: Bool = false, note: @Sendable (String) -> Void) async throws -> URL {
         if FileManager.default.fileExists(atPath: path.path) || (try? FileManager.default.destinationOfSymbolicLink(atPath: path.path)) != nil {
+            // A trusted base tree holds nothing to keep, so an orphan in its place goes; a
+            // schedule's folder could hold someone's files and is refused below.
+            if fresh, path.lastPathComponent.hasPrefix("bton-base-"),
+               try await isOrphan(path, clone: clone, ghPath: ghPath, runner: runner) {
+                try FileManager.default.removeItem(at: path)
+                note("removed \(path.lastPathComponent): git no longer listed it as a worktree")
+                return try await detached(path, at: sha, base: base, clone: clone, ghPath: ghPath, runner: runner, note: note)
+            }
             // A PR's check could plant a link here to someone's checkout: nothing is stashed or
             // switched until the path is Bton's own worktree of this clone.
             guard try await isOwnWorktree(path, clone: clone, ghPath: ghPath, runner: runner) else {
@@ -134,18 +147,37 @@ enum Worktrees {
     /// as one of the clone's worktrees.
     private static func isOwnWorktree(_ path: URL, clone: URL, ghPath: String, runner: ProcessRunner) async throws -> Bool {
         let expected = realPath(clone.path) + "/.worktrees/" + path.lastPathComponent
-        guard realPath(path.path) == expected else { return false }
-        let listing = try await git(["worktree", "list", "--porcelain"], in: clone, ghPath: ghPath, runner: runner)
-        guard listing.split(separator: "\n").contains(where: { line in
-            line.hasPrefix("worktree ") && realPath(String(line.dropFirst("worktree ".count))) == expected
-        }) else { return false }
+        guard realPath(path.path) == expected, try await isListed(expected, clone: clone, ghPath: ghPath, runner: runner)
+        else { return false }
         // A tree whose `.git` file is gone would have git fall through to the main checkout.
         let top = try? await git(["rev-parse", "--show-toplevel"], in: path, ghPath: ghPath, runner: runner)
         return top.map { realPath($0.trimmingCharacters(in: .whitespacesAndNewlines)) } == expected
     }
 
-    /// Removes Bton's own tree when nothing in it changed; false when it stays.
+    /// A real folder at `.worktrees/<name>` of the clone, no link on the way, that git no longer
+    /// lists as a worktree: a command's own cleanup pruned it, and nothing else would remove it.
+    private static func isOrphan(_ path: URL, clone: URL, ghPath: String, runner: ProcessRunner) async throws -> Bool {
+        var isFolder: ObjCBool = false
+        let expected = realPath(clone.path) + "/.worktrees/" + path.lastPathComponent
+        guard FileManager.default.fileExists(atPath: path.path, isDirectory: &isFolder), isFolder.boolValue,
+              (try? FileManager.default.destinationOfSymbolicLink(atPath: path.path)) == nil,
+              realPath(path.path) == expected else { return false }
+        return try await !isListed(expected, clone: clone, ghPath: ghPath, runner: runner)
+    }
+
+    /// `git worktree list` names the real path `expected`.
+    private static func isListed(_ expected: String, clone: URL, ghPath: String, runner: ProcessRunner) async throws -> Bool {
+        let listing = try await git(["worktree", "list", "--porcelain"], in: clone, ghPath: ghPath, runner: runner)
+        return listing.split(separator: "\n").contains { line in
+            line.hasPrefix("worktree ") && realPath(String(line.dropFirst("worktree ".count))) == expected
+        }
+    }
+
+    /// Removes Bton's own tree when nothing in it changed, or when it is an orphan; false when it stays.
     static func removeClean(_ path: URL, clone: URL, ghPath: String, runner: ProcessRunner) async -> Bool {
+        if (try? await isOrphan(path, clone: clone, ghPath: ghPath, runner: runner)) == true {
+            return (try? FileManager.default.removeItem(at: path)) != nil
+        }
         guard (try? await cleanHead(path, ghPath: ghPath, runner: runner)) != nil else { return false }
         return (try? await git(["worktree", "remove", path.path], in: clone, ghPath: ghPath, runner: runner)) != nil
     }

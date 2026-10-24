@@ -31,6 +31,11 @@ extension Engine {
 
     /// The flagged move first in line again, its note saved on the flagged job; nil when that save failed.
     private func retry(_ flagged: Job, steeredBy note: String) -> String? {
+        // A command has no prompt for the note to steer: it would run unchanged, with the same limit.
+        if flagged.agent == nil, flagged.flags?.contains(.timedOut) == true {
+            return "not retried: a command that timed out runs again unchanged, with the same time limit; "
+                + "raise the move's timeoutMinutes or speed up the command, then press Retry"
+        }
         do {
             guard try jobs.requestSteeredRetry(flagged.id, note: note) else { return "not retried: the job can no longer be retried" }
         } catch {

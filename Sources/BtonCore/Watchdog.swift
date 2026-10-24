@@ -28,7 +28,8 @@ public enum Watchdog {
 
     private static func failure(_ detail: String?) -> JobFlag {
         guard let detail else { return .failed }
-        if detail == "timed out" { return .timedOut }
+        // An agent past its deadline, or a check or command past its move's limit (`DispatchError.timedOut`).
+        if detail == "timed out" || detail.hasSuffix("minutes and was stopped") { return .timedOut }
         if detail.hasPrefix("lease lost") { return .leaseLost }
         if detail.hasPrefix("final message names no") { return .noVerdict }
         if detail.hasPrefix("posting the review failed") || detail.hasPrefix("decision posted; remove") { return .postFailed }

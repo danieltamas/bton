@@ -60,6 +60,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var steer: String?
     /// The work label this job put on its PR, so it comes off as added even if Settings changed it.
     public var workLabel: String?
+    /// Every check passed, against this base: a later run of the key over the same base skips them.
+    public var checked: PassedChecks?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
@@ -89,6 +91,18 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
         [.failed, .cancelled].contains(status) && retry != true
             && (key.item.hasPrefix("pr-") || key.item.hasPrefix("issue-") && key.move == IssueDrafts.move)
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
+    }
+}
+
+/// The checks a job ran and passed, and the base tip they ran against: a check may read the base
+/// (`git merge-tree`, `git diff base...HEAD`), so a moved base runs them again.
+public struct PassedChecks: Hashable, Codable, Sendable {
+    public let base: String
+    public let checks: [[String]]
+
+    public init(base: String, checks: [[String]]) {
+        self.base = base
+        self.checks = checks
     }
 }
 

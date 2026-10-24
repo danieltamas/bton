@@ -3,6 +3,29 @@ import Foundation
 /// A flow's checks and a merge command: run with their output in the job's log, and the PR
 /// re-read that guards the command.
 extension Dispatcher {
+    /// Why the checks failed, or nil when every one passed, now or in an earlier run of the key
+    /// over the same base tip: a team's suite can take 20 minutes, and a merge that failed after
+    /// it passed must not pay them again. Each gets the move's own time limit: a team's suite can take
+    /// longer than any fixed limit, and the flow's `timeoutMinutes` is where the team says how long
+    /// a move may take.
+    func runChecks(_ checks: [[String]], job: inout Job, in worktree: URL, clone: URL, base: String,
+                   environment: [String: String], timeout: Duration) async throws -> String? {
+        let tip = try await Worktrees.tip(of: base, clone: clone, ghPath: github.ghPath, runner: runner)
+        let passed = PassedChecks(base: tip, checks: checks)
+        if let earlier = jobs.all().first(where: { $0.id != job.id && $0.key == job.key && $0.checked == passed }) {
+            jobs.note(job.id, "checks passed on \(job.key.head.prefix(7)) over \(base) \(tip.prefix(7)) in job \(earlier.id.uuidString); not run again")
+        } else {
+            for check in checks {
+                let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: timeout)
+                guard status == 0 else { return "`\(check.joined(separator: " "))` exited \(status)" }
+            }
+        }
+        job.checked = passed
+        // Unsaved, the next run only checks again.
+        try? jobs.save(job)
+        return nil
+    }
+
     /// Why the command must not run, or nil when the PR on GitHub is still open at the head the
     /// move was started for. Read after the checks, which can take minutes: a commit pushed after
     /// the review, or while they ran, is never merged unreviewed. A failed read refuses too; a Stop
