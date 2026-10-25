@@ -1,0 +1,18 @@
+{
+  "branch": "main",
+  "log": "LOG.md",
+  "architecture": "docs/ARCHITECTURE.md",
+  "test": [
+    {
+      "run": "swift test --scratch-path \"${TMPDIR:-/tmp}/bton-release-test\"",
+      "retry": "swift test --no-parallel --scratch-path \"${TMPDIR:-/tmp}/bton-release-test\""
+    }
+  ],
+  "build": ["scripts/release.sh {version} --verify"],
+  "assets": ["dist/Bton-{version}.zip", "dist/SHA256SUMS"],
+  "githubRelease": true,
+  "verify": [
+    "bash install.sh",
+    "test \"$(defaults read /Applications/Bton.app/Contents/Info.plist CFBundleShortVersionString)\" = {version}"
+  ]
+}
