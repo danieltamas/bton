@@ -273,7 +273,7 @@ private struct WorkLabelEditor: View {
                 .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
             }
             if editing {
-                TextField("bton: working", text: $text)
+                TextField("bton:working", text: $text)
                     .textFieldStyle(.plain).font(.system(size: 12))
                     .padding(8)
                     .background(Theme.core, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

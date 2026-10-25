@@ -192,6 +192,9 @@ private struct RunNowButton: View {
                 Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
                 Text(title).font(.system(size: 10.5, weight: .semibold))
             }
+            // The title column takes layout priority, so an unfixed label wraps "Retry merge" in two.
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(color)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
