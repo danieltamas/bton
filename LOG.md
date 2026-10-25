@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.7.0 (2026-10-25)
+
+**Reviews show up on GitHub too.** When Bton posts a review or a decision on a PR, it now also files it as a GitHub review on the commit it read: approve as an approval, changes or blocked as a request for changes. GitHub's "requested your review" clears once the review is in, and GitHub's own lists show the verdict. The `## Review:` comment is still what Bton's flow counts. Because the review is filed with your GitHub login, an approval counts toward the repo's branch protection like one you gave by hand. GitHub does not let you review your own PR; that case is noted on the job and nothing else changes.
+
 ## 0.6.3 (2026-10-25)
 
 **No change to the app.** This release is built from the same code as 0.6.2. Only the way Bton is released changed: one command now runs the tests, builds, tags, publishes and checks the published files every time. Skip this update if you like; nothing is lost.
