@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.6.3 (2026-10-25)
+
+**No change to the app.** This release is built from the same code as 0.6.2. Only the way Bton is released changed: one command now runs the tests, builds, tags, publishes and checks the published files every time. Skip this update if you like; nothing is lost.
+
 ## 0.6.2 (2026-10-25)
 
 **Retry stays on one line.** On a PR card, Retry merge and Retry fix conflicts no longer wrap onto two lines beside the title.
