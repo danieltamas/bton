@@ -292,6 +292,17 @@ actor Dispatcher {
                                                   environment: environments[job.key.repo.lowercased()] ?? [:])
             try redacted.write(to: file, atomically: true, encoding: .utf8)
             try await github.comment(repo: job.key.repo, number: review.number, bodyFile: file)
+            // The comment is what counts; the GitHub review only mirrors it, so a refusal (a PR of
+            // one's own) is noted and the job still succeeds. The verdict comes from the body checked
+            // before redaction, which may rewrite its head marker.
+            if let verdict = FlowEngine.review(fromFirstLine: FlowEngine.firstLine(of: body), headings: review.headings)?.verdict {
+                do {
+                    try await github.submitReview(verdict, repo: job.key.repo, number: review.number, head: review.head,
+                                                  summary: FlowEngine.firstLine(of: redacted))
+                } catch {
+                    jobs.note(job.id, "could not file the GitHub review: \(error.localizedDescription)")
+                }
+            }
             var kept: [String] = []
             for label in review.clearLabels ?? [] {
                 do {

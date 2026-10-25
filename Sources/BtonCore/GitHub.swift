@@ -125,6 +125,15 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }
 
+    /// Files a posted review's verdict as a GitHub review on the commit it read, so GitHub's own
+    /// review request clears and its lists show the verdict. `summary` is the comment's validated
+    /// first line; the full review stays in the comment.
+    public func submitReview(_ verdict: Verdict, repo: String, number: Int, head: String, summary: String) async throws {
+        _ = try await gh(["api", "--method", "POST", "repos/\(repo)/pulls/\(number)/reviews",
+                          "-f", "commit_id=\(head)", "-f", "event=\(verdict == .approve ? "APPROVE" : "REQUEST_CHANGES")",
+                          "-f", "body=\(summary)"])
+    }
+
     /// The owner's reply on an issue, posted only when they press Post reply. The body is read
     /// from a file, never passed in argv.
     public func commentOnIssue(repo: String, number: Int, bodyFile: URL) async throws {
