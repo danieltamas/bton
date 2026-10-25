@@ -69,7 +69,7 @@ do {
                 print("#\(pr.number)\t-")
                 continue
             }
-            let owner = move.owner.map { move.ownerFromRotation ? "\($0) (rotation)" : $0 } ?? "unassigned"
+            let owner = move.owner.map { move.ownerFromRotation ? "\($0) (rotation)" : move.ownerWroteIt ? "\($0) (author: needs another reviewer)" : $0 } ?? "unassigned"
             let dispatch = FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: read.viewer) ? "\tdispatch" : ""
             print("#\(pr.number)\t\(move.tier)\t\(move.name)\t\(owner)\(dispatch)")
         }

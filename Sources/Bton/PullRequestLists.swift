@@ -31,8 +31,8 @@ struct PullRequestList: View {
     private var ordered: [PullRequest] {
         let rank = { (pr: PullRequest) -> Int in
             guard let move = pr.move else { return 3 }
-            if let me, move.isMine(me) { return 0 }
-            return move.owner == nil ? 1 : 2
+            if let me, move.isMine(me), !move.ownerWroteIt { return 0 }
+            return move.owner == nil || move.ownerWroteIt ? 1 : 2
         }
         return items.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
     }
@@ -87,7 +87,7 @@ private struct PullRequestRow: View {
                     Spacer(minLength: 4)
                     VStack(alignment: .trailing, spacing: 6) {
                         if let move = pr.move {
-                            if !move.hasDispatch, let me, move.isMine(me) {
+                            if !move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
                                 HumanMoveButton(pr: pr, move: move, me: me)
                             } else if let pillStart, let me {
                                 // The agent's move runs here, in Bton: the pill starts it.
@@ -138,7 +138,7 @@ private struct PullRequestRow: View {
         }
         .contextMenu {
             // Only a move this Mac's agent takes can start; the rest are people's.
-            if !busy, let move = pr.move, move.hasDispatch, let me, move.isMine(me) {
+            if !busy, let move = pr.move, move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
                 Button("Run Next") { Task { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") } }
             }
             Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
@@ -315,7 +315,11 @@ struct MoveChip: View {
 
     var body: some View {
         let color = Theme.color(forMove: move.name)
-        if let owner = move.owner {
+        if move.ownerWroteIt, let owner = move.owner {
+            Chip(text: "\(move.name) · needs another reviewer", symbol: Theme.symbol(forMove: move.name),
+                 color: Theme.unassigned, style: .dashed)
+                .help("\(owner) wrote this PR, and a \(move.tier) PR counts no review from its author: assign someone else to review it")
+        } else if let owner = move.owner {
             let mine = me.map(move.isMine) ?? false
             Chip(text: mine ? "\(move.name) · you" : "\(move.name) · \(owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
                  color: mine ? color : color.opacity(0.85), style: mine && !working ? .filled : .tinted)

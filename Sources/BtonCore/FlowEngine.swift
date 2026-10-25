@@ -42,14 +42,19 @@ public struct Move: Hashable, Sendable {
     /// The labels only this move's rule waits on (`label:` conditions): removing one is how a
     /// person says the move is done.
     public let labels: [String]
+    /// The move waits on a review its owner wrote the PR for, on a tier that counts no review
+    /// from the PR's author: the owner's review can never clear it, so it is never started.
+    public let ownerWroteIt: Bool
 
-    public init(name: String, owner: String?, ownerFromRotation: Bool, tier: String, hasDispatch: Bool, labels: [String] = []) {
+    public init(name: String, owner: String?, ownerFromRotation: Bool, tier: String, hasDispatch: Bool, labels: [String] = [],
+                ownerWroteIt: Bool = false) {
         self.name = name
         self.owner = owner
         self.ownerFromRotation = ownerFromRotation
         self.tier = tier
         self.hasDispatch = hasDispatch
         self.labels = labels
+        self.ownerWroteIt = ownerWroteIt
     }
 
     public func isMine(_ me: String) -> Bool {
@@ -115,9 +120,15 @@ public enum FlowEngine {
         let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
         guard let rule = flow.moves.first(where: { $0.when.allSatisfy(facts.holds) }) else { return nil }
         let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
+        // The rotation never picks the author for `assignee`; an author who assigned themselves
+        // a review their tier won't count from them is flagged instead.
+        let counting = flow.reviews[tier] ?? []
+        let ownerWroteIt = rule.who.value(for: tier) == "assignee" && rule.when.contains("no_review_or_response_newer")
+            && !counting.isEmpty && counting.allSatisfy(\.notByAuthor)
+            && owner?.caseInsensitiveCompare(pr.author) == .orderedSame
         return Move(name: rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier,
                     hasDispatch: flow.dispatch[rule.move] != nil,
-                    labels: completionLabels(of: rule, in: flow))
+                    labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt)
     }
 
     /// The rule's `label:` conditions that no other rule names: removing one ends this move and
@@ -128,7 +139,7 @@ public enum FlowEngine {
     }
 
     public static func isDispatchable(_ move: Move, pr: PullRequest, flow: Flow, me: String) -> Bool {
-        move.hasDispatch && move.isMine(me) && pr.baseRef == flow.base
+        move.hasDispatch && !move.ownerWroteIt && move.isMine(me) && pr.baseRef == flow.base
             && trustedAssociations.contains(pr.authorAssociation)
     }
 

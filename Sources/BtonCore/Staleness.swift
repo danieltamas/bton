@@ -23,11 +23,14 @@ public enum Staleness {
         let hours = now.timeIntervalSince(since) / 3600
         let owner = move.owner ?? pr.author
         let head = String(pr.headSha.prefix(12))
+        // The author can't clear a review the tier counts only from someone else: it waits for a reviewer.
         let waited = "`\(move.name)` on \(pr.headSha.prefix(7)) has waited \(Int(hours)) hours"
+            + (move.ownerWroteIt ? " for a reviewer other than its author" : "")
         let escalation = "stale-escalate \(move.name)@\(head)"
         if hours >= stale.escalateHours {
             guard !pr.btonMarkers.contains(escalation) else { return nil }
-            return Notice(marker: escalation, body: "@\(stale.escalateTo): \(waited) for @\(owner).\n\n"
+            let whom = move.ownerWroteIt ? "" : " for @\(owner)"
+            return Notice(marker: escalation, body: "@\(stale.escalateTo): \(waited)\(whom).\n\n"
                 + BtonMarker.line(escalation))
         }
         let ping = "stale-ping \(move.name)@\(head)"

@@ -104,6 +104,11 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 
 A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
 
+A move whose `when` has `no_review_or_response_newer`, on a tier where every `reviews` entry has
+`"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` and the
+assignee is the author (they assigned themselves), Bton shows it as needing another reviewer and never dispatches it: the
+agent's review would be posted as the author and ignored.
+
 ## Dispatch
 
 ```json
