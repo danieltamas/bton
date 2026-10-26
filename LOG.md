@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.7.2 (2026-10-26)
+
+**Take it.** A review the flow gives a teammate, because they are the PR's assignee or the rotation picked them, now offers Take it on its row. Press it, confirm "Take from <login>", and Bton makes you the PR's only assignee on GitHub and starts the review on your Mac. The teammate sees the change on GitHub, and their Bton stops treating the move as theirs. Bton checks first that the PR still shows the same owner and that no Bton is working on it; if either has changed, nothing is reassigned and the row says why. A move the flow gives the PR's author, such as a fix or a quick fix's merge, has no Take it, because assigning the PR does not change who wrote it.
+
 ## 0.7.1 (2026-10-26)
 
 **A drafted reply promises only what Post reply does.** Draft reply on an issue could write that you were setting a label, such as "I'm setting stage:ready", but Post reply only posts the text, so the label never changed and the teammate kept waiting. A draft now never claims a step it cannot take. When the answer needs one, it ends with a line naming it as yours to do, for example "To do: add the label stage:ready."
