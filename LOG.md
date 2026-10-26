@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.7.4 (2026-10-26)
+
+**Your press counts as a person's decision.** When you start a move yourself (Merge, a move's pill, Retry, Run Next, Take it), the flow's checks and the merge command now see `BTON_PRESSED=1`. A check that guards a person's call, such as "a person merges PRs with migrations", can let your press through and still stop a move the sync starts on its own: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" || git diff --quiet origin/develop...HEAD -- migrations/"]`. Change the check in your repo's `.bton/flow.json` to use it; until then it refuses your press as before.
+
 ## 0.7.3 (2026-10-26)
 
 **Take it in one press.** Take it no longer asks "Take from <login>" first: one press assigns the PR to you and starts the move. The extra button also squeezed the row, wrapping the PR number and cutting the title short.
