@@ -1,33 +1,17 @@
 import BtonCore
 import SwiftUI
 
-/// Take it: a teammate's `assignee` move becomes mine. The first press asks again, naming whose it
-/// is, since the second reassigns the PR on GitHub.
+/// Take it: a teammate's `assignee` move becomes mine, in one press.
 struct TakeButton: View {
     @Environment(AppStore.self) private var store
     let pr: PullRequest
     let move: Move
-    @State private var confirming = false
 
     var body: some View {
         let taking = store.taking.contains(pr.id)
-        HStack(spacing: 4) {
-            if confirming, !taking {
-                RunNowButton(title: "Cancel", symbol: "xmark", color: Theme.neutral, help: "Leave it with \(move.owner ?? "the flow")") {
-                    withAnimation(Motion.snappy) { confirming = false }
-                }
-            }
-            RunNowButton(title: taking ? "Taking..." : confirming ? move.owner.map { "Take from \($0)" } ?? "Take it" : "Take it",
-                         symbol: "hand.raised", color: Theme.color(forMove: move.name),
-                         help: "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here") {
-                guard !taking else { return }
-                if confirming {
-                    confirming = false
-                    Task { await store.take(pr, from: move.owner) }
-                } else {
-                    withAnimation(Motion.snappy) { confirming = true }
-                }
-            }
+        RunNowButton(title: taking ? "Taking..." : "Take it", symbol: "hand.raised", color: Theme.color(forMove: move.name),
+                     help: "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here") {
+            Task { await store.take(pr, from: move.owner) }
         }
     }
 }
