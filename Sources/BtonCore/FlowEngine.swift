@@ -115,10 +115,15 @@ public enum FlowEngine {
         }.sorted { $0.createdAt < $1.createdAt }
     }
 
+    /// The first rule whose conditions all hold for the PR.
+    static func rule(for pr: PullRequest, flow: Flow) -> MoveRule? {
+        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
+        return flow.moves.first { $0.when.allSatisfy(facts.holds) }
+    }
+
     public static func move(for pr: PullRequest, flow: Flow) -> Move? {
         let tier = tier(of: pr.body, rule: flow.tier)
-        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
-        guard let rule = flow.moves.first(where: { $0.when.allSatisfy(facts.holds) }) else { return nil }
+        guard let rule = rule(for: pr, flow: flow) else { return nil }
         let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
         // The rotation never picks the author for `assignee`; an author who assigned themselves
         // a review their tier won't count from them is flagged instead.
@@ -141,6 +146,18 @@ public enum FlowEngine {
     public static func isDispatchable(_ move: Move, pr: PullRequest, flow: Flow, me: String) -> Bool {
         move.hasDispatch && !move.ownerWroteIt && move.isMine(me) && pr.baseRef == flow.base
             && trustedAssociations.contains(pr.authorAssociation)
+    }
+
+    /// Take it: the PR's move once the PR is assigned to me alone, when that makes it mine to start.
+    /// Only an `assignee` move moves this way; an `author` or named one stays with its person.
+    public static func takeover(of pr: PullRequest, flow: Flow, me: String) -> Move? {
+        guard let current = move(for: pr, flow: flow), current.hasDispatch, !current.isMine(me),
+              rule(for: pr, flow: flow)?.who.value(for: current.tier) == "assignee" else { return nil }
+        var taken = pr
+        taken.assignees = [me]
+        guard let after = move(for: taken, flow: flow), after.name == current.name, after.isMine(me),
+              isDispatchable(after, pr: taken, flow: flow, me: me) else { return nil }
+        return after
     }
 
     /// `author`, `assignee` (with the rotation when nobody is assigned), or a literal login.

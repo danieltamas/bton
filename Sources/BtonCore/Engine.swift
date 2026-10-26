@@ -408,7 +408,7 @@ public actor Engine {
     private static func labelKey(_ repo: String, _ number: Int) -> String { "\(repo)#\(number)" }
     private func lastRead(_ repo: String, _ number: Int) -> Date { labelReadAt[Self.labelKey(repo, number)] ?? .distantPast }
 
-    private func dispatcher(me: String, repos: [WatchedRepo]) async throws -> Dispatcher {
+    func dispatcher(me: String, repos: [WatchedRepo]) async throws -> Dispatcher {
         if let dispatcher {
             await dispatcher.useRepos(repos)
             return dispatcher

@@ -18,7 +18,7 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public let body: String
     public let isDraft: Bool
     public var labels: [String]
-    public let assignees: [String]
+    public var assignees: [String]
     /// Oldest first, without Bton's own comments.
     public let comments: [PullRequestComment]
     public let updatedAt: Date

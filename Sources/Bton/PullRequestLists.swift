@@ -106,6 +106,9 @@ private struct PullRequestRow: View {
                                              color: buttonStart == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: buttonStart)) {
                                     Task { await store.runNow(pr, move: buttonStart) }
                                 }
+                            } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
+                                      FlowEngine.takeover(of: pr, flow: flow, me: me) != nil {
+                                TakeButton(pr: pr, move: move)
                             }
                         }
                         if let job {
@@ -134,6 +137,10 @@ private struct PullRequestRow: View {
                     .buttonStyle(PressStyle())
                     .help("Open the job and the agent's report")
                 }
+                if let problem = store.takeProblems[pr.id] {
+                    Label(problem, systemImage: "exclamationmark.triangle").font(.meta).foregroundStyle(Theme.danger)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .contextMenu {
@@ -159,10 +166,11 @@ private struct PullRequestRow: View {
 }
 
 /// Starts a move of mine at once, again if it failed on this head.
-private struct RunNowButton: View {
+struct RunNowButton: View {
     let title: String
     let symbol: String
     let color: Color
+    var help: String?
     let action: () -> Void
     @State private var hovering = false
 
@@ -204,7 +212,7 @@ private struct RunNowButton: View {
         }
         .buttonStyle(PressStyle())
         .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
-        .help("\(title) now, again if it failed on this head")
+        .help(help ?? "\(title) now, again if it failed on this head")
     }
 }
 

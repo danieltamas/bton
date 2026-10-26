@@ -50,7 +50,9 @@ The menu bar counts what is waiting on you.
 the buttons you press: a worktree at the PR's head, your repo's checks, then Claude Code, Codex or
 any CLI you configure. A move of yours that an agent takes (a review, a fix) shows as a pill with
 a play mark: press it and the agent starts in Bton, no trip to GitHub. Turn on "Start the flow's
-moves on every sync" for a repo and every move that is yours there starts by itself.
+moves on every sync" for a repo and every move that is yours there starts by itself. A review the
+flow gives a teammate as the PR's assignee offers Take it: Bton assigns the PR to you on GitHub
+and starts the move here.
 
 **A playbook built in.** Every agent Bton starts follows the same way of working a PR: read the
 diff once, targeted tests first, every finding with evidence, scoped re-reviews, short comments,

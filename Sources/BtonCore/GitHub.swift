@@ -144,6 +144,13 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-assignee", login])
     }
 
+    /// Makes `login` the PR's only assignee, in one edit.
+    public func assign(_ login: String, replacing others: [String], repo: String, number: Int) async throws {
+        let removed = others.filter { $0.caseInsensitiveCompare(login) != .orderedSame }
+        _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-assignee", login]
+                         + (removed.isEmpty ? [] : ["--remove-assignee", removed.joined(separator: ",")]))
+    }
+
     /// Creates the label once when the repo lacks it (the add fails), then adds it again.
     public func addLabel(_ label: String, repo: String, number: Int) async throws {
         let add = ["pr", "edit", String(number), "--repo", repo, "--add-label", label]

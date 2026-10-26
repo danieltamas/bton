@@ -104,6 +104,15 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 
 A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
 
+**Take it.** A dispatchable move whose `who` for the PR's tier is `assignee`, owned by someone else
+(or by nobody), can be taken from its row: under the PR's lease, and only if a fresh read still
+shows the owner the row showed, Bton makes this Mac's login the PR's only assignee on GitHub and
+starts the move here. Every Mac then reads the move as this one's; a teammate's Bton that read the
+PR just before and is already starting the move may still run it first, and then this Mac's start
+finds the move done. It is not offered when the move
+would then be one the author can't clear, nor for an `author` or named move, which no assignment
+changes.
+
 A move whose `when` has `no_review_or_response_newer`, on a tier where every `reviews` entry has
 `"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` and the
 assignee is the author (they assigned themselves), Bton shows it as needing another reviewer and never dispatches it: the

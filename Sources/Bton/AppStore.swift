@@ -41,6 +41,9 @@ final class AppStore {
     private(set) var flows: [String: FlowStatus] = [:]
     /// This Mac's `gh` login; moves owned by it are "mine".
     private(set) var me: String?
+    /// Take it, by PR id: the presses still running, and why the last one wrote nothing.
+    var taking: Set<String> = []
+    var takeProblems: [String: String] = [:]
 
     var repos: [WatchedRepo] { config.repos }
     var schedules: [ScheduleEntry] { config.schedules }
