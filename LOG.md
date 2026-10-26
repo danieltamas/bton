@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.7.3 (2026-10-26)
+
+**Take it in one press.** Take it no longer asks "Take from <login>" first: one press assigns the PR to you and starts the move. The extra button also squeezed the row, wrapping the PR number and cutting the title short.
+
 ## 0.7.2 (2026-10-26)
 
 **Take it.** A review the flow gives a teammate, because they are the PR's assignee or the rotation picked them, now offers Take it on its row. Press it, confirm "Take from <login>", and Bton makes you the PR's only assignee on GitHub and starts the review on your Mac. The teammate sees the change on GitHub, and their Bton stops treating the move as theirs. Bton checks first that the PR still shows the same owner and that no Bton is working on it; if either has changed, nothing is reassigned and the row says why. A move the flow gives the PR's author, such as a fix or a quick fix's merge, has no Take it, because assigning the PR does not change who wrote it.
