@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct StartMovesAcceptanceTests {
     @Test(arguments: [Optional<Bool>.none, false])
     func syncOnlyStillReportsMyFlowMove(startMoves: Bool?) async throws {
@@ -202,8 +203,10 @@ struct StartMovesFixture {
     var root: URL { leases.root }
     func key(_ move: String) -> JobKey { JobKey(repo: repo, item: "pr-7", move: move, head: "same-head") }
 
-    static func make(startMoves: Bool? = nil, conflicting: Bool = false, schedule: Bool = false, maxAgents: Int = 2) async throws -> Self {
-        let leases = try await RetryLeaseFixture.make()
+    private static let template = Task { try await makeTemplate() }
+
+    private static func makeTemplate() async throws -> Self {
+        let leases = try await RetryLeaseFixture.make(template: true)
         let home = BtonHome(environment: ["BTON_HOME": leases.root.appendingPathComponent("engine").path])
         let f = Self(leases: leases, home: home)
         do {
@@ -215,9 +218,19 @@ struct StartMovesFixture {
                          ["-C", bare, "hash-object", "-w", "-t", "tree", "/dev/null"],
                          ["-C", bare, "config", "url.\(f.root.appendingPathComponent("origin.git").path).insteadOf",
                           "https://github.com/synthetic/project.git"]] {
-                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(20))
+                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(120))
                 try #require(result.status == 0, "Local lease setup: \(result.stderr)")
             }
+            return f
+        } catch { f.remove(); throw error }
+    }
+
+    static func make(startMoves: Bool? = nil, conflicting: Bool = false, schedule: Bool = false, maxAgents: Int = 2) async throws -> Self {
+        let seed = try await template.value
+        let root = try GitFixtureCopies.copy(seed.root)
+        let home = BtonHome(environment: ["BTON_HOME": root.appendingPathComponent("engine").path])
+        let f = Self(leases: RetryLeaseFixture(root: root, item: seed.leases.item), home: home)
+        do {
             var watched = WatchedRepo(slug: f.repo, path: f.root.path)
             watched.startMoves = startMoves
             let schedules = schedule ? [ScheduleEntry(name: "Synthetic", everyMinutes: 60, enabled: true,

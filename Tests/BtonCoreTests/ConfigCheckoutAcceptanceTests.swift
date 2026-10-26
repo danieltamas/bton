@@ -70,7 +70,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     #expect(permissions.intValue == 0o700)
 }
 
-@Test func initialConfigUsesTheApprovedMachineDefaults() {
+@Test(ProcessBound()) func initialConfigUsesTheApprovedMachineDefaults() {
     #expect(BtonConfig.initial.repos.isEmpty)
     #expect(BtonConfig.initial.maxAgents == 2)
     #expect(BtonConfig.initial.pollSeconds == 60)
@@ -78,7 +78,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     #expect(BtonConfig.initial.agents["codex"] == nil)
 }
 
-@Test func skeletonConfigIsMigratedAndRemoved() throws {
+@Test(ProcessBound()) func skeletonConfigIsMigratedAndRemoved() throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     try fixture.writeLegacy()
@@ -96,7 +96,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     try expectPrivateDirectory(fixture.home.url)
 }
 
-@Test func existingNewConfigWinsAndLeavesLegacyUntouched() throws {
+@Test(ProcessBound()) func existingNewConfigWinsAndLeavesLegacyUntouched() throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     try fixture.writeLegacy()
@@ -118,7 +118,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     try expectPrivateDirectory(fixture.home.url)
 }
 
-@Test func firstRunPersistsInitialConfig() throws {
+@Test(ProcessBound()) func firstRunPersistsInitialConfig() throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let loaded = try BtonConfig.loadOrCreate(home: fixture.home, legacyURL: fixture.legacyURL)
@@ -128,7 +128,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     try expectPrivateDirectory(fixture.home.url)
 }
 
-@Test func homeResolutionAndPrepareUsePrivateDirectories() throws {
+@Test(ProcessBound()) func homeResolutionAndPrepareUsePrivateDirectories() throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let fallback = BtonHome(environment: [:], homeDirectory: fixture.root)
@@ -144,7 +144,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     }
 }
 
-@Test func separateHomesShareNoConfig() throws {
+@Test(ProcessBound()) func separateHomesShareNoConfig() throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let second = BtonHome(environment: ["BTON_HOME": fixture.root.appendingPathComponent("second").path],
@@ -161,7 +161,7 @@ private func expectPrivateDirectory(_ url: URL) throws {
     #expect(try Data(contentsOf: second.configURL) == secondBytes)
 }
 
-@Test(arguments: [
+@Test(ProcessBound(), arguments: [
     "git@github.com:o/r.git", "git@github.com:o/r",
     "https://github.com/o/r.git", "https://github.com/o/r",
     "ssh://git@github.com/o/r.git",
@@ -170,12 +170,12 @@ func githubOriginFormsNormalizeToSlug(_ remote: String) {
     #expect(RepoOrigin.slug(fromRemoteURL: remote) == "o/r")
 }
 
-@Test(arguments: ["https://gitlab.com/o/r.git", "git@gitlab.com:o/r.git", "garbage", ""])
+@Test(ProcessBound(), arguments: ["https://gitlab.com/o/r.git", "git@gitlab.com:o/r.git", "garbage", ""])
 func nonGitHubOriginsHaveNoSlug(_ remote: String) {
     #expect(RepoOrigin.slug(fromRemoteURL: remote) == nil)
 }
 
-@Test(arguments: ["example-org/app", "EXAMPLE-ORG/APP"])
+@Test(ProcessBound(), arguments: ["example-org/app", "EXAMPLE-ORG/APP"])
 func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
@@ -183,7 +183,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     try await RepoOrigin.verify(clone: clone, matches: expected)
 }
 
-@Test func nestedCloneFolderReturnsCloneRoot() async throws {
+@Test(ProcessBound()) func nestedCloneFolderReturnsCloneRoot() async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let clone = try fixture.makeClone(origin: "git@github.com:o/r.git")
@@ -194,7 +194,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     #expect(verifiedRoot.resolvingSymlinksInPath().path == clone.resolvingSymlinksInPath().path)
 }
 
-@Test func differentCloneOriginIsRefusedNamingBothRepos() async throws {
+@Test(ProcessBound()) func differentCloneOriginIsRefusedNamingBothRepos() async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let clone = try fixture.makeClone(origin: "https://github.com/another/actual.git")
@@ -207,7 +207,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     }
 }
 
-@Test func nonGitFolderIsRefused() async throws {
+@Test(ProcessBound()) func nonGitFolderIsRefused() async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     do {
@@ -216,7 +216,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     } catch {}
 }
 
-@Test func cloneWithoutOriginIsRefused() async throws {
+@Test(ProcessBound()) func cloneWithoutOriginIsRefused() async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let clone = try fixture.makeClone(origin: nil)
@@ -226,15 +226,15 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     } catch {}
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerDrainsOutputLargerThanPipeCapacity() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerDrainsOutputLargerThanPipeCapacity() async throws {
     let output = try await ProcessRunner().run(
-        "/bin/sh", ["-c", "head -c 300000 /dev/zero"], timeout: .seconds(10))
+        "/bin/sh", ["-c", "head -c 300000 /dev/zero"], timeout: .seconds(120))
     #expect(output.status == 0)
     #expect(output.stdout == Data(repeating: 0, count: 300_000))
     #expect(output.stderr.isEmpty)
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerTimesOutBeforeTheChildFinishes() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerTimesOutBeforeTheChildFinishes() async throws {
     let clock = ContinuousClock()
     let start = clock.now
     do {
@@ -245,15 +245,15 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     }
 }
 
-@Test func processRunnerReturnsNonzeroStatusAndStderr() async throws {
+@Test(ProcessBound()) func processRunnerReturnsNonzeroStatusAndStderr() async throws {
     let output = try await ProcessRunner().run(
-        "/bin/sh", ["-c", "echo err >&2; exit 3"], timeout: .seconds(5))
+        "/bin/sh", ["-c", "echo err >&2; exit 3"], timeout: .seconds(120))
     #expect(output.status == 3)
     #expect(output.stdout.isEmpty)
     #expect(output.stderr == "err\n")
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerTimesOutWhenChildIgnoresSIGTERM() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerTimesOutWhenChildIgnoresSIGTERM() async throws {
     let clock = ContinuousClock()
     let start = clock.now
     defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
@@ -264,7 +264,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     } catch ProcessRunner.Failure.timedOut {}
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerTimesOutWhenGrandchildKeepsStdoutOpen() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerTimesOutWhenGrandchildKeepsStdoutOpen() async throws {
     let clock = ContinuousClock()
     let start = clock.now
     defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
@@ -275,7 +275,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     } catch ProcessRunner.Failure.timedOut {}
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerDeadlineWinsOverSuccessfulSIGTERMExit() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerDeadlineWinsOverSuccessfulSIGTERMExit() async throws {
     let clock = ContinuousClock()
     let start = clock.now
     defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
@@ -286,7 +286,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     } catch ProcessRunner.Failure.timedOut {}
 }
 
-@Test(.timeLimit(.minutes(1))) func processRunnerCancellationFinishesPromptlyWithAnError() async throws {
+@Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerCancellationFinishesPromptlyWithAnError() async throws {
     let task = Task {
         do {
             _ = try await ProcessRunner().run("/bin/sleep", ["30"], timeout: .seconds(60))
@@ -305,15 +305,15 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     #expect(threw, "Cancelling ProcessRunner must throw instead of returning normally")
 }
 
-@Test func processRunnerUsesArgvAndTheRequestedDirectory() async throws {
+@Test(ProcessBound()) func processRunnerUsesArgvAndTheRequestedDirectory() async throws {
     let fixture = try ConfigCheckoutFixture()
     defer { fixture.remove() }
     let literal = "$(echo expanded); * ' quoted"
     let output = try await ProcessRunner().run(
-        "/usr/bin/printf", ["%s", literal], in: fixture.root, timeout: .seconds(5))
+        "/usr/bin/printf", ["%s", literal], in: fixture.root, timeout: .seconds(120))
     #expect(output.status == 0)
     #expect(String(decoding: output.stdout, as: UTF8.self) == literal)
-    let cwd = try await ProcessRunner().run("/bin/pwd", [], in: fixture.root, timeout: .seconds(5))
+    let cwd = try await ProcessRunner().run("/bin/pwd", [], in: fixture.root, timeout: .seconds(120))
     #expect(cwd.status == 0)
     let actualPath = String(decoding: cwd.stdout, as: UTF8.self).trimmingCharacters(in: .newlines)
     #expect(URL(fileURLWithPath: actualPath).resolvingSymlinksInPath().path

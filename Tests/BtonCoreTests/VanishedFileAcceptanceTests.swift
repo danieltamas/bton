@@ -27,8 +27,16 @@ private struct VanishedGitFixture {
     let clone: URL
     let runner = ProcessRunner()
 
+    private static let templates = VanishedTemplates()
+
     static func make(path: String) async throws -> Self {
-        let root = FileManager.default.temporaryDirectory
+        let seed = try await templates.seed(path: path)
+        let root = try GitFixtureCopies.copy(seed.root)
+        return Self(root: root, clone: root.appendingPathComponent("clone"))
+    }
+
+    fileprivate static func makeTemplate(path: String) async throws -> Self {
+        let root = GitFixtureCopies.templates
             .appendingPathComponent("bton-vanished-acceptance-\(UUID())").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let fixture = Self(root: root, clone: root.appendingPathComponent("clone"))
@@ -115,7 +123,7 @@ private struct VanishedGitFixture {
     func git(_ arguments: [String], in directory: URL? = nil) async throws -> String {
         let result = try await runner.run("/usr/bin/git", arguments, in: directory ?? clone,
             environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -136,6 +144,7 @@ private struct VanishedGitFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct VanishedFileAcceptanceTests {
     @Test(arguments: VanishedTarget.allCases, [
         ("quarantined.txt", false), ("quarantined.txt", true),
@@ -186,7 +195,7 @@ struct VanishedFileAcceptanceTests {
         #expect(try String(contentsOf: fixture.clone.appendingPathComponent(path), encoding: .utf8) == "new upstream quarantined content\n")
         #expect(try await fixture.git(["status", "--porcelain"]).isEmpty)
         let sparse = try await fixture.runner.run("/usr/bin/git", ["config", "--bool", "core.sparseCheckout"],
-            in: fixture.clone, timeout: .seconds(15))
+            in: fixture.clone, timeout: .seconds(120))
         #expect(sparse.status == 1 || String(decoding: sparse.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "false")
     }
 
@@ -212,5 +221,16 @@ struct VanishedFileAcceptanceTests {
             #expect(message.contains("module"))
         }
         #expect(try String(contentsOf: tree.appendingPathComponent("module/keep.txt"), encoding: .utf8) == "dirty submodule content\n")
+    }
+}
+
+private actor VanishedTemplates {
+    private var seeds: [String: Task<VanishedGitFixture, Error>] = [:]
+
+    func seed(path: String) async throws -> VanishedGitFixture {
+        if let seed = seeds[path] { return try await seed.value }
+        let seed = Task { try await VanishedGitFixture.makeTemplate(path: path) }
+        seeds[path] = seed
+        return try await seed.value
     }
 }

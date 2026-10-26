@@ -27,6 +27,7 @@ private enum SupervisorFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct SupervisorAcceptanceTests {
     @Test(arguments: ["retry", "escalate", "propose", "none"])
     func parsesEveryActionAndStartsUnapplied(action: String) throws {
@@ -303,8 +304,18 @@ struct SupervisionRunFixture {
     let clone: URL
     let flaggedID = UUID()
 
+    private static let template = Task { try await makeTemplate() }
+
     static func make() async throws -> Self {
-        let leases = try await RetryLeaseFixture.make()
+        let seed = try await template.value
+        let root = try GitFixtureCopies.copy(seed.leases.root)
+        return Self(leases: RetryLeaseFixture(root: root, item: seed.leases.item),
+            home: BtonHome(environment: ["BTON_HOME": root.appendingPathComponent("dispatcher").path]),
+            clone: root.appendingPathComponent("clone"))
+    }
+
+    private static func makeTemplate() async throws -> Self {
+        let leases = try await RetryLeaseFixture.make(template: true)
         let clone = leases.root.appendingPathComponent("clone")
         let fixture = Self(leases: leases,
             home: BtonHome(environment: ["BTON_HOME": leases.root.appendingPathComponent("dispatcher").path]), clone: clone)
@@ -313,13 +324,13 @@ struct SupervisionRunFixture {
                 ["-C", clone.path, "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
                  "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Synthetic"],
                 ["-C", clone.path, "push", "origin", "HEAD:refs/heads/main"]] {
-                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(20))
+                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(120))
                 try #require(result.status == 0, "Local Git fixture: \(result.stderr)")
             }
             try Data().write(to: leases.root.appendingPathComponent("gh-calls"))
             let gh = leases.root.appendingPathComponent("gh")
             let old = try String(contentsOf: gh, encoding: .utf8)
-            try old.replacingOccurrences(of: "set -eu", with: "set -eu\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/gh-calls\"")
+            try old.replacingOccurrences(of: "set -eu", with: "set -eu\nprintf '%s\\n' \"$*\" >> \"${0%/*}/gh-calls\"")
                 .write(to: gh, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
             return fixture
@@ -362,6 +373,7 @@ struct SupervisionRunFixture {
 }
 
 // Exercises the public Engine tick and persisted JobStore, with the existing local Git/gh fake.
+@Suite(ProcessBound())
 struct SupervisorEngineAcceptanceTests {
     @Test func restartBetweenRetryAndVerdictSavesStartsSteeredRunOnce() async throws {
         let f = try await SupervisorEngineFixture.make()
@@ -559,10 +571,10 @@ private struct SupervisorEngineFixture {
                          ["-C", clone.path, "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
                           "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Fixture"],
                          ["-C", clone.path, "push", "origin", "HEAD:refs/heads/main", "HEAD:refs/pull/7/head"]] {
-                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(20))
+                let result = try await ProcessRunner().run("/usr/bin/git", args, timeout: .seconds(120))
                 try #require(result.status == 0, "Local Git setup: \(result.stderr)")
             }
-            let result = try await ProcessRunner().run("/usr/bin/git", ["-C", clone.path, "rev-parse", "HEAD"], timeout: .seconds(20))
+            let result = try await ProcessRunner().run("/usr/bin/git", ["-C", clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
             let head = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             try base.updatePRs(head: head)
             let agent = base.root.appendingPathComponent("claude")

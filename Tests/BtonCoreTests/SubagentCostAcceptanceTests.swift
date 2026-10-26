@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct SubagentCostAcceptanceTests {
     @Test func claudeIncludesEverySubagentAndIgnoresMetadata() throws {
         let directory = try temporaryDirectory()

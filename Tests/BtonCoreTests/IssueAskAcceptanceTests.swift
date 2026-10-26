@@ -46,6 +46,7 @@ private enum IssueAskFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct IssueAskAcceptanceTests {
     @Test(arguments: [
         ("@owner", true), ("hello @OwNeR!", true), ("(@owner)", true),
@@ -212,6 +213,7 @@ private struct IssueAskEngineFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct IssueAskEngineAcceptanceTests {
     @Test func snapshotAndIssuesFailureRetainAsksWithoutStoppingPRDispatch() async throws {
         let f = try await IssueAskEngineFixture.make(startMoves: true)
@@ -278,6 +280,7 @@ struct IssueAskEngineAcceptanceTests {
     }
 }
 
+@Suite(ProcessBound())
 struct IssueAskAttachmentAcceptanceTests {
     @Test(arguments: ["issue.md", "a", String(repeating: "a", count: 64), "safe_Name-1.txt",
                       "", ".", "..", "../issue.md", "a/b", "a b", String(repeating: "a", count: 65)])

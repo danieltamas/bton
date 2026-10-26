@@ -3,6 +3,8 @@ import Foundation
 /// The side-effecting half of dispatch: claims the lease, prepares the worktree, runs the checks and
 /// the agent or command, keeps the lease renewed, and records the job. One per Bton instance.
 actor Dispatcher {
+    @TaskLocal static var agentPollInterval: Duration = .seconds(2)
+
     static let renewEvery: Duration = .seconds(300)
     static let renewRetry: Duration = .seconds(30)
     static let renewMargin: TimeInterval = 120
@@ -237,7 +239,7 @@ actor Dispatcher {
         let clock = ContinuousClock()
         var lastCost = clock.now
         while let pid = job.pid, isAlive(job.id, pid: pid) {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: Self.agentPollInterval)
             if lost[job.id] != nil {
                 await terminate(job.id, pid: pid)
                 return await finish(job, status: .failed, detail: nil)

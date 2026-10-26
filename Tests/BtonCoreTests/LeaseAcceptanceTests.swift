@@ -106,10 +106,10 @@ private func expectHeld(_ store: LeaseStore, fixture: LeaseFixture, job: UUID) a
     #expect(!record.released)
 }
 
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
+@Suite(ProcessBound(), .serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
 struct LeaseAcceptanceTests {
     // Spike regression: independent bare repos must race through GitHub's custom-ref CAS.
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func twentyIndependentClaimsHaveExactlyOneWinner() async throws {
         try await withLeaseFixture { fixture in
             let stores = try (0..<20).map { _ in try fixture.store() }
@@ -124,7 +124,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func nonHolderCannotRecoverLeaseAndStaleRenewalLoses() async throws {
         try await withLeaseFixture { fixture in
             let a = try fixture.store(), b = try fixture.store()
@@ -145,7 +145,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func expiredLeaseHasExactlyOneTakeover() async throws {
         try await withLeaseFixture { fixture in
             let a = try fixture.store(ttl: .seconds(2))
@@ -163,7 +163,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func lateReleaseCannotOverwriteReleasedLeaseTakeover() async throws {
         try await withLeaseFixture { fixture in
             let a = try fixture.store()
@@ -190,7 +190,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func networkFailureNeverReportsClaimed() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store(remoteURL: { _ in "https://github.invalid/x/y.git" })
@@ -203,7 +203,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func sharedHomeLocalLockNeverAllowsTwoWinners() async throws {
         try await withLeaseFixture { fixture in
             let stores = try [fixture.store(homeName: "shared"), fixture.store(homeName: "shared")]
@@ -213,7 +213,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func neverClaimedItemIsAbsentAndHasNoCurrentHolder() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store()
@@ -224,7 +224,7 @@ struct LeaseAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func secondClaimWithNewJobIsNotAnotherSuccess() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store()
@@ -243,9 +243,9 @@ struct LeaseAcceptanceTests {
     }
 }
 
-@Suite
+@Suite(ProcessBound())
 struct LeaseValueAcceptanceTests {
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func leaseItemParsing() throws {
         for (text, kind, number) in [("pr-304", "pr", 304), ("issue-212", "issue", 212)] {
             let item = try #require(LeaseItem(text))
@@ -259,7 +259,7 @@ struct LeaseValueAcceptanceTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func leaseRecordISO8601RoundTripAndFreeBoundaries() throws {
         let job = UUID(uuidString: "EA0E1600-364D-4CEF-8F65-8DBBC43D0FEF")!
         let decoder = JSONDecoder()

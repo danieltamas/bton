@@ -44,6 +44,7 @@ private enum OwnReviewStalenessFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct OwnReviewStalenessAcceptanceTests {
     @Test func authorReviewRuleNeverFlagsItsAuthorOwner() throws {
         let pr = OwnReviewStalenessFixture.pr()

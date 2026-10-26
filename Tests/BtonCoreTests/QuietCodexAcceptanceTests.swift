@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct QuietCodexAcceptanceTests {
     private let flags = ["--ignore-user-config", "--disable", "hooks"]
     private let session = UUID(uuidString: "ABCDEF12-1234-1234-1234-123456789ABC")!

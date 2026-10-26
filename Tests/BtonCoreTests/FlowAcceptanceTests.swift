@@ -64,6 +64,7 @@ enum FlowFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct FlowAcceptanceTests {
     @Test(arguments: ["team", "sandbox"])
     func examplesLoad(example: String) throws {

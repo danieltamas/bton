@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct WorkLabelAcceptanceTests {
     @Test func labelNameValidationTable() {
         let valid = ["a", String(repeating: "x", count: 50), "Bton working", "équipe:en/cours-1", String(repeating: "é", count: 50)]

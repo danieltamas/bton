@@ -45,6 +45,7 @@ private enum PriceFeedFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct PriceFeedAcceptanceTests {
     @Test func feedConvertsScientificNotationToExactDecimalsAndDefaultsCaches() throws {
         let models = try PriceFeed.parse(PriceFeedFixture.feed())

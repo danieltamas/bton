@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct MergeButtonRegressionTests {
     @Test(arguments: ["merge", "resolve"])
     func teammateFlowMoveRunsOnceInSyncOnlyRepo(move: String) async throws {

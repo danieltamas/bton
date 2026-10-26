@@ -62,6 +62,7 @@ private enum StalenessFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct StalenessAcceptanceTests {
     @Test func pingStartsAfterThresholdAndNamesOwnerMoveAndHead() throws {
         let pr = try StalenessFixture.pr(comments: [

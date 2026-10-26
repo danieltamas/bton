@@ -33,6 +33,7 @@ private enum AgentHardeningFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct AgentHardeningAcceptanceTests {
     @Test(arguments: ["codex-wrapper", "agent", "/usr/bin/claude-wrapper"])
     func nonClaudeTemplatesOnlyFillPlaceholders(executable: String) {

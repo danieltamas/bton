@@ -44,6 +44,7 @@ private enum DispatchFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct DispatchAcceptanceTests {
     @Test func sandboxFixAndOwnerGate() throws {
         let flow = try DispatchFixture.flow()

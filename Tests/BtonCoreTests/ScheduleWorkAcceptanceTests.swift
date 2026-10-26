@@ -19,6 +19,7 @@ private enum ScheduleWorkFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct ScheduleWorkAcceptanceTests {
     @Test func preservesFirstActionOrderWhileCurrentTracksLastAction() throws {
         let first = try ScheduleWorkFixture.line([ScheduleWorkFixture.bash("gh pr view 7")])

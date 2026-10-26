@@ -1,6 +1,7 @@
 @testable import BtonCore
 import Testing
 
+@Suite(ProcessBound())
 struct StartButtonAcceptanceTests {
     // Expected results come from the start-button contract, including a failed
     // head that has no recorded run yet.

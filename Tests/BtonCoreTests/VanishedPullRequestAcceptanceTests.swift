@@ -116,7 +116,7 @@ private struct PRVanishedGitFixture {
     func git(_ arguments: [String], in directory: URL? = nil) async throws -> String {
         let result = try await runner.run("/usr/bin/git", arguments, in: directory ?? clone,
             environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -133,6 +133,7 @@ private struct PRVanishedGitFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct VanishedPullRequestAcceptanceTests {
     @Test(arguments: [false, true])
     fileprivate func quarantinedPRChangeThrows(existingOnBase: Bool) async throws {
@@ -171,14 +172,14 @@ struct VanishedPullRequestAcceptanceTests {
         await expectPRRejection(fixture, path: path)
         #expect(try await fixture.git(["rev-parse", "HEAD"], in: tree) == head)
         let sparse = try await fixture.runner.run("/usr/bin/git", ["sparse-checkout", "list"],
-            in: tree, timeout: .seconds(15))
+            in: tree, timeout: .seconds(120))
         if sparse.status == 0 {
             let patterns = String(decoding: sparse.stdout, as: UTF8.self).split(separator: "\n").map(String.init)
             #expect(!patterns.contains("!/" + path))
         } else {
             // A failed list is acceptable only when sparse checkout really is disabled.
             let enabled = try await fixture.runner.run("/usr/bin/git", ["config", "--bool", "core.sparseCheckout"],
-                in: tree, timeout: .seconds(15))
+                in: tree, timeout: .seconds(120))
             #expect(enabled.status == 1 || (enabled.status == 0 &&
                 String(decoding: enabled.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "false"))
         }

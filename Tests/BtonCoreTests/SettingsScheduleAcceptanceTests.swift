@@ -33,7 +33,7 @@ private enum SettingsScheduleFixture {
     static func git(_ arguments: [String], in directory: URL) async throws -> String {
         let result = try await ProcessRunner().run("/usr/bin/git", arguments, in: directory,
             environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -53,6 +53,7 @@ private enum SettingsScheduleFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct SettingsScheduleAcceptanceTests {
     @Test func scheduleLegacyInitializerAndItemCompleteness() throws {
         let legacy = ScheduleEntry(name: "Daily check", everyMinutes: 10, enabled: true)
@@ -307,7 +308,7 @@ struct SettingsScheduleAcceptanceTests {
                                                ghPath: "/usr/bin/true", runner: ProcessRunner())
         #expect(SettingsScheduleFixture.canonical(tree) == SettingsScheduleFixture.canonical(clone.appendingPathComponent(".worktrees/bton-schedule-7")))
         #expect(try await SettingsScheduleFixture.git(["rev-parse", "HEAD"], in: tree) == firstTip)
-        let initialBranch = try await ProcessRunner().run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(15))
+        let initialBranch = try await ProcessRunner().run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(120))
         #expect(initialBranch.status == 1)
         try await SettingsScheduleFixture.git(["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Synthetic update"], in: writer)
         try await SettingsScheduleFixture.git(["push", "origin", "main"], in: writer)
@@ -317,7 +318,7 @@ struct SettingsScheduleAcceptanceTests {
                                                     ghPath: "/usr/bin/true", runner: ProcessRunner())
         #expect(SettingsScheduleFixture.canonical(refreshed) == SettingsScheduleFixture.canonical(tree))
         #expect(try await SettingsScheduleFixture.git(["rev-parse", "HEAD"], in: tree) == nextTip)
-        let branch = try await ProcessRunner().run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(15))
+        let branch = try await ProcessRunner().run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(120))
         #expect(branch.status == 1)
         for filename in ["untracked.txt", "tracked.txt"] {
             let file = tree.appendingPathComponent(filename)

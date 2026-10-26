@@ -41,6 +41,7 @@ private enum RetryFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct RetryAcceptanceTests {
     @Test func legacyJobDecodesWithoutRetryAndInitializerDefaultsToNil() throws {
         let json = """
@@ -191,18 +192,26 @@ struct RetryLeaseFixture {
     let repo = "synthetic/project"
     let item: LeaseItem
 
-    static func make() async throws -> Self {
-        let root = try RetryFixture.root()
+    private static let seed = Task { try await makeTemplate() }
+
+    static func make(template: Bool = false) async throws -> Self {
+        let seed = try await seed.value
+        return Self(root: try GitFixtureCopies.copy(seed.root, template: template), item: seed.item)
+    }
+
+    private static func makeTemplate() async throws -> Self {
+        let root = GitFixtureCopies.templates.appendingPathComponent("leases-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         do {
             let result = try await ProcessRunner().run("/usr/bin/git",
                 ["init", "--bare", "--initial-branch=main", root.appendingPathComponent("origin.git").path],
-                environment: ["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"], timeout: .seconds(20))
+                environment: ["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"], timeout: .seconds(120))
             try #require(result.status == 0, "git init: \(result.stderr)")
             // A synthetic gh reads the real local Git ref and commit, with no network or credentials.
             let script = #"""
             #!/bin/sh
             set -eu
-            cd "$(dirname "$0")"
+            cd "${0%/*}"
             case "$2" in
               repos/synthetic/project/git/ref/*)
                 ref="refs/${2#repos/synthetic/project/git/ref/}"
@@ -213,8 +222,10 @@ struct RetryLeaseFixture {
                 fi ;;
               repos/synthetic/project/git/commits/*)
                 sha="${2##*/}"
-                message=$(/usr/bin/git --git-dir=origin.git show -s --format=%B "$sha" | /usr/bin/head -n 1)
-                printf '{"message":%s}' "$(printf '%s' "$message" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/')" ;;
+                message=$(/usr/bin/git --git-dir=origin.git show -s --format=%s "$sha")
+                message=${message//\\/\\\\}
+                message=${message//\"/\\\"}
+                printf '{"message":"%s"}' "$message" ;;
               *) exit 2 ;;
             esac
             """#

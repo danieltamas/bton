@@ -2,6 +2,7 @@ import Testing
 @testable import BtonCore
 
 // Pure acceptance contracts: no installer execution, filesystem access, or network.
+@Suite(ProcessBound())
 struct UpdateAcceptanceTests {
     private static let invalidTags = [
         "", "v", "v0.5", "v0.5.1.2", "v0.5.1-rc1", " v0.5.1", "v0.5.1\n",

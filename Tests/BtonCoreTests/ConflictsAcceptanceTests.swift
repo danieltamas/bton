@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct ConflictsAcceptanceTests {
     @Test func pullRequestsDefaultToNotConflictingAndAllowUpdatingConflictState() {
         var pr = ConflictsFixture.pr()

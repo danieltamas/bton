@@ -33,6 +33,7 @@ private enum ScheduleModelFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct ScheduleModelAcceptanceTests {
     @Test func scheduleWithoutModelInConfigDecodesAsNil() throws {
         let json = #"{"repos":[],"pollSeconds":45,"maxAgents":2,"agents":{},"schedules":[{"name":"Synthetic check","everyMinutes":10,"enabled":true}]}"#

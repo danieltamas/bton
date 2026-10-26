@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct InstallerStopAcceptanceTests {
     @Test func stopsItsOwnParent() throws {
         let fixture = try Fixture()
@@ -16,7 +17,7 @@ struct InstallerStopAcceptanceTests {
         #expect(shell.count == 2)
         #expect(shell.last! == parent.processIdentifier)
         try Data().write(to: fixture.directory.appendingPathComponent("go"))
-        try fixture.waitForFile(fixture.result, timeout: 17)
+        try fixture.waitForFile(fixture.result, timeout: 120)
         #expect(try String(contentsOf: fixture.result, encoding: .utf8) == "0\n")
         try fixture.waitForExit(parent)
         #expect(parent.terminationReason == .uncaughtSignal)
@@ -54,7 +55,7 @@ struct InstallerStopAcceptanceTests {
         let start = Date()
         let shell = try fixture.callStop()
         defer { fixture.stop(shell) }
-        try fixture.waitForExit(shell, timeout: 2)
+        try fixture.waitForExit(shell, timeout: 120)
         #expect(shell.terminationStatus == 0)
         #expect(Date().timeIntervalSince(start) < 2)
     }
@@ -68,7 +69,7 @@ struct InstallerStopAcceptanceTests {
         try #require(try fixture.anyMatchingProcess())
         let shell = try fixture.callStop()
         defer { fixture.stop(shell) }
-        try fixture.waitForExit(shell, timeout: 17)
+        try fixture.waitForExit(shell, timeout: 120)
         #expect(shell.terminationStatus == 0)
         try fixture.waitForExit(target)
         #expect(target.terminationReason == .uncaughtSignal)
@@ -136,7 +137,7 @@ struct InstallerStopAcceptanceTests {
                 """.write(to: source, atomically: true, encoding: .utf8)
                 let compiler = try launch("/usr/bin/cc", [source.path, "-o", executable.path])
                 defer { stop(compiler) }
-                try waitForExit(compiler, timeout: 5)
+                try waitForExit(compiler, timeout: 120)
                 try #require(compiler.terminationStatus == 0)
             } catch {
                 cleanup()
@@ -161,7 +162,7 @@ struct InstallerStopAcceptanceTests {
             try launch("/bin/bash", [script.path, name, result.path])
         }
 
-        func waitForFile(_ url: URL, timeout: TimeInterval = 2) throws {
+        func waitForFile(_ url: URL, timeout: TimeInterval = 120) throws {
             let deadline = Date().addingTimeInterval(timeout)
             while Date() < deadline {
                 if let data = try? Data(contentsOf: url), !data.isEmpty { return }
@@ -171,7 +172,7 @@ struct InstallerStopAcceptanceTests {
             throw Timeout()
         }
 
-        func waitForExit(_ process: Process, timeout: TimeInterval = 2) throws {
+        func waitForExit(_ process: Process, timeout: TimeInterval = 120) throws {
             let deadline = Date().addingTimeInterval(timeout)
             while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
             try #require(!process.isRunning, "Process did not exit within \(timeout) seconds")

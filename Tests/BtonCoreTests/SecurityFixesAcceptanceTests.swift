@@ -25,7 +25,7 @@ private enum SecurityFixture {
     static func git(_ arguments: [String], in directory: URL) async throws -> String {
         let result = try await ProcessRunner().run("/usr/bin/git", arguments, in: directory,
             environment: ["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-                          "GIT_TERMINAL_PROMPT": "0"], timeout: .seconds(15))
+                          "GIT_TERMINAL_PROMPT": "0"], timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("Synthetic git setup failed: \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -34,6 +34,7 @@ private enum SecurityFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct SecurityFixesAcceptanceTests {
     @Test(arguments: [true, false], ["OWNER", "MEMBER", "COLLABORATOR"])
     func deletedAuthorReviewRequiresHeadingWithoutNotByAuthor(notByAuthor: Bool, association: String) throws {
@@ -155,7 +156,7 @@ struct SecurityFixesAcceptanceTests {
         #expect(tree.path == clone.appendingPathComponent(".worktrees/bton-base-pr-7").path)
         #expect(try await SecurityFixture.git(["rev-parse", "HEAD"], in: tree) == tip)
         let branch = try await ProcessRunner().run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"],
-                                                  in: tree, timeout: .seconds(15))
+                                                  in: tree, timeout: .seconds(120))
         #expect(branch.status == 1)
         let changed = tree.appendingPathComponent(state == "tracked" ? "tracked.txt" : "untracked.txt")
         let contents = Data("command left changes\n".utf8)

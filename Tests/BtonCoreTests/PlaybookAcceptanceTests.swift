@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct PlaybookAcceptanceTests {
     @Test(arguments: ["review", "fix", "resolve", "decide"])
     func moveGetsCoreAndOnlyItsSection(move: String) {

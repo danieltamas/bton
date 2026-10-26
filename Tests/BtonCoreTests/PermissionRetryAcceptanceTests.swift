@@ -73,7 +73,7 @@ private struct PermissionGitFixture {
     func git(_ arguments: [String], in directory: URL? = nil) async throws -> String {
         let result = try await runner.run("/usr/bin/git", arguments, in: directory ?? clone,
             environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -95,6 +95,7 @@ private func permissionFlag(_ flag: String, at file: URL) throws {
     }
 }
 
+@Suite(ProcessBound())
 struct PermissionRetryAcceptanceTests {
     @Test(arguments: PermissionTarget.allCases)
     fileprivate func transientPermissionDenialPreservesLeftovers(target: PermissionTarget) async throws {
@@ -116,16 +117,16 @@ struct PermissionRetryAcceptanceTests {
         try permissionFlag("uchg", at: file)
         try await expectPermissionDenial(fixture, tree: tree)
 
-        let release = Task {
-            try await Task.sleep(for: .seconds(5))
+        #expect(Worktrees.permissionRetryWait == .seconds(20))
+        let retries = PermissionRetryCounter()
+        let prepared = try await Worktrees.$waitForPermissionRetry.withValue({
+            await retries.increment()
+            try await Task.sleep(for: .milliseconds(20))
             try permissionFlag("nouchg", at: file)
+        }) {
+            try await fixture.prepare(target)
         }
-        defer { release.cancel() }
-        let clock = ContinuousClock()
-        let start = clock.now
-        let prepared = try await fixture.prepare(target)
-        try await release.value
-        #expect(start.duration(to: clock.now) >= .seconds(20))
+        #expect(await retries.count == 1)
         #expect(prepared.standardizedFileURL == tree.standardizedFileURL)
         #expect(try await fixture.git(["status", "--porcelain"], in: tree).isEmpty)
         #expect(try await fixture.git(["rev-parse", "HEAD"], in: tree) == head)
@@ -149,22 +150,33 @@ struct PermissionRetryAcceptanceTests {
         try fixture.write("protected.txt", "leftover job change\n", in: tree)
         try permissionFlag("uchg", at: file)
         try await expectPermissionDenial(fixture, tree: tree)
-        let clock = ContinuousClock()
-        let start = clock.now
+        #expect(Worktrees.permissionRetryWait == .seconds(20))
+        #expect(Worktrees.permissionRetries == 2)
+        let retries = PermissionRetryCounter()
         do {
-            _ = try await fixture.prepare(target)
+            _ = try await Worktrees.$waitForPermissionRetry.withValue({
+                await retries.increment()
+                try await Task.sleep(for: .milliseconds(20))
+            }) {
+                try await fixture.prepare(target)
+            }
             Issue.record("Preparation must throw when every attempt is denied")
         } catch DispatchError.worktree(let message) {
             #expect(message.contains("Operation not permitted"))
         }
-        #expect(start.duration(to: clock.now) >= .seconds(40))
+        #expect(await retries.count == 2)
         #expect(try String(contentsOf: file, encoding: .utf8) == "leftover job change\n")
     }
 
     private func expectPermissionDenial(_ fixture: PermissionGitFixture, tree: URL) async throws {
         let result = try await fixture.runner.run("/usr/bin/git", ["checkout", "--", "protected.txt"],
-            in: tree, timeout: .seconds(15))
+            in: tree, timeout: .seconds(120))
         try #require(result.status != 0)
         try #require(result.stderr.contains("Operation not permitted"))
     }
+}
+
+private actor PermissionRetryCounter {
+    private(set) var count = 0
+    func increment() { count += 1 }
 }

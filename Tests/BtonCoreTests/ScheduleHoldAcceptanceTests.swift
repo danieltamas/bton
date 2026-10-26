@@ -33,6 +33,7 @@ private enum ScheduleHoldFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct ScheduleHoldAcceptanceTests {
     @Test func runningScheduleAllowsUnheldPRInSameRepo() {
         let pr = ScheduleHoldFixture.candidate("OWNER/A", 7)

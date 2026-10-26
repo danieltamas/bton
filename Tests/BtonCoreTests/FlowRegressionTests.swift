@@ -2,6 +2,7 @@ import BtonCore
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct FlowRegressionTests {
     @Test(arguments: ["", ":", "draft:", "label:", "draft"])
     func malformedPredicatesNeverHold(predicate: String) throws {

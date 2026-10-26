@@ -27,6 +27,7 @@ private enum ScheduleChangeGateFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct ScheduleChangeGateAcceptanceTests {
     @Test func scheduleOnlyOnChangeAbsentJSONDecodesAsNil() throws {
         let json = Data(#"{"name":"Daily check","everyMinutes":10,"enabled":true}"#.utf8)

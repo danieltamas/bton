@@ -47,6 +47,7 @@ private enum OwnReviewFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct OwnReviewAcceptanceTests {
     @Test(arguments: ["alice", "ALICE"])
     func authorAssignedAnIndependentReviewCannotDispatch(me: String) throws {

@@ -1,6 +1,7 @@
 import Testing
 @testable import BtonCore
 
+@Suite(ProcessBound())
 struct IssueAskRoundTwoRegressionTests {
     @Test func unmatchedBacktickRunsDoNotHideMention() {
         // Neither run has an equal-length partner, so both are literal text.

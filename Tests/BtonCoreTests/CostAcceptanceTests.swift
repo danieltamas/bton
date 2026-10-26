@@ -2,6 +2,7 @@ import BtonCore
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct CostAcceptanceTests {
     @Test func assistantUsageDeduplicatesMessagesAndSeparatesModels() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

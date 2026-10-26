@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct EnvironmentRedactionAcceptanceTests {
     @Test func redactsEveryOccurrenceOfEachEligibleValue() {
         let environment = ["TOKEN": "synthetic-token", "SECRET": "abcdefgh"]

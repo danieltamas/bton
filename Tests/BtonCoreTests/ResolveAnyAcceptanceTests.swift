@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct ResolveAnyAcceptanceTests {
     @Test func dispatchCandidatesDefaultToRunningChecksAndAllowOptingOut() throws {
         let flow = try ResolveAnyFixture.flow()

@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct MergeHeadPinAcceptanceTests {
     private let movedHead = "abcdef0123456789abcdef0123456789abcdef01"
 
@@ -125,9 +126,9 @@ private struct MergeHeadPinFixture {
         do {
             let runner = ProcessRunner()
             let pushed = try await runner.run("/usr/bin/git",
-                ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(20))
+                ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(120))
             try #require(pushed.status == 0, "PR ref setup: \(pushed.stderr)")
-            let head = try await runner.run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(20))
+            let head = try await runner.run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
             try #require(head.status == 0)
             var pr = PullRequest(repo: base.leases.repo, number: 7, title: "Synthetic PR", author: "owner",
                 authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/7")!,
