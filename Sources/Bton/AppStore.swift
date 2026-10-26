@@ -358,7 +358,7 @@ final class AppStore {
     /// Starts a PR's move or a schedule before anything else, as soon as its repo is free.
     func runNext(repo: String, item: String) async {
         markStarting(repo: repo, item: item)
-        await engine?.runNext(repo: repo, item: item)
+        await engine?.runNext(repo: repo, item: item, pressed: true)
         await refresh()
     }
 

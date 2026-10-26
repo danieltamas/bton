@@ -42,6 +42,8 @@ public actor Engine {
     /// Run-next picks, `owner/name#item` lowercased repo, the latest pick first. A pick stays until
     /// it starts (its repo may be busy), or until a tick finds nothing of it to run.
     private var next: [String] = []
+    /// The picks in `next` a person pressed, until one of their moves starts.
+    var pressedPicks: Set<String> = []
     /// The owner's Merge and Fix conflicts picks, with the head each was asked on: the PR takes that
     /// move instead of its flow move, and a new head drops the pick, so nothing runs on a head the
     /// owner did not see.
@@ -68,6 +70,8 @@ public actor Engine {
     init(home: BtonHome, github: GitHubClient, log: @escaping @Sendable (String) -> Void) throws {
         self.home = home
         self.github = github
+        // Only a press sets it, per run: one inherited from whoever launched Bton would mark every start.
+        unsetenv("BTON_PRESSED")
         jobs = try JobStore(home: home)
         self.log = log
     }
@@ -78,10 +82,13 @@ public actor Engine {
     }
 
     /// Puts a PR's move or a schedule first in line; a schedule runs whether or not it is due.
-    public func runNext(repo: String, item: String) {
+    /// `pressed`: a person asked for it, so its checks and command get `BTON_PRESSED=1` once; a
+    /// supervisor's retry is only put first.
+    public func runNext(repo: String, item: String, pressed: Bool = false) {
         let pick = Self.pick(repo: repo, item: item)
         next.removeAll { $0 == pick }
         next.insert(pick, at: 0)
+        if pressed { pressedPicks.insert(pick) }
     }
 
     static func pick(repo: String, item: String) -> String { "\(repo.lowercased())#\(item)" }
@@ -242,7 +249,8 @@ public actor Engine {
                             refused.insert(chosen.key)
                             continue
                         }
-                        let candidate = Supervision.steered(chosen, jobs: jobs.all())
+                        var candidate = Supervision.steered(chosen, jobs: jobs.all())
+                        candidate.pressed = pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
                         let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
                         switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
                                                          environment: environment) {
@@ -263,6 +271,8 @@ public actor Engine {
                 next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
+                // A press starts one move: a later move of the same PR the sync starts is not pressed.
+                pressedPicks = pressedPicks.subtracting(started).filter(next.contains)
                 // A request whose lease history says it already ran elsewhere would hold the PR's flow move
                 // back; one whose lease is only held now (a schedule's agent on the PR) waits for it.
                 asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
@@ -305,7 +315,7 @@ public actor Engine {
     /// Runs a failed or stopped PR move again on its head, or an issue draft on its comment, first in line.
     public func retry(_ id: UUID) throws -> Bool {
         guard let job = jobs.all().first(where: { $0.id == id }), try jobs.requestRetry(id) else { return false }
-        runNext(repo: job.key.repo, item: job.key.item)
+        runNext(repo: job.key.repo, item: job.key.item, pressed: true)
         ask(job.key)
         return true
     }
@@ -324,7 +334,7 @@ public actor Engine {
     public func runNow(_ key: JobKey) throws {
         let all = jobs.all()
         if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
-        runNext(repo: key.repo, item: key.item)
+        runNext(repo: key.repo, item: key.item, pressed: true)
         ask(key)
     }
 

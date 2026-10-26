@@ -51,7 +51,7 @@ extension Engine {
             throw error
         }
         await release()
-        runNext(repo: repo, item: item)
+        runNext(repo: repo, item: item, pressed: true)
         log("\(repo)#\(number): took \(taken.name) from \(owner ?? "nobody"), assigned \(me)")
         return taken
     }

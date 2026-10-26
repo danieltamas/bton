@@ -11,7 +11,7 @@ extension Dispatcher {
     func runChecks(_ checks: [[String]], job: inout Job, in worktree: URL, clone: URL, base: String,
                    environment: [String: String], timeout: Duration) async throws -> String? {
         let tip = try await Worktrees.tip(of: base, clone: clone, ghPath: github.ghPath, runner: runner)
-        let passed = PassedChecks(base: tip, checks: checks)
+        let passed = PassedChecks(base: tip, checks: checks, pressed: environment["BTON_PRESSED"] == "1")
         if let earlier = jobs.all().first(where: { $0.id != job.id && $0.key == job.key && $0.checked == passed }) {
             jobs.note(job.id, "checks passed on \(job.key.head.prefix(7)) over \(base) \(tip.prefix(7)) in job \(earlier.id.uuidString); not run again")
         } else {

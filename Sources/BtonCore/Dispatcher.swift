@@ -159,9 +159,11 @@ actor Dispatcher {
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
+            // Not in the saved environment: a posted "1" must not be redacted.
+            let runEnvironment = candidate.pressed ? environment.merging(["BTON_PRESSED": "1"]) { $1 } : environment
             if let checks, !checks.isEmpty,
                let failure = try await runChecks(checks, job: &job, in: worktree, clone: clone, base: base,
-                                                 environment: environment, timeout: candidate.timeout) {
+                                                 environment: runEnvironment, timeout: candidate.timeout) {
                 await postFailure(candidate, text: failure)
                 return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
             }
@@ -181,7 +183,7 @@ actor Dispatcher {
                     _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
                     return await finish(job, status: .failed, detail: refusal)
                 }
-                let status = try await runLogged(command, in: trusted, job: job.id, environment: environment, timeout: candidate.timeout)
+                let status = try await runLogged(command, in: trusted, job: job.id, environment: runEnvironment, timeout: candidate.timeout)
                 if await !Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner) {
                     jobs.note(job.id, "kept \(trusted.path): the command left changes in it")
                 }

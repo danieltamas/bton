@@ -34,6 +34,9 @@ public struct DispatchCandidate: Sendable {
     /// Files written to a Claude job's scratch directory before it starts, by name: text the agent
     /// reads as data, kept out of its prompt.
     public var attachments: [String: String] = [:]
+    /// Started by the owner's press (Merge, the move's pill, Retry, Run Next, Take it), not by the
+    /// sync on its own: the flow's checks and the merge command see `BTON_PRESSED=1`.
+    public var pressed = false
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }

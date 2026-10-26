@@ -99,10 +99,14 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
 public struct PassedChecks: Hashable, Codable, Sendable {
     public let base: String
     public let checks: [[String]]
+    /// They ran with `BTON_PRESSED=1`, which a check may pass on: never reused for the other kind
+    /// of start. Nil in jobs saved before it, which no run reuses.
+    public let pressed: Bool?
 
-    public init(base: String, checks: [[String]]) {
+    public init(base: String, checks: [[String]], pressed: Bool = false) {
         self.base = base
         self.checks = checks
+        self.pressed = pressed
     }
 }
 

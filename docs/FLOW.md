@@ -21,7 +21,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `reviewers` | Optional logins for the reviewer rotation (below). |
 | `moves` | Ordered list of `{ "move", "when": [predicate...], "who" }`. First match wins. |
 | `dispatch` | Per move name, what Bton starts for it (below). A move without an entry is a human's. |
-| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. |
+| `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. When a person started the move (Merge, the move's pill, Retry, Run Next, Take it) rather than the sync, checks and the merge command also see `BTON_PRESSED=1`, so a check that guards a person's decision can let the press through: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" \|\| git diff --quiet origin/develop...HEAD -- migrations/"]`. |
 | `intake` | Optional: how an agent takes a new issue. Parsed, not dispatched yet. |
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
