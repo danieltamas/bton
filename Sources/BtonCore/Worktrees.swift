@@ -205,6 +205,11 @@ enum Worktrees {
     /// Past Avast's 14-second wait for its cloud's answer.
     static let permissionRetryWait: Duration = .seconds(20)
 
+    // Task-local so concurrent preparations can exercise retries without sharing test state.
+    @TaskLocal static var waitForPermissionRetry: @Sendable () async throws -> Void = {
+        try await Task.sleep(for: permissionRetryWait)
+    }
+
     @discardableResult
     private static func git(_ arguments: [String], in directory: URL, ghPath: String, runner: ProcessRunner) async throws -> String {
         // GitHub over HTTPS with gh's token, like the agents: an SSH key behind an agent that asks
@@ -214,7 +219,7 @@ enum Worktrees {
         // An antivirus that asks its cloud before letting a program change a file denies the change
         // when the answer is late, and allows the same one a moment later.
         for _ in 0..<permissionRetries where result.status != 0 && result.stderr.contains("Operation not permitted") {
-            try await Task.sleep(for: permissionRetryWait)
+            try await waitForPermissionRetry()
             result = try await runner.run("/usr/bin/git", arguments, in: directory,
                                           environment: Dispatcher.gitOverHTTPS(ghPath: ghPath), timeout: .seconds(120))
         }

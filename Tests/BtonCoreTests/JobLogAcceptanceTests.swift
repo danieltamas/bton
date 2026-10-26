@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct JobLogAcceptanceTests {
     @Test func noteCreatesPrivateLogAndAppendsTimestampedLinesInOrder() throws {
         try JobLogFixture.withStore { store in

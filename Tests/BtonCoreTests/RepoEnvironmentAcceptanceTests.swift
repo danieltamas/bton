@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct RepoEnvironmentAcceptanceTests {
     @Test func legacyRepoConfigDecodesWithoutEnvironment() throws {
         let data = Data(#"{"pollSeconds":30,"maxAgents":1,"agents":{},"schedules":[],"repos":[{"slug":"synthetic/project","path":"/tmp/synthetic","branch":"main"}]}"#.utf8)

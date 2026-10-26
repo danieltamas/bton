@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct ResolveReviewFallbackAcceptanceTests {
     @Test(arguments: ["small", "large"])
     func reviewOnlyAgentResolvesWithBuiltInPromptAndNoReviewSideEffects(tier: String) throws {

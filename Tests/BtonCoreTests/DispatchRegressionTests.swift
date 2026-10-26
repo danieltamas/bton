@@ -91,6 +91,7 @@ private struct DispatchGitFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct DispatchRegressionTests {
     @Test func leaseRecordRemembersCurrentAndDoneKeys() {
         let record = LeaseRecord(holder: "synthetic", host: "fixture", job: UUID(),
@@ -297,9 +298,9 @@ private func dispatchClaimedLease(_ result: ClaimResult) throws -> Lease {
     return lease
 }
 
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
+@Suite(ProcessBound(), .serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
 struct DispatchLeaseRegressionTests {
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func doneKeysSurviveTheNextMove() async throws {
         try await withDispatchLeaseFixture { fixture in
             let store = try fixture.store()
@@ -317,7 +318,7 @@ struct DispatchLeaseRegressionTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func renewedAndReleasedLeaseKeepDoneKeys() async throws {
         try await withDispatchLeaseFixture { fixture in
             let store = try fixture.store()

@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct SyncAndHumanMoveAcceptanceTests {
     @Test func completionLabelsExcludeReferencesInEarlierAndLaterUnmatchedRules() throws {
         let flow = try SyncHumanFixture.flow("""

@@ -19,6 +19,7 @@ private enum SessionTranscriptFixture {
     """#
 }
 
+@Suite(ProcessBound())
 struct SessionTranscriptAcceptanceTests {
     @Test func skipsMalformedLinesOtherRecordTypesAndMissingMessageObjects() {
         let json = #"""

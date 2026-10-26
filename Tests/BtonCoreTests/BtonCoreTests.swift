@@ -2,7 +2,7 @@ import BtonCore
 import Foundation
 import Testing
 
-@Test func decodesOpenPullRequestsFromGraphQL() throws {
+@Test(ProcessBound()) func decodesOpenPullRequestsFromGraphQL() throws {
     let data = try FlowFixture.graphql(labels: ["turn:lead"], assignees: ["dev-b"], comments: [
         .init(body: "## Review: changes needed (head d67db2a8)\n\n| ID | ...", author: "dev-b")
     ])
@@ -33,7 +33,7 @@ import Testing
     #expect(pr.comments.first?.createdAt == ISO8601DateFormatter().date(from: "2026-10-19T12:00:00Z"))
 }
 
-@Test func onlyOwnerSlashNameIsARepo() {
+@Test(ProcessBound()) func onlyOwnerSlashNameIsARepo() {
     #expect(BtonConfig.isRepoSlug("example-org/app"))
     #expect(BtonConfig.isRepoSlug("example-org/bton"))
     #expect(!BtonConfig.isRepoSlug("app.example"))
@@ -41,7 +41,7 @@ import Testing
     #expect(!BtonConfig.isRepoSlug("a/b --json x"))
 }
 
-@Test func configSurvivesASaveAndLoad() throws {
+@Test(ProcessBound()) func configSurvivesASaveAndLoad() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = BtonHome(environment: ["BTON_HOME": root.appendingPathComponent("state").path],
@@ -54,13 +54,13 @@ import Testing
     #expect(loaded.repos == config.repos)
 }
 
-@Test func costIsTokensTimesPricePerMillion() {
+@Test(ProcessBound()) func costIsTokensTimesPricePerMillion() {
     let price = ModelPrice(input: 5, cacheRead: Decimal(string: "0.5")!, cacheWrite: Decimal(string: "6.25")!, output: 25)
     let usage = TokenUsage(input: 1_000_000, cacheRead: 2_000_000, cacheWrite: 0, output: 100_000)
     #expect(price.cost(of: usage) == Decimal(string: "8.5")!)
 }
 
-@Test func scheduleRunsNowWhenNeverRunAndWaitsOtherwise() {
+@Test(ProcessBound()) func scheduleRunsNowWhenNeverRunAndWaitsOtherwise() {
     let now = Date(timeIntervalSince1970: 1_000_000)
     var entry = ScheduleEntry(name: "poll", everyMinutes: 5, enabled: true)
     #expect(entry.nextRun(after: now) == now)

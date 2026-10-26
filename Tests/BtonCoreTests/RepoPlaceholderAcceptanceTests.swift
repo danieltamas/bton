@@ -17,6 +17,7 @@ private enum RepoPlaceholderFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct RepoPlaceholderAcceptanceTests {
     @Test func repoValuesContainExactlyConfiguredRepoBranchAndStandardizedClone() throws {
         let values = try RepoPlaceholderFixture.values()

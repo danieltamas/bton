@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct ResolveChecksAcceptanceTests {
     @Test func dispatchChecksFalseLoadsWithoutChangingAbsentOrTrueValues() throws {
         let data = Data("""

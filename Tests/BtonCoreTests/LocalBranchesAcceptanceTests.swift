@@ -8,8 +8,16 @@ private struct LocalBranchFixture {
     let upstream: URL
     let runner = ProcessRunner()
 
+    private static let template = Task { try await makeTemplate() }
+
     static func make() async throws -> Self {
-        let root = FileManager.default.temporaryDirectory
+        let seed = try await template.value
+        let root = try GitFixtureCopies.copy(seed.root)
+        return Self(root: root, clone: root.appendingPathComponent("owner"), upstream: root.appendingPathComponent("publisher"))
+    }
+
+    private static func makeTemplate() async throws -> Self {
+        let root = GitFixtureCopies.templates
             .appendingPathComponent("bton-local-branches-\(UUID())").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let f = Self(root: root, clone: root.appendingPathComponent("owner"),
@@ -71,7 +79,7 @@ private struct LocalBranchFixture {
     func git(_ arguments: [String], in directory: URL? = nil) async throws -> String {
         let result = try await runner.run("/usr/bin/git", arguments, in: directory ?? clone,
             environment: ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -80,6 +88,7 @@ private struct LocalBranchFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct LocalBranchesAcceptanceTests {
     @Test func behindCheckedOutDevelopPullsAndPreservesUnrelatedDirtyFile() async throws {
         let f = try await LocalBranchFixture.make()

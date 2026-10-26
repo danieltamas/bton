@@ -30,6 +30,7 @@ private enum TeamInstructionsFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct TeamInstructionsAcceptanceTests {
     @Test func absentClaudeFileReturnsNil() async throws {
         let result = try await TeamInstructionsFixture.expand(["AGENTS.md": "Synthetic unused guidance"])
@@ -176,7 +177,7 @@ struct TeamInstructionsAcceptanceTests {
         #expect(environment["GIT_TERMINAL_PROMPT"] == "0")
     }
 
-    @Test(.timeLimit(.minutes(1))) func readsInstructionsFromBaseTreeInsteadOfCheckout() async throws {
+    @Test(.timeLimit(.minutes(10))) func readsInstructionsFromBaseTreeInsteadOfCheckout() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("bton-team-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

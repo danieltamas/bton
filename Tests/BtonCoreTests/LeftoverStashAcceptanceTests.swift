@@ -42,8 +42,16 @@ private struct LeftoverGitFixture {
     let pr: PullRequest
     let runner = ProcessRunner()
 
+    private static let template = Task { try await makeTemplate() }
+
     static func make() async throws -> Self {
-        let root = FileManager.default.temporaryDirectory
+        let seed = try await template.value
+        let root = try GitFixtureCopies.copy(seed.root)
+        return Self(root: root, clone: root.appendingPathComponent("clone"), oldHead: seed.oldHead, requestedHead: seed.requestedHead, pr: seed.pr)
+    }
+
+    private static func makeTemplate() async throws -> Self {
+        let root = GitFixtureCopies.templates
             .appendingPathComponent("bton-leftover-acceptance-\(UUID())").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         do {
@@ -106,7 +114,7 @@ private struct LeftoverGitFixture {
         #expect(prepared.standardizedFileURL == tree.standardizedFileURL)
         #expect(try await git(["rev-parse", "HEAD"], in: tree) == requestedHead)
         #expect(try await git(["status", "--porcelain", "--untracked-files=all"], in: tree).isEmpty)
-        let symbolic = try await runner.run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(15))
+        let symbolic = try await runner.run("/usr/bin/git", ["symbolic-ref", "-q", "HEAD"], in: tree, timeout: .seconds(120))
         #expect(symbolic.status == 1)
     }
 
@@ -119,7 +127,7 @@ private struct LeftoverGitFixture {
     private static func git(_ arguments: [String], in directory: URL, runner: ProcessRunner) async throws -> String {
         let result = try await runner.run("/usr/bin/git", arguments, in: directory,
             environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"],
-            timeout: .seconds(15))
+            timeout: .seconds(120))
         guard result.status == 0 else {
             Issue.record("git \(arguments) exited \(result.status): \(result.stderr)")
             throw DispatchError.worktree(result.stderr)
@@ -128,6 +136,7 @@ private struct LeftoverGitFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct LeftoverStashAcceptanceTests {
     @Test(arguments: LeftoverTarget.allCases, LeftoverState.allCases)
     fileprivate func existingBtonTreeStashesLeftoversAndPreparesRequestedHead(

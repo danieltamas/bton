@@ -68,6 +68,7 @@ private actor AskCalls {
     func record(_ agent: String, _ question: String) { calls.append([agent, question]) }
 }
 
+@Suite(ProcessBound())
 struct ScheduleHelpersAcceptanceTests {
     @Test func helpersCodableDefaultsRoundTripsAndIsMutable() throws {
         let legacy = Data(#"{"name":"Synthetic check","everyMinutes":10,"enabled":true}"#.utf8)

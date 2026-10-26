@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 // Expected values come from docs/PLAN.md, U11 - About.
+@Suite(ProcessBound())
 struct AboutAcceptanceTests {
     @Test func buildRecognizesEveryDocumentedSourceForm() {
         let rows: [(String?, String, Int, String?, Bool)] = [

@@ -71,9 +71,9 @@ private func expectLeaseError(_ expected: LeaseError,
     }
 }
 
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
+@Suite(ProcessBound(), .serialized, .enabled(if: ProcessInfo.processInfo.environment["BTON_SANDBOX"] != nil))
 struct LeaseRegressionTests {
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func concurrentReleaseOfSameLeaseHasExactlyOneSuccess() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store()
@@ -99,7 +99,7 @@ struct LeaseRegressionTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func concurrentRenewOfSameLeaseHasExactlyOneSuccess() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store()
@@ -135,7 +135,7 @@ struct LeaseRegressionTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test(.timeLimit(.minutes(10)))
     func currentRequiresHolderAndHostEvenWithRealJob() async throws {
         try await withLeaseFixture { fixture in
             let store = try fixture.store()

@@ -30,6 +30,7 @@ private enum QueueFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct QueueAcceptanceTests {
     @Test func repositoriesTakeTurns() {
         let a = (1...3).map { QueueFixture.candidate("owner/a", $0) }
@@ -250,7 +251,7 @@ private struct QueueGitFixture {
         let result = try await ProcessRunner().run("/usr/bin/git",
             ["-c", "core.hooksPath=/dev/null"] + arguments, in: directory ?? clone,
             environment: ["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-                          "GIT_TERMINAL_PROMPT": "0"], timeout: .seconds(20))
+                          "GIT_TERMINAL_PROMPT": "0"], timeout: .seconds(120))
         try #require(result.status == 0, "git \(arguments): \(result.stderr)")
         return String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }

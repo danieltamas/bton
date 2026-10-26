@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct QueueFixesAcceptanceTests {
     @Test func keptPicksPreserveOrderAndDiscardStartedOrUnavailableItems() {
         let picks = ["owner/b#pr-2", "owner/a#pr-1", "owner/a#schedule-3",

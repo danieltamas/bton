@@ -36,6 +36,7 @@ private enum PullRequestHelpersFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct PullRequestHelpersAcceptanceTests {
     @Test func dispatchRuleDecodesOptionalHelpersInOrder() throws {
         for names: [String]? in [nil, [], ["codex"], ["second-agent", "codex", "helper-3"]] {

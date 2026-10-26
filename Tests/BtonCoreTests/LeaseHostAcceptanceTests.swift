@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct LeaseHostAcceptanceTests {
     @Test func defaultHostMatchesBonjourNameAcrossRepeatedCalls() async throws {
         let output = try await ProcessRunner().run("/usr/sbin/scutil", ["--get", "LocalHostName"],
@@ -160,12 +161,13 @@ struct LeaseHostAcceptanceTests {
         try #require(leases.host != lease.record.host)
         let jobs = try JobStore(home: home)
         let process = Process()
+        let (exits, exited) = AsyncStream<Void>.makeStream()
+        process.terminationHandler = { _ in exited.finish() }
         process.executableURL = URL(fileURLWithPath: "/bin/sleep")
         process.arguments = ["60"]
         try process.run()
         defer {
-            if process.isRunning { process.terminate() }
-            process.waitUntilExit()
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         let job = Job(id: id, key: JobKey(repo: fixture.repo, item: fixture.item.description, move: "fix", head: "head"),
                       agent: nil, pid: process.processIdentifier, startedAt: .now, status: .running)
@@ -181,7 +183,7 @@ struct LeaseHostAcceptanceTests {
         #expect(renewed.record.expires > lease.record.expires)
         #expect(renewed.record.job == id)
         process.terminate()
-        process.waitUntilExit()
+        for await _ in exits {}
         await dispatcher.stop(id)
         for _ in 0..<200 {
             if jobs.all().first(where: { $0.id == id })?.status != .running { return }

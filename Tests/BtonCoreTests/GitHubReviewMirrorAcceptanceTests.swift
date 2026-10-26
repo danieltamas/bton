@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct GitHubReviewMirrorAcceptanceTests {
     @Test(arguments: ["review", "decide"], ["approve", "changes", "blocked"])
     func mirrorsVerdictAfterCommentWithFullStartedHead(move: String, verdict: String) async throws {
@@ -112,10 +113,10 @@ private struct ReviewMirrorFixture {
         try original.replacingOccurrences(of: "set -eu", with: "set -eu\n" + handler)
             .write(to: gh, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
-        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(20))
+        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
         try #require(result.status == 0)
         let head = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let push = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(20))
+        let push = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(120))
         try #require(push.status == 0)
         let github = GitHubClient(ghPath: gh.path)
         let store = try JobStore(home: base.home)

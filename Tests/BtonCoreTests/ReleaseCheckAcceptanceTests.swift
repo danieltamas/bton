@@ -3,6 +3,7 @@ import Testing
 import BtonCore
 
 // Pure acceptance contracts: fixed dates, no network or wall-clock waits.
+@Suite(ProcessBound())
 struct ReleaseCheckAcceptanceTests {
     private let checkedAt = Date(timeIntervalSince1970: 1_700_000_000)
     private let release = BtonRelease.build(version: "0.5.0", source: nil)

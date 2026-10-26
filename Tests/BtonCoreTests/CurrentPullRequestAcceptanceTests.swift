@@ -19,6 +19,7 @@ private enum CurrentPullRequestFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct CurrentPullRequestAcceptanceTests {
     @Test func recognizesEverySupportedGitHubPullRequestVerb() {
         for verb in ["view", "diff", "checks", "comment", "edit", "review", "merge",

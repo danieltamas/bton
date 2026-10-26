@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct ResolveOutcomeAcceptanceTests {
     private enum HeadLookupError: Error { case unavailable }
 

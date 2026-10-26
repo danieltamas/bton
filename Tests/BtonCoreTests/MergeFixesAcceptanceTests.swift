@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct MergeFixesAcceptanceTests {
     @Test func timeoutDetailsAndExistingFailureFlags() {
         let cases: [(String, JobFlag)] = [

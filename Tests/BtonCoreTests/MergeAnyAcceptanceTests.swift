@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct MergeAnyAcceptanceTests {
     @Test func pullRequestsDefaultToNotMergeableAndAllowUpdatingMergeability() {
         var pr = MergeAnyFixture.pr()

@@ -36,6 +36,7 @@ private enum AgentLoginFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct AgentLoginAcceptanceTests {
     @Test func locateGhPrefersResolvedCustomPrefix() throws {
         let root = try AgentLoginFixture.root()

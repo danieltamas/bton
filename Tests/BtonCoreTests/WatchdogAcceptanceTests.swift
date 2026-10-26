@@ -14,6 +14,7 @@ enum WatchdogFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct WatchdogAcceptanceTests {
     @Test func jobFlagsHaveStableCodableNames() throws {
         let names = ["timedOut", "leaseLost", "noVerdict", "postFailed", "agentFailed", "failed", "repeated", "costly", "loggedOut"]

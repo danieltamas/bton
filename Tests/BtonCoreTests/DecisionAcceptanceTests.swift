@@ -58,6 +58,7 @@ private enum DecisionFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct DecisionAcceptanceTests {
     @Test func decisionHeadingMustBeNonemptyAndDistinctFromEveryTierReviewHeading() throws {
         for heading in ["", "## Review:", "## Review", "## Review: Decision", "## Decision:"] {

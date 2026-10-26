@@ -14,6 +14,7 @@ private enum ScratchDirectoryFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct ScratchDirectoryAcceptanceTests {
     @Test(arguments: ["claude", "/opt/homebrew/bin/claude"],
           [(false, false), (false, true), (true, false), (true, true)])

@@ -2,8 +2,10 @@
 import Foundation
 import Testing
 
+@Suite(ProcessBound())
 struct CheckTimeLimitAcceptanceTests {
     @Test func flowMoveTimeLimitUsesConfiguredMinutesOrDefaultsToSixty() throws {
+        #expect(Dispatcher.agentPollInterval == .milliseconds(20))
         let configured = try JSONDecoder().decode(DispatchRule.self,
             from: Data(#"{"command":["/usr/bin/true"],"timeoutMinutes":20}"#.utf8))
         let implicit = try JSONDecoder().decode(DispatchRule.self,
@@ -50,9 +52,11 @@ struct CheckTimeLimitAcceptanceTests {
         let f = try await CheckTimeFixture.make()
         defer { try? FileManager.default.removeItem(at: f.root) }
         let done = f.root.appendingPathComponent("check-done")
+        let release = f.root.appendingPathComponent("release")
+        defer { try? Data().write(to: release) }
         let id = try await f.start(checks: [["/bin/sh", "-c",
-            "echo early-check-out; echo early-check-err >&2; sleep 5; touch \"$CHECK_DONE\""]],
-            timeout: .seconds(10), environment: ["CHECK_DONE": done.path])
+            "echo early-check-out; echo early-check-err >&2; while [ ! -f \"$RELEASE\" ]; do sleep 0.02; done; touch \"$CHECK_DONE\""]],
+            timeout: .seconds(10), environment: ["CHECK_DONE": done.path, "RELEASE": release.path])
         let streamed = try await CheckTimeFixture.poll(for: .seconds(60)) {
             let lines = f.log(id).components(separatedBy: "\n")
             return lines.contains("early-check-out") && lines.contains("early-check-err")
@@ -60,6 +64,7 @@ struct CheckTimeLimitAcceptanceTests {
         #expect(streamed)
         #expect(!FileManager.default.fileExists(atPath: done.path))
         #expect(f.store.all().first { $0.id == id }?.status == .running)
+        try Data().write(to: release)
         let ended = try await f.finished(id)
         #expect(ended.status == .succeeded)
     }
@@ -68,8 +73,10 @@ struct CheckTimeLimitAcceptanceTests {
         let f = try await CheckTimeFixture.make()
         defer { try? FileManager.default.removeItem(at: f.root) }
         let command = ["/bin/sh", "-c",
-            "echo early-merge-out; echo early-merge-err >&2; sleep 5; touch \"$ACTION_FILE\""]
-        let id = try await f.start(checks: [], timeout: .seconds(10), command: command)
+            "echo early-merge-out; echo early-merge-err >&2; while [ ! -f \"$RELEASE\" ]; do sleep 0.02; done; touch \"$ACTION_FILE\""]
+        let release = f.root.appendingPathComponent("release")
+        defer { try? Data().write(to: release) }
+        let id = try await f.start(checks: [], timeout: .seconds(10), command: command, environment: ["RELEASE": release.path])
         let streamed = try await CheckTimeFixture.poll(for: .seconds(60)) {
             let lines = f.log(id).components(separatedBy: "\n")
             return lines.contains("early-merge-out") && lines.contains("early-merge-err")
@@ -77,6 +84,7 @@ struct CheckTimeLimitAcceptanceTests {
         #expect(streamed)
         #expect(!FileManager.default.fileExists(atPath: f.action.path))
         #expect(f.store.all().first { $0.id == id }?.status == .running)
+        try Data().write(to: release)
         let ended = try await f.finished(id)
         #expect(ended.status == .succeeded)
     }
@@ -106,11 +114,13 @@ struct CheckTimeLimitAcceptanceTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let done = root.appendingPathComponent("done")
+        let release = root.appendingPathComponent("release")
+        defer { try? Data().write(to: release) }
         let capture = CheckTimeCapture()
         let task = Task {
             try await ProcessRunner().run("/bin/sh", ["-c",
-                "printf 'callback-out\\n'; printf 'callback-err\\n' >&2; sleep 5; touch \"$DONE_FILE\""],
-                environment: ["DONE_FILE": done.path], timeout: .seconds(10),
+                "printf 'callback-out\\n'; printf 'callback-err\\n' >&2; while [ ! -f \"$RELEASE\" ]; do sleep 0.02; done; touch \"$DONE_FILE\""],
+                environment: ["DONE_FILE": done.path, "RELEASE": release.path], timeout: .seconds(10),
                 output: { capture.append($0) })
         }
         let streamed = try await CheckTimeFixture.poll(for: .seconds(60)) {
@@ -118,6 +128,7 @@ struct CheckTimeLimitAcceptanceTests {
         }
         #expect(streamed)
         #expect(!FileManager.default.fileExists(atPath: done.path))
+        try Data().write(to: release)
         let result = try await task.value
         #expect(result.status == 0)
         #expect(String(decoding: result.stdout, as: UTF8.self) == "callback-out\n")

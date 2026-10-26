@@ -21,6 +21,7 @@ private enum LoginHoldFixture {
     }
 }
 
+@Suite(ProcessBound())
 struct LoginHoldAcceptanceTests {
     @Test func setupLoginPhraseBeforeStartDoesNotHoldAgent() {
         #expect(LoginHoldFixture.detail(lines: ["not logged in", LoginHoldFixture.start,

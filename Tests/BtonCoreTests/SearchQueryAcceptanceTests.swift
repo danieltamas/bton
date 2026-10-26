@@ -1,6 +1,7 @@
 @testable import BtonCore
 import Testing
 
+@Suite(ProcessBound())
 struct SearchQueryAcceptanceTests {
     @Test func trimsWhitespaceAndNewlinesAndReportsEmpty() {
         #expect(SearchQuery(" \n\t CAL \r\n").text == "CAL")
