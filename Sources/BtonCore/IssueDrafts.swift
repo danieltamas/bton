@@ -16,7 +16,10 @@ public enum IssueDrafts {
         and search files, nothing else). Draft the owner's reply to the newest comment that asks \
         them: answer each question; where they must choose, recommend one option with the reason, \
         and what would change your mind. Plain and short, in the language of the question. Your \
-        final message is the reply only, ready to paste.
+        final message is the reply only, ready to paste. Posting it posts this text and does \
+        nothing else, so never write that the owner is setting a label, assigning, closing or \
+        doing anything else with it; when the answer needs such a step, end with one line naming \
+        it as the owner's to do, for example "To do: add the label stage:ready."
         """
 
     /// The issue, its body and comments as Markdown, each with its author and time.
