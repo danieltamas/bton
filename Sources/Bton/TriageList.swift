@@ -50,15 +50,8 @@ struct TriageList: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .fixedSize(horizontal: false, vertical: true)
-            .overlay {
-                // Hatched with a dashed edge: it is a draft, not an issue on GitHub yet.
-                let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                ZStack {
-                    Hatching().stroke(Theme.mint.opacity(0.13), lineWidth: 1).clipShape(shape)
-                    shape.strokeBorder(Theme.mint.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                }
-                .allowsHitTesting(false)
-            }
+            // Hatched with a dashed edge: it is a draft, not an issue on GitHub yet.
+            .hatched(Theme.mint)
             .overlay(alignment: .topTrailing) {
                 IconButton(symbol: "trash", help: "Discard this new issue", size: 24) {
                     withAnimation(Motion.spring) { store.forget(session) }
@@ -108,9 +101,8 @@ private struct TriageRow: View {
                     Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.textTertiary)
                     if showRepo { RepoName(repo: issue.repo) }
-                    Chip(text: issue.priority.map { "priority \($0)" } ?? "no priority",
-                         color: issue.priority == nil ? Theme.danger : Theme.neutral, style: .outline)
-                    Chip(text: issue.stage ?? "no stage", color: Theme.neutral, style: .outline)
+                    PriorityChip(priority: issue.priority)
+                    StageChip(stage: issue.stage)
                 }
                 Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -146,9 +138,10 @@ struct TriageView: View {
                     .keyboardShortcut(.cancelAction)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("#\(issue.number) \(issue.title)").font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
-                    Text(([issue.priority.map { "priority \($0)" }, issue.stage.map { "stage \($0)" }].compactMap { $0 })
-                        .joined(separator: " · ").nonEmpty ?? "No priority or stage yet")
-                        .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        PriorityChip(priority: issue.priority)
+                        StageChip(stage: issue.stage)
+                    }
                 }
                 Spacer(minLength: 4)
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(issue.url) }
@@ -173,7 +166,10 @@ struct TriageView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Score \(verdict.score) of \(IssueTriage.maxScore)")
                             .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.mint)
-                        Text(verdict.labels.joined(separator: " + ")).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                        HStack(spacing: 6) {
+                            PriorityChip(priority: verdict.priority)
+                            StageChip(stage: verdict.stage)
+                        }
                     }
                 } else {
                     Text("Answer all three to score it").font(.meta).foregroundStyle(Theme.textTertiary)
@@ -243,18 +239,4 @@ struct TriageQuestions: View {
 
 extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
-}
-
-/// Diagonal lines across a rect, for what is still a draft.
-private struct Hatching: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        var x = -rect.height
-        while x < rect.width {
-            path.move(to: CGPoint(x: x, y: rect.height))
-            path.addLine(to: CGPoint(x: x + rect.height, y: 0))
-            x += 9
-        }
-        return path
-    }
 }

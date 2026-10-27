@@ -291,7 +291,7 @@ struct RootView: View {
         if !search.isEmpty, tab != .schedule { return listed(search).count(for: tab) }
         return switch tab {
         case .pullRequests: store.openPullRequests.count
-        case .issues: store.issueAsks.count
+        case .issues: store.issueAsks.count + store.ready.count
         case .triage: store.triage.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
@@ -302,7 +302,7 @@ struct RootView: View {
 
     /// The lists as shown: narrowed to the chosen repo, then to the search.
     private func listed(_ search: SearchQuery) -> Listed {
-        let shown = listedRepos.contains(repo ?? "") ? repo : nil
+        let shown = filterRepos.contains(repo ?? "") ? repo : nil
         let keep = { (slug: String) in shown == nil || slug == shown }
         // A job matches its PRs' titles and authors too.
         let known = Dictionary(store.openPullRequests.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }
@@ -312,6 +312,7 @@ struct RootView: View {
                 keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author])
             },
             asks: store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) },
+            ready: store.ready.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title] + $0.assignees) },
             triage: store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) },
             jobs: store.jobs.filter { job in
                 guard job.key.move != NewIssues.move else { return false }
@@ -373,13 +374,17 @@ struct RootView: View {
     }
 
     @ViewBuilder private func tabContent(showRepo: Bool) -> some View {
-        let shown = listedRepos.contains(repo ?? "") ? repo : nil
+        let shown = filterRepos.contains(repo ?? "") ? repo : nil
         let search = SearchQuery(query)
         let lists = listed(search)
         VStack(spacing: 0) {
             if tab != .schedule {
-                SearchField(text: $query).padding(.bottom, 8)
-                if listedRepos.count > 1 { repoFilter(selected: shown).padding(.bottom, 8) }
+                HStack(spacing: 8) {
+                    SearchField(text: $query)
+                    // Nothing to choose between with one repo.
+                    if store.repos.count > 1 { RepoFilter(repos: filterRepos, selection: $repo) }
+                }
+                .padding(.bottom, 8)
             }
             if tab != .schedule, !search.isEmpty, lists.count(for: tab) == 0 {
                 noMatch(search, lists: lists)
@@ -387,7 +392,7 @@ struct RootView: View {
                 switch tab {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
-                case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
+                case .issues: IssueAskList(asks: lists.asks, ready: lists.ready, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
                 case .triage: TriageList(issues: lists.triage, showRepo: showRepo, newIssue: { startNewIssue(shown) })
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
@@ -410,6 +415,7 @@ struct RootView: View {
     struct Listed {
         let pullRequests: [PullRequest]
         let asks: [IssueAsk]
+        let ready: [ReadyIssue]
         let triage: [TriageIssue]
         let jobs: [Job]
         let merged: [MergedPullRequest]
@@ -419,7 +425,7 @@ struct RootView: View {
         func count(for tab: Tab) -> Int {
             switch tab {
             case .pullRequests: pullRequests.count
-            case .issues: asks.count
+            case .issues: asks.count + ready.count
             case .triage: triage.count
             case .jobs: jobs.count
             case .schedule: 0
@@ -428,30 +434,13 @@ struct RootView: View {
         }
     }
 
+    /// The repos the filter offers: the watched ones, and any other with something listed.
+    private var filterRepos: [String] { Array(Set(store.repos.map(\.slug) + listedRepos)).sorted() }
+
     /// Every repo that has a PR, a job or a merge listed, in a stable order.
     private var listedRepos: [String] {
-        Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.triage.map(\.repo)
+        Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.ready.map(\.repo) + store.triage.map(\.repo)
             + store.jobs.map(\.key.repo) + store.merged.map(\.repo))).sorted()
-    }
-
-    private func repoFilter(selected: String?) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach([nil] + listedRepos.map(Optional.some), id: \.self) { slug in
-                    Button {
-                        withAnimation(Motion.spring) { repo = slug }
-                    } label: {
-                        Chip(text: slug.map { $0.split(separator: "/").last.map(String.init) ?? $0 } ?? "All repos",
-                             color: selected == slug ? Theme.mint : Theme.neutral,
-                             style: selected == slug ? .tinted : .outline)
-                    }
-                    .buttonStyle(PressStyle())
-                    .pointingHandCursor()
-                    .help(slug ?? "Every watched repo")
-                }
-            }
-            .padding(.horizontal, 14)
-        }
     }
 
     private var footer: some View {

@@ -162,7 +162,9 @@ only place the conversation lives.
 
 ## Triage issues in three clicks
 
-The Triage tab lists open issues that are not `stage:ready`, in progress or in review. Click one and
+The Triage tab lists open issues that are not `stage:ready`, in progress or in review. The Issues tab lists the ones
+that are ready, taken or not: a repo whose flow has `intake` and that starts its moves has a Bton take the most
+urgent unassigned one (see `docs/FLOW.md`), so assign yourself to an issue you want to do by hand. Click one and
 answer three questions. No agent runs, so it opens instantly.
 
 <table>

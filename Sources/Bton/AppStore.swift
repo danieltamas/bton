@@ -31,6 +31,8 @@ final class AppStore {
     /// Questions put to me on open issues, newest first.
     private(set) var issueAsks: [IssueAsk] = []
     private(set) var triage: [TriageIssue] = []
+    /// Open issues at stage:ready, taken or free.
+    private(set) var ready: [ReadyIssue] = []
     /// The issue open in the triage tab.
     var triaging: TriageIssue?
     /// The new issue on screen, if any.
@@ -311,8 +313,16 @@ final class AppStore {
     func canRetry(_ job: Job) -> Bool { job.canRetry(among: jobs) }
 
     /// The move runs again on the same head, once the cause of the failure is fixed.
+    /// Starts a ready issue's work now: the next sync claims it and runs the agent, first in line.
+    func take(_ issue: ReadyIssue) async {
+        markStarting(repo: issue.repo, item: "issue-\(issue.number)")
+        await engine?.takeIssue(repo: issue.repo, number: issue.number)
+        await refresh()
+    }
+
     func retry(_ job: Job) async {
         guard (try? await engine?.retry(job.id)) == true else { return }
+        markStarting(repo: job.key.repo, item: job.key.item)
         await refresh()
     }
 
@@ -480,6 +490,9 @@ final class AppStore {
         issueAsks = snapshot.issueAsks
         // A repo that could not be read keeps its issues, like its PRs.
         triage = snapshot.triage + triage.filter { unread($0.repo) }
+        // The engine keeps an unread repo's last issues in its own list, so the carried ones are not added twice.
+        let readNow = Set(snapshot.ready.map(\.id))
+        ready = snapshot.ready + ready.filter { unread($0.repo) && !readNow.contains($0.id) }
         lastRefresh = snapshot.at
     }
 }

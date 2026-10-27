@@ -38,21 +38,16 @@ struct ScheduleList: View {
                     ScheduleRow(entry: entry, last: store.lastJob(of: entry)) { editing = .existing(entry) }
                         .riseIn(index + 1)
                 }
-                HStack {
-                    if store.schedules.isEmpty {
-                        Text("Run an agent on a timer: drain the PR queue every hour, triage weekly.")
-                            .font(.meta).foregroundStyle(Theme.textTertiary)
-                    }
-                    Spacer()
-                    PillButton(title: "New schedule", symbol: "plus") { editing = .new }
+                if store.schedules.isEmpty {
+                    Text("Run an agent on a timer: drain the PR queue every hour, triage weekly.")
+                        .font(.meta).foregroundStyle(Theme.textTertiary).padding(.top, 8)
                 }
-                .padding(.top, 8)
-                .riseIn(store.schedules.count + 1)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
         .scrollIndicators(.never)
+        .floatingAction(title: "New schedule", symbol: "plus") { editing = .new }
     }
 
     private var syncRow: some View {

@@ -75,6 +75,13 @@ struct ReposPane: View {
                         BranchPicker(repo: repo, problem: $problem)
                         EnvironmentEditor(repo: repo)
                         WorkLabelEditor(repo: repo)
+                        AgentPickEditor(title: "Issue work", symbol: "hammer", current: repo.work) { line, _ in
+                            try store.setWork(line, for: repo.slug)
+                        }
+                        AgentPickEditor(title: "Reviewer", symbol: "checkmark.seal", current: repo.reviewer, rules: repo.reviewRules,
+                                        rulesPrompt: "Review rules: added to every review this Mac runs here. Empty adds none.") { line, rules in
+                            try store.setReviewer(line, rules: rules, for: repo.slug)
+                        }
                         RepoSwitch(symbol: "play.circle", title: "Start the flow's moves on every sync",
                                    help: "Off (the default): a sync only reads the PRs, and agents start here from your schedules and from Run now, Merge and Retry.",
                                    isOn: repo.startsMoves, problem: $problem) { try store.setStartMoves($0, for: repo.slug) }

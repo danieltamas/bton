@@ -112,6 +112,13 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// A label on each PR while a Bton, on any Mac, holds its lease: teammates without Bton see
     /// which PRs an agent works on. Display only; nothing reads it back. Nil is off.
     public var workLabel: String?
+    /// How this Mac runs the repo's issue work, as `AgentPick` text (`claude:sonnet medium`). Nil
+    /// runs the flow's intake agent with that agent's own model.
+    public var work: String?
+    /// How this Mac runs the repo's reviews (`codex:gpt-5 high`) and the rules it adds to the
+    /// review prompt. Nil runs the flow's reviewer as the flow says.
+    public var reviewer: String?
+    public var reviewRules: String?
 
     public var resolvesConflicts: Bool { resolveConflicts != false }
     public var startsMoves: Bool { startMoves == true }

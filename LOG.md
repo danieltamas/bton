@@ -2,6 +2,12 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A ready issue no longer waits for someone to start it.** The Issues tab now lists every `stage:ready` issue of the repos you watch, taken or not, with who has it. A repo whose flow has `intake` and that starts its moves has a Bton take the most urgent unassigned one on its own, as the flow says: it re-reads the issue, runs the flow's claim, makes the worktree and starts the agent, which opens the PR the repo's own way. At most one per repo at a time, only while the flow's PR caps allow it, and after the repo's PR moves. Assign yourself to an issue you want to do by hand and Bton leaves it. See `docs/FLOW.md`, Intake.
+
+**Long issue work, your own agent and model, and a Take button.** An issue's `timeoutMinutes` now counts idle time (no commit or file change) instead of total time, up to 8 hours, and a stopped job resumes with Retry. Settings > Repos has Issue work and Reviewer, each `agent:model effort` picked from what is installed on this Mac (`claude:sonnet medium`, `codex:gpt-6-astra high`), and the reviewer takes rules that are added to every review it runs. A ready issue with no one on it has a Take pill that starts it now. Issues that wait for your reply are hatched in amber. An issue's job that dies with Bton or the Mac resumes by itself at the next sync, while a job that failed on its own still waits for Retry. In-progress issues now show in the Issues tab too, with who has them, and the footer names the repo whose branches it shows.
+
 ## 0.10.1 (2026-10-27)
 
 **Voice input no longer keeps 3 GB of memory.** With voice on, Bton held the speech model in memory for as long as it ran, about 3 GB for Large v3 turbo. It now lets the model go five minutes after you last opened a new issue or dictated, and loads it again when you open one; if you press the mic after it was let go, the mic shows a spinner for a few seconds while it loads, then records. The first recording after a load is also faster: the warm-up that was meant to prepare the GPU never ran, so that recording paid about 3 seconds for it.

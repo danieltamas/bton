@@ -1,18 +1,21 @@
 import Foundation
 
-/// What a job works on: a PR's head, or a schedule's fresh tree of the default branch.
+/// What a job works on: a PR's head, a schedule's fresh tree of the default branch, or an issue
+/// it takes and builds in a tree of its own.
 public enum DispatchTarget: Sendable {
     case pullRequest(PullRequest)
     case branch(String)
+    case issue(IntakePlan)
 }
 
 /// A move this Mac could start, with everything taken from the flow, never from PR text.
 public struct DispatchCandidate: Sendable {
-    public let target: DispatchTarget
+    /// Var for the retry of an issue already claimed, which skips the claim.
+    public var target: DispatchTarget
     public let move: Move
     public let key: JobKey
     /// nil for a command move (merge).
-    public let agent: String?
+    public var agent: String?
     public var prompt: String?
     public let command: [String]?
     /// Bton posts the agent's final message as the review comment.
@@ -20,6 +23,8 @@ public struct DispatchCandidate: Sendable {
     public let timeout: Duration
     /// A schedule's pinned model; nil runs the agent's own.
     public var model: String?
+    /// How hard the agent thinks; nil runs its own default.
+    public var effort: String?
     /// The agents the run's Claude may ask, by name: a schedule's, or a PR move's from the flow.
     public var helpers: [String] = []
     /// The flow's `checks` do not run first: a rule's `"checks": false`, and every resolve, whose
@@ -260,7 +265,8 @@ public enum DispatchPlanner {
         let seen = Set(jobs.filter { $0.retry != true }.map(\.key))
         let running = jobs.filter { $0.status == .running }
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
-        var activeRepos = Set(running.map { $0.key.repo.lowercased() })
+        // An issue's worktree is its own and its PR is not one yet: it does not hold the repo's schedules.
+        var activeRepos = Set(running.filter { $0.key.move != IssueIntake.move }.map { $0.key.repo.lowercased() })
         var picked: [DispatchCandidate] = []
         let rank = { (c: DispatchCandidate) in first.firstIndex(of: "\(c.key.repo.lowercased())#\(c.key.item)") ?? first.count }
         // What could never start here leaves its repo's turn to a candidate that can.
@@ -278,7 +284,7 @@ public enum DispatchPlanner {
             guard !busyItems.contains(item), !(isSchedule && activeRepos.contains(repo)) else { continue }
             picked.append(candidate)
             busyItems.insert(item)
-            activeRepos.insert(repo)
+            if candidate.key.move != IssueIntake.move { activeRepos.insert(repo) }
         }
         return picked
     }
@@ -297,6 +303,8 @@ public enum DispatchPlanner {
         let ordered = repos.map { repo in
             queues[repo, default: []].enumerated().sorted { a, b in
                 let (x, y) = (a.element, b.element)
+                // Finishing PRs and running the queue come before starting new work.
+                if (x.key.move == IssueIntake.move) != (y.key.move == IssueIntake.move) { return y.key.move == IssueIntake.move }
                 if (x.key.move == scheduleMove) != (y.key.move == scheduleMove) { return y.key.move == scheduleMove }
                 if let p = x.pr?.number, let q = y.pr?.number, p != q { return p < q }
                 return a.offset < b.offset
@@ -313,12 +321,12 @@ public enum DispatchPlanner {
     /// leads the task there. Another CLI gets the prompt alone, as its template expects.
     /// `denying` adds to a Claude agent's denied tools.
     public static func argv(_ template: [String], prompt: String, session: UUID, instructions: String? = nil,
-                            values: [String: String] = [:], model: String? = nil,
+                            values: [String: String] = [:], model: String? = nil, effort: String? = nil,
                             helpersConfig: String? = nil, scratch: String? = nil, playbook: String? = nil,
                             denying: [String] = []) -> [String] {
         // The repo's values go in before hardening, so `{clone}/mcp.json` is an absolute path
         // to it; the prompt goes in last, in the same single pass as the session.
-        let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model,
+        let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model, effort: effort, codexModel: model, codexEffort: effort,
                                                helpersConfig: helpersConfig, scratch: scratch, denying: denying)
         let isCodex = template.first.map(AgentHardening.isCodex) == true
         let task = isCodex ? playbook.map { $0 + "\n\nYour task:\n" + prompt } ?? prompt : prompt

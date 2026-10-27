@@ -110,6 +110,26 @@ struct Chip: View {
     }
 }
 
+/// An issue's priority label, in the priority's hue; a missing one is dashed.
+struct PriorityChip: View {
+    let priority: String?
+
+    var body: some View {
+        Chip(text: priority.map { "priority \($0)" } ?? "no priority", color: Theme.color(forPriority: priority),
+             style: priority == nil ? .dashed : .outline)
+    }
+}
+
+/// An issue's stage label, in the stage's hue.
+struct StageChip: View {
+    let stage: String?
+
+    var body: some View {
+        Chip(text: stage?.replacingOccurrences(of: "-", with: " ") ?? "no stage", color: Theme.color(forStage: stage),
+             style: stage == nil ? .dashed : .outline)
+    }
+}
+
 /// A microscopic uppercase label above a value or section.
 struct Eyebrow: View {
     let text: String
@@ -216,11 +236,20 @@ struct StartingLabel: View {
     /// What the last sync found in its way, once it has looked.
     var reason: String?
 
+    /// The loading state of a button that starts an agent: the button's own size and shape, a spinner in
+    /// place of its icon, and no press until the job is up.
     var body: some View {
         HStack(spacing: 5) {
-            PulseDot(color: Theme.mint, pulsing: true)
-            Text(reason == nil ? "starting" : "waiting").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint).lineLimit(1)
+            ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 10, height: 10)
+            Text(reason == nil ? "Starting..." : "Waiting...").font(.system(size: 10.5, weight: .semibold))
         }
+        .lineLimit(1)
+        .fixedSize()
+        .foregroundStyle(Theme.mint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Theme.mint.opacity(0.12), in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.mint.opacity(0.35), lineWidth: 0.5))
         .help(reason.map { "Not started yet: \($0)" } ?? "Starts at the next sync with a free agent slot in \(repo), once no other job holds it")
     }
 }
@@ -511,4 +540,33 @@ struct RelativeTime: View {
         formatter.unitsStyle = .short
         return formatter
     }()
+}
+
+/// Diagonal lines across a rect, for what is still a draft.
+private struct Hatching: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        var x = -rect.height
+        while x < rect.width {
+            path.move(to: CGPoint(x: x, y: rect.height))
+            path.addLine(to: CGPoint(x: x + rect.height, y: 0))
+            x += 9
+        }
+        return path
+    }
+}
+
+extension View {
+    /// Hatching and a dashed edge in `color`: a card that waits on someone (a draft, a question to answer)
+    /// rather than showing something settled.
+    func hatched(_ color: Color) -> some View {
+        overlay {
+            let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+            ZStack {
+                Hatching().stroke(color.opacity(0.13), lineWidth: 1).clipShape(shape)
+                shape.strokeBorder(color.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
+            .allowsHitTesting(false)
+        }
+    }
 }

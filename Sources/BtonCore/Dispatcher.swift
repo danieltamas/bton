@@ -51,7 +51,8 @@ actor Dispatcher {
     /// Picks up jobs a previous run of Bton left running: their agents outlive the app. A job
     /// whose lock another instance holds is that instance's.
     func adopt() async {
-        for job in jobs.all() where job.status == .running && locks[job.id] == nil {
+        for running in jobs.all() where running.status == .running && locks[running.id] == nil {
+            var job = running
             guard let lock = LocalLock(jobs.lockURL(job.id)) else { continue }
             locks[job.id] = lock
             guard let pid = job.pid else {
@@ -62,6 +63,7 @@ actor Dispatcher {
                    let current = try? await leases.current(item, in: job.key.repo, job: job.id, anyHost: true) {
                     held[job.id] = current
                 }
+                job.retry = resumesAfterDeath(job)
                 await finish(job, status: .failed, detail: "Bton stopped before the job started its agent")
                 continue
             }
@@ -71,6 +73,7 @@ actor Dispatcher {
                   let current = try? await leases.current(item, in: job.key.repo, job: job.id, anyHost: true),
                   let lease = try? await leases.renew(current), lease.isLive(at: .now + Self.renewMargin) else {
                 await terminate(job.id, pid: pid)
+                job.retry = resumesAfterDeath(job)
                 await finish(job, status: .failed, detail: "lease lost while Bton was not running")
                 continue
             }
@@ -86,11 +89,16 @@ actor Dispatcher {
     func dispatch(_ candidate: DispatchCandidate, clone: URL, flow: Flow?, agents: [String: AgentTemplate],
                   environment: [String: String] = [:]) async -> DispatchOutcome {
         guard let item = LeaseItem(candidate.key.item) else { return .busy }
+        var candidate = candidate
         let id = UUID()
         let rerun = DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())
         let lease: Lease
         do {
-            switch try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun) {
+            var claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun)
+            if case let .notClaimed(holder?) = claim, await freeOrphan(holder, item: item, repo: candidate.key.repo) {
+                claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun)
+            }
+            switch claim {
             case let .claimed(claimed) where claimed.isLive(): lease = claimed
             case let .notClaimed(holder) where !rerun && holder?.hasRun(candidate.key.description) == true: return .ran
             default: return .busy
@@ -99,8 +107,24 @@ actor Dispatcher {
             log("\(candidate.key): lease not held (\(error.localizedDescription))")
             return .busy
         }
-        let job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
+        // Under the lease, so no other Mac is reading the same issue: it must still be free.
+        if case var .issue(plan) = candidate.target, let me = candidate.move.owner {
+            switch await intakeStanding(plan, repo: candidate.key.repo, me: me) {
+            case .claim:
+                plan.resumes = false
+                candidate.target = .issue(plan)
+            case .resume:
+                plan.resumes = true
+                candidate.target = .issue(plan)
+            case let .refuse(reason):
+                log("\(candidate.key): not taken, \(reason)")
+                try? await leases.release(lease, ran: false)
+                return .busy
+            }
+        }
+        var job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
+        job.pressed = candidate.pressed ? true : nil
         // The agent may have logged out while the lease was claimed: its job waits with the others.
         guard !isLoggedOut(candidate.agent), let lock = LocalLock(jobs.lockURL(id)) else {
             try? await leases.release(lease, ran: false)
@@ -117,7 +141,7 @@ actor Dispatcher {
         jobs.note(id, "started \(candidate.key)")
         // Not awaited: checks and a merge command run for minutes, and the sync that started them
         // would hold every refresh and button behind them. The saved job already counts as running.
-        work[id] = Task {
+        work[id] = Task { [candidate] in
             let job = await self.addWorkLabel(to: job)
             await self.run(job, candidate, clone: clone, flow: flow, agents: agents, environment: environment)
             self.work[id] = nil
@@ -159,6 +183,9 @@ actor Dispatcher {
                 base = branch
                 worktree = try await Worktrees.prepare(clone: clone, branch: branch, item: candidate.key.item,
                                                        ghPath: github.ghPath, runner: runner, note: { [jobs, id = job.id] in jobs.note(id, $0) })
+            case let .issue(plan):
+                base = plan.base
+                worktree = try await prepareIssue(plan, clone: clone, job: job, environment: environment, timeout: candidate.timeout)
             }
             job.worktree = worktree.path
             try jobs.save(job)
@@ -219,7 +246,7 @@ actor Dispatcher {
                 scratch = Self.scratch(job.id).path
             }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
-                                                     instructions: instructions, values: values, model: candidate.model,
+                                                     instructions: instructions, values: values, model: candidate.model, effort: candidate.effort,
                                                      helpersConfig: helpers?.config, scratch: scratch,
                                                      playbook: candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move),
                                                      denying: candidate.denied),
@@ -244,6 +271,11 @@ actor Dispatcher {
         var job = job
         let clock = ContinuousClock()
         var lastCost = clock.now
+        // An issue's work runs as long as it makes progress: the limit counts from the last change in
+        // its worktree, up to a ceiling, so a long job is not killed while it is still writing.
+        let idleWindow = job.deadline.map { $0.timeIntervalSince(job.startedAt) }
+        let ceiling = job.startedAt.addingTimeInterval(Self.intakeCeiling)
+        var activity = ""
         while let pid = job.pid, isAlive(job.id, pid: pid) {
             try? await Task.sleep(for: Self.agentPollInterval)
             if lost[job.id] != nil {
@@ -252,6 +284,13 @@ actor Dispatcher {
             }
             if clock.now - lastCost >= .seconds(30) {
                 await refreshCost(&job)
+                if job.key.move == IssueIntake.move, let idleWindow {
+                    let seen = await worktreeActivity(of: job)
+                    if seen != activity {
+                        activity = seen
+                        job.deadline = min(Date.now.addingTimeInterval(idleWindow), ceiling)
+                    }
+                }
                 try? jobs.save(job)
                 lastCost = clock.now
             }
@@ -271,12 +310,19 @@ actor Dispatcher {
             return await finish(job, status: .failed, detail: "timed out")
         }
         guard exitStatus(job.id) == 0 else {
+            // No exit status at all: the agent was killed with its Mac or its session, not by its own failure.
+            if exitStatus(job.id) == nil { job.retry = resumesAfterDeath(job) }
             return await finish(job, status: .failed, detail: AgentFailure.detail(
                 status: exitStatus(job.id), output: AgentFailure.tail(of: jobs.outputURL(job.id)), log: AgentFailure.tail(of: jobs.logURL(job.id))))
         }
         if job.key.move == "resolve" {
             let outcome = await resolveOutcome(of: job)
             // A Stop pressed while GitHub was read stands over what it said.
+            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            return await finish(job, status: outcome.status, detail: outcome.detail)
+        }
+        if job.key.move == IssueIntake.move {
+            let outcome = await intakeOutcome(of: job)
             if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }

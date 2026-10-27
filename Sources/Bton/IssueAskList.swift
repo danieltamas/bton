@@ -50,24 +50,154 @@ extension Job {
     var isIssueDraft: Bool { key.move == IssueDrafts.move && key.item.hasPrefix("issue-") }
 }
 
-/// Questions put to me on issues, in their own tab: Bton drafts a reply, I post it.
+/// What the Issues tab lists: questions put to me, then the issues ready for anyone to take.
+private enum IssueEntry: Identifiable {
+    case ask(IssueAsk)
+    case ready(ReadyIssue)
+
+    var number: Int {
+        switch self {
+        case let .ask(ask): ask.number
+        case let .ready(issue): issue.number
+        }
+    }
+
+    var id: String {
+        switch self {
+        case let .ask(ask): "ask-\(ask.id)"
+        case let .ready(issue): "ready-\(issue.id)"
+        }
+    }
+}
+
+/// Questions put to me on issues, and the issues ready to be taken: Bton drafts a reply, I post it;
+/// a Bton on a repo that starts its moves takes the most urgent ready issue on its own.
 struct IssueAskList: View {
     @Environment(AppStore.self) private var store
     let asks: [IssueAsk]
+    let ready: [ReadyIssue]
     let showRepo: Bool
     let jobs: [Job]
     let schedules: [ScheduleEntry]
 
+    /// An issue with a question for me is one card, the question: its stage card would repeat it, and both
+    /// would read the same starting draft. Highest number first.
+    private var entries: [IssueEntry] {
+        let asked = Set(asks.map { "\($0.repo.lowercased())#\($0.number)" })
+        let others = ready.filter { !asked.contains("\($0.repo.lowercased())#\($0.number)") }
+        return (asks.map(IssueEntry.ask) + others.map(IssueEntry.ready)).sorted { $0.number > $1.number }
+    }
+
     var body: some View {
         let drafting = jobs.filter { $0.status == .running && $0.isIssueDraft }
-        if asks.isEmpty && drafting.isEmpty {
-            EmptyState(symbol: "questionmark.bubble", title: store.lastRefresh == nil ? "Reading GitHub" : "No questions for you",
-                       detail: "An open issue where a teammate mentions you and you have not answered since shows here.")
+        if asks.isEmpty && ready.isEmpty && drafting.isEmpty {
+            EmptyState(symbol: "questionmark.bubble", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to do here",
+                       detail: "A question for you on an open issue, or an issue at stage:ready, shows here.")
         } else {
-            RowStack(items: asks) { ask in
-                IssueAskRow(ask: ask, showRepo: showRepo)
+            RowStack(items: entries) { entry in
+                switch entry {
+                case let .ask(ask): IssueAskRow(ask: ask, showRepo: showRepo)
+                case let .ready(issue): ReadyIssueRow(issue: issue, showRepo: showRepo)
+                }
             } header: {
                 if !drafting.isEmpty { ActiveStrip(jobs: drafting, schedules: schedules).padding(.bottom, 8) }
+            }
+        }
+    }
+}
+
+/// An issue at stage:ready: who has it, or that nobody does and a Bton will take it.
+private struct ReadyIssueRow: View {
+    @Environment(AppStore.self) private var store
+    let issue: ReadyIssue
+    let showRepo: Bool
+
+    var body: some View {
+        let job = store.jobs.first { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" }
+        // The bar, the stage chip and "Working..." are one color: the issue's stage.
+        HoverCard(accent: Theme.color(forStage: stale ? "spec" : issue.stage ?? "in-progress"), action: { NSWorkspace.shared.open(issue.url) }) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.textTertiary)
+                        if showRepo { RepoName(repo: issue.repo) }
+                        StageChip(stage: issue.stage ?? "in-progress")
+                        PriorityChip(priority: issue.priority)
+                        if stale { Chip(text: "no owner", color: Theme.color(forStage: "spec"), style: .dashed) }
+                    }
+                    Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // One line: a long login truncates, the time never wraps.
+                    HStack(spacing: 6) {
+                        if let owner = issue.assignees.first {
+                            Avatar(login: owner)
+                            Text(issue.assignees.joined(separator: ", ") + " has it").foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        } else {
+                            // Only a ready issue waits for a Bton; one in progress was labeled by whoever works it.
+                            Text(issue.isReady ? "Unclaimed" : "Nobody assigned").lineLimit(1)
+                                .foregroundStyle(stale ? Theme.color(forStage: "spec") : Theme.textSecondary)
+                                .help(issue.isReady ? "The next free Bton, or you with Take, starts it" : "Labeled in progress, but no one is assigned and no Bton job runs it")
+                        }
+                        Text("·").foregroundStyle(Theme.textTertiary)
+                        RelativeTime(date: issue.createdAt) { "opened \($0) ago" }.foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1).fixedSize()
+                    }
+                    .font(.meta)
+                    if let job, job.status == .failed || job.status == .cancelled {
+                        if handedBack {
+                            // The process has the agent unassign itself and move the issue on when it stops on a decision.
+                            Text("The agent stopped on a decision and handed the issue back to \(issue.stage ?? "triage"): its report is in Jobs.")
+                                .font(.meta).foregroundStyle(Theme.color(forStage: "spec")).fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Bton's job \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? "").")
+                                .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 4)
+                action(job)
+            }
+        }
+        .contextMenu { Button("Open on GitHub") { NSWorkspace.shared.open(issue.url) } }
+    }
+
+    /// The agent ended without a PR and the issue has left ready and in progress with no one on it: it handed the issue back.
+    private var handedBack: Bool {
+        issue.assignees.isEmpty && issue.stage != "in-progress" && !issue.isReady
+    }
+
+    /// In progress means an agent or a person started it and holds it: with no assignee and no job of mine, nobody does.
+    private var stale: Bool {
+        issue.stage == "in-progress" && issue.assignees.isEmpty
+            && !store.jobs.contains { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" }
+    }
+
+    /// Free and ready, with no job of mine on it: the owner may start it without waiting for a sync that starts moves.
+    private var canTake: Bool { issue.isReady && issue.assignees.isEmpty && !store.jobs.contains { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" } }
+
+    @ViewBuilder private func action(_ job: Job?) -> some View {
+        if let job, job.status == .running {
+            Button { withAnimation(Motion.spring) { store.watchingJob = job.id } } label: {
+                HStack(spacing: 5) {
+                    PulseDot(color: Theme.color(for: .running))
+                    Text("Working...").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.color(for: .running))
+                }
+            }
+            .buttonStyle(PressStyle())
+            .help("Watch the agent work on the issue")
+        } else if store.isNext(repo: issue.repo, item: "issue-\(issue.number)") {
+            StartingLabel(repo: issue.repo, reason: store.waitingReason(repo: issue.repo, item: "issue-\(issue.number)"))
+        } else if let job, store.canRetry(job) {
+            RunNowButton(title: "Retry", symbol: "arrow.clockwise", color: Theme.color(forStage: "spec"),
+                         help: "Run the job again: the issue is already yours, so it is not claimed twice") {
+                Task { await store.retry(job) }
+            }
+        } else if canTake {
+            RunNowButton(title: "Take", symbol: "hand.raised", color: Theme.mint,
+                         help: "Claim the issue and start the agent now, also when this repo does not start its moves") {
+                Task { await store.take(issue) }
             }
         }
     }
@@ -80,7 +210,7 @@ private struct IssueAskRow: View {
 
     var body: some View {
         let job = store.draft(for: ask)
-        HoverCard(accent: Theme.mint, action: { NSWorkspace.shared.open(ask.url) }) {
+        HoverCard(accent: Theme.color(forStage: "spec"), action: { NSWorkspace.shared.open(ask.url) }) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
@@ -91,11 +221,12 @@ private struct IssueAskRow: View {
                     }
                     Text(ask.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                    // One line: a long login truncates, the time never wraps.
                     HStack(spacing: 6) {
                         Avatar(login: ask.asker)
-                        Text("\(ask.asker) \(ask.handoff ? "handed off" : "asked")").foregroundStyle(Theme.textSecondary)
+                        Text("\(ask.asker) \(ask.handoff ? "handed off" : "asked")").foregroundStyle(Theme.textSecondary).lineLimit(1)
                         Text("·").foregroundStyle(Theme.textTertiary)
-                        RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary)
+                        RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary).lineLimit(1).fixedSize()
                     }
                     .font(.meta)
                     if store.postedAsks.contains(ask.notice) {
@@ -109,10 +240,13 @@ private struct IssueAskRow: View {
                             .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .layoutPriority(1)
                 Spacer(minLength: 4)
                 action(job)
             }
         }
+        // Amber, hatched: an existing issue that waits for your reply, not a ready one or a new draft.
+        .hatched(Theme.color(forStage: "spec"))
         .contextMenu {
             if let job { Button("Watch the Draft") { store.watchingJob = job.id } }
             Button("Open on GitHub") { NSWorkspace.shared.open(ask.url) }

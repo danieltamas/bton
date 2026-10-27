@@ -417,8 +417,9 @@ struct NewIssueView: View {
         let verdict = IssueTriage.verdict(session.answers)
         return HStack(spacing: 8) {
             if let verdict {
-                Text("Score \(verdict.score) of \(IssueTriage.maxScore) · \(verdict.labels.joined(separator: " + "))")
-                    .font(.meta).foregroundStyle(Theme.mint).lineLimit(1)
+                Text("Score \(verdict.score) of \(IssueTriage.maxScore)").font(.meta).foregroundStyle(Theme.mint).lineLimit(1)
+                PriorityChip(priority: verdict.priority)
+                StageChip(stage: verdict.stage)
             } else {
                 Text("Answer all three to score it").font(.meta).foregroundStyle(Theme.textTertiary)
             }

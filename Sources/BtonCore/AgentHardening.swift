@@ -35,7 +35,7 @@ public enum AgentHardening {
         URL(fileURLWithPath: executable).lastPathComponent == "claude"
     }
 
-    static func isCodex(_ executable: String) -> Bool {
+    public static func isCodex(_ executable: String) -> Bool {
         URL(fileURLWithPath: executable).lastPathComponent == "codex"
     }
 
@@ -46,7 +46,7 @@ public enum AgentHardening {
     /// loads in any worktree of a repo trusted there: either may start MCP servers, plugins or
     /// other programs beside the agent, outside its sandbox. Only the settings above carry over
     /// from `userConfig`, as plain quoted values. Hooks stay off whatever a wrapper enables.
-    static func quietCodex(_ template: [String], userConfig: String?) -> [String] {
+    static func quietCodex(_ template: [String], userConfig: String?, model: String? = nil, effort: String? = nil) -> [String] {
         guard !template.contains("--ignore-user-config") else { return template }
         var flags = ["--ignore-user-config", "--disable", "hooks"]
         for line in (userConfig ?? "").split(whereSeparator: \.isNewline) {
@@ -58,6 +58,9 @@ public enum AgentHardening {
                   keptCodexSettings.contains(String(match.2)) else { continue }
             flags += ["-c", "\(match.2)=\"\(match.4)\""]
         }
+        // After the user's own, so the repo's choice on this Mac wins.
+        if let model { flags += ["-c", "model=\"\(model)\""] }
+        if let effort { flags += ["-c", "model_reasoning_effort=\"\(effort)\""] }
         // `--ignore-user-config` is an option of `exec` (alias `e`) alone. Without that subcommand
         // it follows the program, where codex refuses to start rather than load the user's servers.
         let end = template.firstIndex(of: "--") ?? template.endIndex
@@ -74,15 +77,16 @@ public enum AgentHardening {
 
     /// The template with Bton's flags, before `{prompt}` is filled in, so no prompt text is ever
     /// read as a flag. They go before a `--`, which would make them positional. A codex template
-    /// gets `quietCodex`; another agent's is returned as it is. `model` replaces the template's own `--model`, so a run never
+    /// gets `quietCodex`; another agent's is returned as it is. `model` and `effort` are Claude's flags; `codexModel` and `codexEffort` are codex's `-c` settings, so one choice never reaches the other agent. `model` replaces the template's own `--model`, so a run never
     /// follows whatever `~/.claude/settings.json` says that day. `helpersConfig` is Bton's own MCP
     /// server file for the job's helpers, loaded and allowed beside the template's. `scratch` is the
     /// job's own directory outside the repository, which every tool may write. `denying` adds to
     /// Bton's denied tools, for Claude only.
-    public static func hardened(_ template: [String], model: String? = nil, helpersConfig: String? = nil,
+    public static func hardened(_ template: [String], model: String? = nil, effort: String? = nil,
+                                codexModel: String? = nil, codexEffort: String? = nil, helpersConfig: String? = nil,
                                 scratch: String? = nil, denying: [String] = []) -> [String] {
         guard let first = template.first else { return template }
-        if isCodex(first) { return quietCodex(template, userConfig: codexUserConfig()) }
+        if isCodex(first) { return quietCodex(template, userConfig: codexUserConfig(), model: codexModel, effort: codexEffort) }
         guard isClaude(first) else { return template }
         var argv = [first]
         var systemPrompt: String?
@@ -108,6 +112,10 @@ public enum AgentHardening {
                 }
                 continue
             }
+            if effort != nil, argument == "--effort" || argument.hasPrefix("--effort=") {
+                if argument == "--effort" { _ = rest.popFirst() }
+                continue
+            }
             switch argument {
             case "--":
                 positional = ["--"] + rest
@@ -129,6 +137,7 @@ public enum AgentHardening {
             }
         }
         if let model { argv += ["--model", model] }
+        if let effort { argv += ["--effort", effort] }
         argv += ["--setting-sources", "user", "--strict-mcp-config"]
         // A job that denies tools is read-only: the template's MCP servers may write, so none load.
         if !denying.isEmpty { mcpConfigs = [] }

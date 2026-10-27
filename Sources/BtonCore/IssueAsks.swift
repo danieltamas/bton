@@ -14,10 +14,14 @@ public struct OpenIssue: Hashable, Sendable {
     /// Oldest first, the last 20.
     public let comments: [IssueComment]
     public let labels: [String]
+    /// Logins of whoever has taken the issue.
+    public let assignees: [String]
 
     public init(repo: String, number: Int, title: String, url: URL, createdAt: Date, author: String?,
-                authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = []) {
+                authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = [],
+                assignees: [String] = []) {
         self.labels = labels
+        self.assignees = assignees
         self.repo = repo
         self.number = number
         self.title = title
@@ -183,8 +187,9 @@ public enum IssueAsks {
 }
 
 extension GitHubClient {
-    /// One GraphQL query per repo per tick: the 50 open issues updated last, each with its
-    /// latest 20 comments.
+    /// One GraphQL query per repo per tick: the 50 open issues updated last, each with its latest
+    /// 20 comments, and apart from them the open issues at `stage:ready` or `stage:in-progress`,
+    /// which a quiet repo's oldest ready issue would otherwise fall out of.
     public func openIssues(repo: String) async throws -> [OpenIssue] {
         let parts = repo.split(separator: "/").map(String.init)
         guard parts.count == 2 else { return [] }
@@ -193,16 +198,20 @@ extension GitHubClient {
     }
 
     static let openIssuesQuery = """
+    fragment Fields on IssueConnection {
+      nodes {
+        number title url createdAt body authorAssociation
+        author { login }
+        labels(first: 30) { nodes { name } }
+        assignees(first: 5) { nodes { login } }
+        comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
+      }
+    }
     query($owner: String!, $name: String!) {
       repository(owner: $owner, name: $name) {
-        issues(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
-          nodes {
-            number title url createdAt body authorAssociation
-            author { login }
-            labels(first: 30) { nodes { name } }
-            comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
-          }
-        }
+        issues(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
+        ready: issues(states: OPEN, labels: ["stage:ready"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
+        inProgress: issues(states: OPEN, labels: ["stage:in-progress"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
       }
     }
     """
@@ -211,10 +220,10 @@ extension GitHubClient {
         struct Author: Decodable { let login: String }
         struct Nodes<Node: Decodable>: Decodable { let nodes: [Node] }
         struct Payload: Decodable { let repository: Repository }
-        struct Repository: Decodable { let issues: Nodes<Row> }
+        struct Repository: Decodable { let issues: Nodes<Row>, ready: Nodes<Row>?, inProgress: Nodes<Row>? }
         struct Row: Decodable {
             let number: Int, title: String, url: URL, createdAt: Date, body: String, authorAssociation: String
-            let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?
+            let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?, assignees: Nodes<Author>?
         }
         struct Label: Decodable { let name: String }
         struct Comment: Decodable {
@@ -226,7 +235,11 @@ extension GitHubClient {
     public static func decodeOpenIssues(_ data: Data, repo: String) throws -> [OpenIssue] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(IssuesResponse.self, from: data).data.repository.issues.nodes.map { row in
+        let repository = try decoder.decode(IssuesResponse.self, from: data).data.repository
+        var seen = Set<Int>()
+        let rows = (repository.issues.nodes + (repository.ready?.nodes ?? []) + (repository.inProgress?.nodes ?? []))
+            .filter { seen.insert($0.number).inserted }
+        return rows.map { row in
             OpenIssue(repo: repo, number: row.number, title: row.title, url: row.url, createdAt: row.createdAt,
                       author: row.author?.login, authorAssociation: row.authorAssociation, body: row.body,
                       comments: row.comments.nodes.map {
@@ -234,7 +247,7 @@ extension GitHubClient {
                                        authorAssociation: $0.authorAssociation, body: $0.body,
                                        createdAt: $0.createdAt, url: $0.url)
                       }.sorted { $0.createdAt < $1.createdAt },
-                      labels: row.labels?.nodes.map(\.name) ?? [])
+                      labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [])
         }
     }
 }

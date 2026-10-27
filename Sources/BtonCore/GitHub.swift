@@ -208,7 +208,7 @@ public struct GitHubClient: Sendable {
             labels(first: 100) { nodes { name } }
             assignees(first: 10) { nodes { login } }
             comments(last: 100) { nodes { author { login } authorAssociation body createdAt } }
-            commits(last: 1) { nodes { commit { committedDate } } }
+            commits(last: 10) { nodes { commit { oid committedDate parents(first: 5) { nodes { oid } } } } }
             files(first: 100) { totalCount nodes { path } }
           }
         }
@@ -230,7 +230,11 @@ public struct GitHubClient: Sendable {
         }
         struct Files: Decodable { let totalCount: Int; let nodes: [Path] }
         struct Path: Decodable { let path: String }
-        struct CommitNode: Decodable { struct Commit: Decodable { let committedDate: Date }; let commit: Commit }
+        struct CommitNode: Decodable {
+            struct Commit: Decodable { let oid: String?; let committedDate: Date; let parents: Nodes<Oid>? }
+            struct Oid: Decodable { let oid: String }
+            let commit: Commit
+        }
         struct Comment: Decodable { let author: Author?; let authorAssociation: String?; let body: String; let createdAt: Date }
         let data: Payload
     }
@@ -244,6 +248,23 @@ public struct GitHubClient: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+
+    /// The commits the head reaches through merge commits alone: what a conflict fix (the base merged
+    /// in) leaves under it. A review of one of them still stands for the head, as a reviewer would
+    /// carry it over; any other commit above a reviewed one makes the head new.
+    private static func mergeOnlyAncestors(of head: String, in commits: [OpenResponse.CommitNode.Commit]) -> [String] {
+        let byOid = Dictionary(commits.compactMap { commit in commit.oid.map { ($0, commit) } }, uniquingKeysWith: { first, _ in first })
+        var found: [String] = []
+        var queue = [head]
+        while let oid = queue.popLast() {
+            guard let parents = byOid[oid]?.parents?.nodes.map(\.oid), parents.count > 1 else { continue }
+            for parent in parents where !found.contains(parent) {
+                found.append(parent)
+                queue.append(parent)
+            }
+        }
+        return found
     }
 
     /// Bton's own comments are dropped here, so they never change a move.
@@ -261,6 +282,7 @@ public struct GitHubClient: Sendable {
                             .sorted { $0.createdAt < $1.createdAt },
                         updatedAt: row.updatedAt)
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
+            pr.mergeOnlyAncestors = Self.mergeOnlyAncestors(of: row.headRefOid, in: row.commits?.nodes.map(\.commit) ?? [])
             pr.changedFiles = row.files?.nodes.map(\.path) ?? []
             // No file list at all (a partial answer) counts as too many to read: it never hides a sensitive path.
             pr.changedFilesTruncated = row.files.map { $0.totalCount > $0.nodes.count } ?? true

@@ -27,6 +27,33 @@ extension AppStore {
         try updateRepo(slug) { $0.workLabel = label.isEmpty ? nil : label }
     }
 
+    /// How this Mac runs the repo's issue work, as `AgentPick` text; empty: the flow's agent as it is.
+    func setWork(_ text: String, for slug: String) throws {
+        let pick = try validPick(text)
+        try updateRepo(slug) { $0.work = pick?.text }
+    }
+
+    /// How this Mac runs the repo's reviews, and the rules added to the review prompt.
+    func setReviewer(_ text: String, rules: String, for slug: String) throws {
+        let pick = try validPick(text)
+        let rules = rules.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rules.count <= 4_000 else { throw SettingsError.invalid("Review rules are 4000 characters at most.") }
+        try updateRepo(slug) {
+            $0.reviewer = pick?.text
+            $0.reviewRules = rules.isEmpty ? nil : rules
+        }
+    }
+
+    private func validPick(_ text: String) throws -> AgentPick? {
+        let text = text.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return nil }
+        guard let pick = AgentPick(text) else {
+            throw SettingsError.invalid("Write it as agent:model effort, like claude:sonnet medium. Effort is one of \(AgentPick.efforts.joined(separator: ", ")).")
+        }
+        guard agents[pick.agent] != nil else { throw SettingsError.invalid("\(pick.agent) is not an agent on this Mac.") }
+        return pick
+    }
+
     /// Whether my PRs that conflict with their base are resolved on their own; nil is on.
     func setResolveConflicts(_ on: Bool, for slug: String) throws {
         try updateRepo(slug) { $0.resolveConflicts = on ? nil : false }

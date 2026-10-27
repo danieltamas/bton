@@ -23,6 +23,8 @@ public actor Engine {
         public var issueAsks: [IssueAsk] = []
         /// Open issues waiting for a priority and a stage.
         public var triage: [TriageIssue] = []
+        /// Open issues at `stage:ready`, taken or not.
+        public var ready: [ReadyIssue] = []
         /// Agents whose CLI login expired: none of their jobs starts until I log in again.
         public var loggedOut: [String] = []
 
@@ -46,6 +48,8 @@ public actor Engine {
     /// Run-next picks, `owner/name#item` lowercased repo, the latest pick first. A pick stays until
     /// it starts (its repo may be busy), or until a tick finds nothing of it to run.
     private var next: [String] = []
+    /// Issues the owner pressed Take on, by lowercased repo: taken at the next sync even where the repo does not start its moves.
+    private var taken: [String: Int] = [:]
     /// The picks in `next` a person pressed, until one of their moves starts.
     var pressedPicks: Set<String> = []
     /// The owner's Merge and Fix conflicts picks, with the head each was asked on: the PR takes that
@@ -180,6 +184,10 @@ public actor Engine {
             snapshot.unread = unread
             snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
             snapshot.triage = config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) }
+            snapshot.ready = config.repos.flatMap { repo in
+                IssueIntake.ready(openIssues[repo.slug.lowercased()] ?? [], priority: snapshot.flows[repo.slug]?.flow?.intake?.priority,
+                                  held: IssueIntake.held(by: jobs.all(), repo: repo.slug))
+            }
             snapshot.loggedOut = heldAgents().sorted()
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
@@ -211,10 +219,26 @@ public actor Engine {
                             candidates.removeAll { $0.key.item == chosen.key.item }
                             candidates.append(chosen)
                         }
+                        if let reviewer = read.repo.reviewer.flatMap(AgentPick.init), config.agents[reviewer.agent] != nil {
+                            candidates = candidates.map { reviewed($0, by: reviewer, rules: read.repo.reviewRules) }
+                        }
                         if !read.repo.startsMoves {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
                         }
                         pending += candidates.map { ($0, clone, flow) }
+                        // A repo that starts its moves also takes the next ready issue, once its PRs have their turn.
+                        let requested = taken[read.repo.slug.lowercased()]
+                        if let intake = flow.intake,
+                           issuesReadThisTick.contains(read.repo.slug.lowercased()),
+                           let made = IssueIntake.candidate(issues: openIssues[read.repo.slug.lowercased()] ?? [], intake: intake,
+                                                            caps: flow.caps, pullRequests: read.pullRequests, jobs: jobs.all(),
+                                                            repo: read.repo.slug, base: flow.base, me: read.viewer, agents: config.agents,
+                                                            work: read.repo.work.flatMap(AgentPick.init), requested: requested,
+                                                            resumeOnly: !read.repo.startsMoves && requested == nil) {
+                            pending.append((made, clone, flow))
+                        }
+                        // An unread repo keeps the press for the next sync.
+                        if issuesReadThisTick.contains(read.repo.slug.lowercased()) { taken[read.repo.slug.lowercased()] = nil }
                     }
                     // Schedules need no flow: they are this Mac's own, like its agents. They start from
                     // the branch PRs merge into, which the owner picks per repo.
@@ -356,6 +380,13 @@ public actor Engine {
         try AgentLogins.markLoggedIn(agent, at: .now, home: home)
     }
 
+    /// Takes a ready issue now (the Issues tab's Take): the next sync starts its intake job, first in
+    /// line, also where the repo does not start its moves.
+    public func takeIssue(repo: String, number: Int) {
+        taken[repo.lowercased()] = number
+        runNext(repo: repo, item: "issue-\(number)", pressed: true)
+    }
+
     /// Starts a PR's move now (the panel's Merge and Fix conflicts): first in line, and again
     /// when it failed or was stopped on this head. A `merge` key merges whatever the flow's move.
     public func runNow(_ key: JobKey) throws {
@@ -363,6 +394,20 @@ public actor Engine {
         if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
         runNext(repo: key.repo, item: key.item, pressed: true)
         ask(key)
+    }
+
+    /// A review move that runs here with the agent, model and effort the owner set for this repo, and their
+    /// rules after the flow's prompt.
+    private func reviewed(_ candidate: DispatchCandidate, by pick: AgentPick, rules: String?) -> DispatchCandidate {
+        guard candidate.postComment, candidate.agent != nil else { return candidate }
+        var made = candidate
+        made.agent = pick.agent
+        made.model = pick.model
+        made.effort = pick.effort
+        if let rules = rules?.trimmingCharacters(in: .whitespacesAndNewlines), !rules.isEmpty, let prompt = made.prompt {
+            made.prompt = prompt + "\n\nReview rules from the reviewer:\n" + rules
+        }
+        return made
     }
 
     /// A Merge or Fix conflicts runs instead of the PR's flow move, also when retried from Jobs.

@@ -203,6 +203,7 @@ public enum FlowEngine {
 
         func matchesHead(_ review: Review) -> Bool {
             pr.headSha.lowercased().hasPrefix(review.head)
+                || pr.mergeOnlyAncestors.contains { $0.lowercased().hasPrefix(review.head) }
         }
 
         func holds(_ predicate: String) -> Bool {

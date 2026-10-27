@@ -83,6 +83,28 @@ enum Theme {
         }
     }
 
+    /// One hue per priority, so the urgent ones read at a glance; none is neutral.
+    static func color(forPriority priority: String?) -> Color {
+        switch priority {
+        case "high": hue(0xFF7A59, light: 0xCB390D)
+        case "medium": hue(0xFFB547, light: 0x9E6801)
+        case "low": hue(0x5CC8FF, light: 0x047EAD)
+        default: neutral
+        }
+    }
+
+    /// One hue per stage of an issue's life: ready is Bton's mint, work under way is the running blue,
+    /// a PR in review is the review hue, a plan to settle is amber, and triage waits uncolored.
+    static func color(forStage stage: String?) -> Color {
+        switch stage {
+        case "ready": mint
+        case "in-progress": hue(0x4C8DFF, light: 0x2A6DE1)
+        case "review": hue(0x7AA2FF, light: 0x456DD3)
+        case "spec": hue(0xFFB547, light: 0x9E6801)
+        default: neutral
+        }
+    }
+
     static func color(for status: Job.Status) -> Color {
         switch status {
         case .running: hue(0x4C8DFF, light: 0x2A6DE1)

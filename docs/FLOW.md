@@ -22,7 +22,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `moves` | Ordered list of `{ "move", "when": [predicate...], "who" }`. First match wins. |
 | `dispatch` | Per move name, what Bton starts for it (below). A move without an entry is a human's. |
 | `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. When a person started the move (Merge, the move's pill, Retry, Run Next, Take it) rather than the sync, checks and the merge command also see `BTON_PRESSED=1`, so a check that guards a person's decision can let the press through: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" \|\| git diff --quiet origin/develop...HEAD -- migrations/"]`. |
-| `intake` | Optional: how an agent takes a new issue. Parsed, not dispatched yet. |
+| `intake` | Optional: how an agent takes a `stage:ready` issue (below). |
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
 | `decision` | Optional `{ "heading", "move", "by" }`: a ruling that ends a review loop (below). |
@@ -106,7 +106,7 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 | `draft` | the PR is a draft |
 | `conflicting` | GitHub reports the PR conflicts with its base. `UNKNOWN` (GitHub still working it out after a push) does not count |
 | `no_review_or_response_newer` | no review counts yet, or the current head does not match the latest review's, or a `fixed` comment is newer than the latest review |
-| `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head |
+| `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head, or a commit the current head reaches through merge commits alone (a conflict fix merging the base in), so a fixed conflict goes straight to the merge and not back to review |
 | `latest_review_changes_or_blocked` | the latest review's verdict is `changes` or `blocked` |
 | `changes_rounds_at_least:<n>` | the latest review's verdict is `changes` or `blocked`, and at least `n` of the PR's counting reviews since the latest decision have a `changes` or `blocked` verdict |
 
@@ -206,3 +206,78 @@ row's **Fix conflicts** then starts it. Either starts the move now, first in lin
 again when it failed or was stopped on this head on this Mac (a failure on another Mac is
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:
 it never loops.
+
+## Intake
+
+`intake` lets a Bton take an issue nobody has, so a `stage:ready` issue does not wait for someone
+to start it by hand. A repo takes issues when it starts its moves (Settings > Repos, "Start the
+flow's moves") and its flow has `intake`; the Issues tab lists every ready issue of every watched
+repo, taken or not, and every `stage:in-progress` issue with who has it, so nobody starts what a teammate
+(with Bton or not) already works on. All of it shows whatever is configured.
+
+```json
+"intake": {
+  "search": ["repo:{repo}", "is:issue", "is:open", "no:assignee", "label:stage:ready"],
+  "priority": ["priority:high", "priority:medium", "priority:low"],
+  "claim": [["gh", "issue", "edit", "{issue}", "--repo", "{repo}", "--add-assignee", "@me",
+             "--add-label", "stage:in-progress", "--remove-label", "stage:ready"]],
+  "worktree": ["bash", "scripts/wt", "new", "issue-{issue}", "{type}"],
+  "worktreePath": ".worktrees/issue-{issue}",
+  "type": { "default": "feat", "labels": { "bug": "fix", "docs": "docs", "chore": "chore" } },
+  "agent": "claude",
+  "prompt": "Implement issue #{issue} of {repo} ...",
+  "timeoutMinutes": 120
+}
+```
+
+- **Which issue.** `search` is checked against the issues Bton already read, not sent to GitHub.
+  It understands `repo:`, `is:issue`, `is:open`, `no:assignee`, `label:<name>` and `-label:<name>`;
+  any other term (or a label with a space) means nothing is taken, rather than something the search
+  would have left out. The issue's author must be `OWNER`, `MEMBER` or `COLLABORATOR`, like a PR's.
+  The most urgent first by `priority` (labels, first is most urgent; an issue with none goes last),
+  then the oldest. `no:assignee` is how a person working by hand keeps an issue from Bton: assign
+  yourself.
+- **When.** One intake job at a time per repo, after the repo's PR moves and schedules have had
+  their turn, and only while `caps` allow it: my open PRs in the repo under
+  `openPullRequestsPerDeveloper` and all its open PRs under `openPullRequestsTeam`.
+- **How.** Under the issue's lease (`issue-<n>`), Bton reads the issue again; if it is no longer
+  what `search` finds, nothing starts and the key is not used up. Then it runs each `claim` argv in
+  the clone, so the issue leaves the search before the lease is released (a claim that fails stops
+  the job before any worktree), then `worktree` in the clone, and starts `agent` in `worktreePath`
+  with `prompt`. A `worktreePath` that already exists is someone's work: the job fails and touches
+  nothing. `{issue}`, `{repo}`, `{base}` and `{type}` (the first of the issue's labels `type.labels`
+  maps, else `type.default`) are the only substitutions; issue text never reaches an argv or the prompt.
+- **The PR.** Bton opens none: the prompt tells the agent to follow the repo's own process (its
+  AGENTS.md, its tier, its tests) and open the PR against `base` when the work is complete, which
+  is the point where the repo hands the move to a reviewer. The job counts as succeeded only when
+  the branch it worked on has an open PR on GitHub; an agent that exits without one fails the job
+  ("finished without opening a PR") and the issue stays visible in the Issues tab with Retry. A
+  draft PR succeeds with a note: it is still the author's move. From the PR on, the repo's own
+  `moves` take over on the Mac of the PR's author: the reviewer rotation assigns a reviewer, and
+  when a review asks for changes the author's Bton runs the flow's `fix` move, so the answer to a
+  review reaches whoever worked the issue. A flow should therefore have a `fix` dispatch.
+- **Once.** Like a PR move, an issue runs once per Bton home and repo. Retry on the failed or stopped job in
+  the Jobs tab runs it again: the claim is skipped when the issue is already mine, and an existing
+  worktree is reused.
+- **How long it runs.** For an issue, `timeoutMinutes` is an idle limit, not a total: the job is stopped
+  only after that long with no commit and no change in its worktree, and never runs past 8 hours. A job
+  stopped that way keeps its worktree, and Retry resumes it.
+- **Which agent, model and effort.** The flow names the agent; this Mac decides how it runs. Settings >
+  Repos > Issue work takes `agent:model effort` (`claude:sonnet medium`) from the agents installed here,
+  and Reviewer takes the same for the review moves that post a comment (`codex:gpt-6-astra high`) plus
+  rules added to the review prompt. Claude gets `--model` and `--effort`; codex gets `-c model=` and
+  `-c model_reasoning_effort=`. Neither is in the flow: models differ per machine.
+- **Take.** A ready, unassigned issue in the Issues tab has a Take pill: the next sync claims it and
+  starts the job first in line, also where the repo does not start its moves. It skips the PR caps like
+  Retry and passes every other gate.
+- **A job that dies with Bton.** An issue's job that ends because Bton or its Mac went away (no exit
+  status, a lease lost while Bton was down, or Bton stopping before the agent started) is marked to run
+  again at once, in every repo, whether or not it starts its moves: the next sync resumes it in its
+  worktree while the issue is still assigned to you. A job that failed on its own (the agent exited with
+  an error, timed out, or opened no PR) is not: it waits for Retry.
+- **Limits.** The caps count open PRs, and a job's PR does not exist until the agent opens it, so
+  Bton instances on several Macs that sync at the same moment can each start one issue and briefly
+  exceed `caps` by the number of Macs. `claim` should be a single command: a multi-command claim
+  that fails half-way leaves the issue neither ready nor mine. The read is the 50 newest open issues
+  plus the 50 newest at each of `stage:ready` and `stage:in-progress`; more ready issues than that
+  and the oldest are not seen. Retry (the owner's press) does not wait for the caps.

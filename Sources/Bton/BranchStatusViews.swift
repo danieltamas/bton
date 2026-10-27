@@ -12,15 +12,22 @@ struct BranchSummary: View {
         Button { open = true } label: {
             HStack(spacing: 8) {
                 if reports.count == 1, let report = reports.first?.report {
+                    // With more repos watched, the line says whose branches these are.
+                    if store.repos.count > 1, let slug = reports.first?.repo {
+                        Text(RepoFilter.short(slug)).foregroundStyle(Theme.textSecondary)
+                    }
                     ForEach(report.branches) { BranchMark(status: $0) }
                     if let unreleased = report.workingOnly, unreleased > 0 {
                         Text("+\(unreleased) not on \(report.defaultBranch)").foregroundStyle(Theme.textTertiary)
                     }
                 } else {
-                    let needs = reports.filter { $0.report.needsAttention }.count
+                    let needing = reports.filter { $0.report.needsAttention }
+                    let needs = needing.count
                     Image(systemName: needs == 0 ? "checkmark.circle" : "exclamationmark.triangle")
                         .foregroundStyle(needs == 0 ? Theme.success : Theme.unassigned)
-                    Text(needs == 0 ? "branches up to date" : "\(needs) of \(reports.count) repos need you")
+                    Text(needs == 0 ? "branches up to date"
+                         : needs <= 2 ? needing.map { RepoFilter.short($0.repo) }.joined(separator: ", ") + " need\(needs == 1 ? "s" : "") you"
+                         : "\(needs) of \(reports.count) repos need you")
                         .foregroundStyle(Theme.textTertiary)
                 }
             }

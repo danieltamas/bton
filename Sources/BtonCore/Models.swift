@@ -30,6 +30,9 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// GitHub says the PR conflicts with its base. False while GitHub is still working it out
     /// after a push, so nothing starts on a guess.
     public var conflicting = false
+    /// Commits under the head that only merge commits separate from it (a conflict fix leaves them): a
+    /// review of one still stands for the head.
+    public var mergeOnlyAncestors: [String] = []
     /// GitHub says the PR can merge into its base as it stands: the panel's Merge, at any move.
     public var mergeable = false
     /// Set once the repo's flow has been evaluated; nil for a repo without a flow.

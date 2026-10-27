@@ -42,7 +42,9 @@ extension Engine {
             log("\(flagged.key): supervisor retry not saved: \(error.localizedDescription)")
             return nil
         }
-        runNext(repo: flagged.key.repo, item: flagged.key.item)
+        // The owner's press stands for the same head: a retry of a pressed merge is pressed too, or the repo's
+        // checks that guard a person's decision would fail it at once.
+        runNext(repo: flagged.key.repo, item: flagged.key.item, pressed: flagged.pressed == true)
         ask(flagged.key)
         log("\(flagged.key): supervisor retry")
         return "retried"
