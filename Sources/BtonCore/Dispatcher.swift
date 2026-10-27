@@ -56,6 +56,12 @@ actor Dispatcher {
             locks[job.id] = lock
             guard let pid = job.pid else {
                 jobs.stopChecks(job.id)
+                // The dead run's lease is still live for up to 15 minutes and keeps the PR from
+                // starting again: `finish` releases what it holds, so hold it first.
+                if let item = LeaseItem(job.key.item),
+                   let current = try? await leases.current(item, in: job.key.repo, job: job.id, anyHost: true) {
+                    held[job.id] = current
+                }
                 await finish(job, status: .failed, detail: "Bton stopped before the job started its agent")
                 continue
             }

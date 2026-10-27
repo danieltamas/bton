@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.8.4 (2026-10-27)
+
+**A PR no longer waits out a dead merge's lease.** When Bton restarted in the middle of a merge's checks, the failed job kept the PR's lease for up to 15 minutes, so the PR sat on "waiting" and its merge could not start again. A relaunched Bton now releases that lease as it fails the job, and the merge starts at the next sync.
+
 ## 0.8.3 (2026-10-27)
 
 **A restart no longer leaves a merge's checks running, and a PR that can't start says why.** When Bton quit in the middle of a merge's checks (installing an update does that), the check and its test run kept going with nothing reading them, held the PR's worktree, and the row sat on "starting" with no way to tell why. A relaunched Bton now stops those leftover checks before it marks the job failed, and a move that has not started shows "waiting" with the reason on hover: another job holds the PR, no agent slot is free, the repo could not be read, or the move is not one Bton can start.
