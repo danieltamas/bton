@@ -10,7 +10,7 @@ struct TakeButton: View {
     var body: some View {
         let taking = store.taking.contains(pr.id)
         RunNowButton(title: taking ? "Taking..." : "Take it", symbol: "hand.raised", color: Theme.color(forMove: move.name),
-                     help: "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here") {
+                     help: "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here", disabled: taking) {
             Task { await store.take(pr, from: move.owner) }
         }
     }
@@ -27,7 +27,8 @@ extension AppStore {
         } catch {
             takeProblems[pr.id] = "Not taken: \(error.localizedDescription)"
         }
-        taking.remove(pr.id)
+        // Until the refresh shows the PR as mine, or the row would offer Take it again.
         await refresh()
+        taking.remove(pr.id)
     }
 }

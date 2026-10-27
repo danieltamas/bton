@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.8.2 (2026-10-27)
+
+**Take it can't be pressed twice.** While a take is under way the button reads "Taking..." and is dimmed and unpressable, and it stays that way until the row shows the PR as yours, instead of coming back for a moment after the take.
+
 ## 0.8.1 (2026-10-27)
 
 **A merge that needs `bun` no longer fails with "bun not found".** Bton looks for the programs a repo's commands and checks run in `~/.bun/bin` too, where bun installs itself, so a merge or check that starts with `bun` runs from the menu bar app the way it does in your terminal.

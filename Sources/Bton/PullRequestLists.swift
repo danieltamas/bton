@@ -171,6 +171,8 @@ struct RunNowButton: View {
     let symbol: String
     let color: Color
     var help: String?
+    /// A press in progress: the button stays, dimmed and unpressable.
+    var disabled = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -211,6 +213,8 @@ struct RunNowButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(PressStyle())
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
         .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
         .help(help ?? "\(title) now, again if it failed on this head")
     }
