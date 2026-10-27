@@ -145,7 +145,7 @@ develop ^3 | main ^0 | 100 commits, 8 days
 
 [ships next |14] [building |6] [live] [ideas]
 [search features]
-────────────────────────────────────────────────
+------------------------------------------------
 v WhatsApp intake                 3 o  2 o  9 o
     Filing dedupe                  in develop
       `- Same-photo detection       in develop
