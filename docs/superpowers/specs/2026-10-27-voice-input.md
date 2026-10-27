@@ -11,9 +11,19 @@ line item?" are naturally spoken.
 
 ## Change
 
-A mic button beside Send in the New issue input (and later the Draft reply box). Press to start,
-press again to stop; the words land in the text box, editable, and nothing is sent until Send.
-The audio never leaves the Mac and is never kept; the agent only ever receives the text.
+A mic button beside Send in the New issue input (and later the Draft reply box). Click-to-toggle,
+not push-to-talk (Dani, 2026-10-27):
+
+1. Click the mic: recording starts and the input box is replaced by a recording strip: live
+   sound waves that move with the voice (bars driven by the microphone's level, about 30 per
+   second), the elapsed time, and a Stop button where the mic was. Cancel (Esc) discards it.
+2. Click Stop: the strip shows "Transcribing..." for a moment, then the words appear in the text
+   box, with the cursor at the end.
+3. Edit the text as usual, dictate again to append, then Send to the agent.
+
+Nothing is sent until Send. The audio never leaves the Mac and is never kept; the agent only
+ever receives the text. The text appears when recording stops (no live partial text), which keeps
+the engine choice free: a spoken answer is seconds long.
 
 - Engine: WhisperKit (Argmax, MIT, Swift Package, Core ML on the Neural Engine) running OpenAI
   Whisper models. Default `large-v3-turbo` (best accuracy, fast enough on Apple Silicon), with
@@ -27,9 +37,8 @@ The audio never leaves the Mac and is never kept; the agent only ever receives t
   progress in Settings > Voice and a hash check; never bundled in the app.
 - Capture: `AVAudioEngine`, resampled to 16 kHz mono, in memory; a silence gate ends a
   recording that was left on; hard cap 5 minutes.
-- Streaming: partial text appears while speaking only if the chosen engine supports it without
-  hurting accuracy; otherwise the text appears when recording stops (acceptable: a spoken answer
-  is seconds long).
+- Level meter: the same `AVAudioEngine` tap computes each buffer's RMS for the waves; a silence
+  for 2 minutes ends the recording and keeps what was said.
 
 ## Constraints
 
@@ -49,7 +58,8 @@ The audio never leaves the Mac and is never kept; the agent only ever receives t
 1. With the model downloaded and the network off, pressing the mic, saying a Romanian and an
    English sentence, and pressing again puts both in the text box within 3 seconds of stopping
    (turbo) on an M-series Mac, with word error rate at or below 10% on the 10 recorded samples.
-2. No audio file exists on disk after a recording (checked by listing `~/.bton` and the temp
+2. The waves move while someone speaks and sit flat in silence; Stop is under the pointer where
+   the mic was; the text lands in the box and stays editable before Send. No audio file exists on disk after a recording (checked by listing `~/.bton` and the temp
    directory); nothing is sent before Send.
 3. Denying the microphone shows one line saying so and how to allow it; the mic button never
    crashes or hangs.
@@ -61,8 +71,6 @@ The audio never leaves the Mac and is never kept; the agent only ever receives t
 
 ## Open questions
 
-- Hold-to-talk versus click-to-toggle: toggle first (hands free while reading the agent's
-  questions), hold as an option.
 - A global hotkey to dictate into the open box: later, needs Accessibility permission.
 - Whether dictation also cleans up filler words: no, the text is the words spoken; the agent
   that writes the issue does the tidying.
