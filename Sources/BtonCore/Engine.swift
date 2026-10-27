@@ -27,6 +27,8 @@ public actor Engine {
         public var ready: [ReadyIssue] = []
         /// Agents whose CLI login expired: none of their jobs starts until I log in again.
         public var loggedOut: [String] = []
+        /// Each read repo's feature registry with every feature's standing, by slug.
+        public var features: [String: FeatureReport] = [:]
 
         public init() {}
     }
@@ -78,6 +80,8 @@ public actor Engine {
     var autoTaken: Set<String> = []
     /// Why each waiting pick did not start at the last sync.
     private var waiting: [String: String] = [:]
+    /// Each repo's registry facts between syncs, by lowercased slug.
+    var featureStates: [String: FeatureState] = [:]
 
     public init(home: BtonHome = BtonHome(), log: @escaping @Sendable (String) -> Void = { _ in }) throws {
         try self.init(home: home, github: GitHubClient(), log: log)
@@ -181,6 +185,8 @@ public actor Engine {
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
                     await readIssues(repo.slug)
+                    snapshot.features[repo.slug] = await readFeatures(repo: repo, flow: status.flow, defaultBranch: read.defaultBranch,
+                                                                      merged: merged)
                 } catch {
                     failures.append("\(repo.slug): \(error.localizedDescription)")
                     unread.insert(repo.slug.lowercased())
