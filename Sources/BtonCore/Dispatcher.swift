@@ -112,6 +112,14 @@ actor Dispatcher {
             log("\(candidate.key): lease not held (\(error.localizedDescription))")
             return .busy
         }
+        // Under the lease, its history is the team's: another Mac may have started this move
+        // between this sync's plan and the claim.
+        if let cooldown = candidate.cooldown, let last = lease.record.lastStart(of: candidate.key.move, includingKey: false),
+           Date.now.timeIntervalSince(last) < cooldown {
+            log("\(candidate.key): not started, another run began \(Int(Date.now.timeIntervalSince(last) / 60)) min ago")
+            try? await leases.release(lease, ran: false)
+            return .busy
+        }
         // Under the lease, so no other Mac is reading the same issue: it must still be free.
         if case var .issue(plan) = candidate.target, let me = candidate.move.owner {
             switch await intakeStanding(plan, repo: candidate.key.repo, me: me) {

@@ -153,3 +153,17 @@ struct LeaseRegressionTests {
         }
     }
 }
+
+@Suite struct LeaseHistoryStartTests {
+    @Test func lastStartReadsMinuteHeadsOfOneMove() {
+        let record = LeaseRecord(holder: "owner", host: "mac", job: UUID(), expires: .now, released: false,
+                                 key: "acme/app#features features@m29880105",
+                                 done: ["acme/app#features features@m29880000", "acme/app#nightly nightly@m29880200",
+                                        "acme/app#42 review@abc123def456"])
+        #expect(record.lastStart(of: "features") == Date(timeIntervalSince1970: 29_880_105 * 60))
+        #expect(record.lastStart(of: "features", includingKey: false) == Date(timeIntervalSince1970: 29_880_000 * 60))
+        #expect(record.lastStart(of: "nightly") == Date(timeIntervalSince1970: 29_880_200 * 60))
+        #expect(record.lastStart(of: "review") == nil)
+        #expect(LeaseRecord(holder: "owner", host: "mac", job: UUID(), expires: .now, released: true).lastStart(of: "features") == nil)
+    }
+}

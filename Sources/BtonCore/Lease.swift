@@ -56,6 +56,16 @@ public struct LeaseRecord: Codable, Hashable, Sendable {
     }
 
     public func isFree(at date: Date) -> Bool { released || expires <= date }
+
+    /// The newest start of `move` this record remembers, on any Mac, from the keys of runs whose
+    /// head is a minute (`<repo>#<item> <move>@m<minute>`: schedules and the registry job).
+    /// `includingKey` false: only the earlier runs, not the key this record was claimed for.
+    public func lastStart(of move: String, includingKey: Bool = true) -> Date? {
+        ((done ?? []) + (includingKey ? [key].compactMap { $0 } : [])).compactMap { key -> Date? in
+            guard key.contains(" \(move)@m"), let minute = key.split(separator: "@m").last.flatMap({ TimeInterval($0) }) else { return nil }
+            return Date(timeIntervalSince1970: minute * 60)
+        }.max()
+    }
 }
 
 /// A lease this store wrote. `sha` is the commit it last pushed: the next write expects it.

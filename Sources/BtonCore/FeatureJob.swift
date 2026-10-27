@@ -66,6 +66,7 @@ public enum FeatureJob {
         made.effort = work?.effort
         made.skipsChecks = true
         made.pressed = pressed
+        made.cooldown = pressed ? nil : floor
         made.attachments = attachments
         return made
     }
@@ -75,18 +76,12 @@ public enum FeatureJob {
         JobKey(repo: repo, item: item, move: move, head: "m\(Int(now.timeIntervalSince1970 / 60))")
     }
 
-    /// The newest start the item's lease remembers, on any Mac: each key ends in `@m<minute>`.
+    /// The newest start the item's lease remembers, on any Mac.
     public static func lastStart(_ state: LeaseState) -> Date? {
-        let record: LeaseRecord
         switch state {
-        case .absent: return nil
-        case let .held(held): record = held
-        case let .free(free): record = free
+        case .absent: nil
+        case let .held(record), let .free(record): record.lastStart(of: move)
         }
-        return ([record.key] + (record.done ?? [])).compactMap { key -> Date? in
-            guard let key, key.contains(" \(move)@m"), let minute = key.split(separator: "@m").last.flatMap({ TimeInterval($0) }) else { return nil }
-            return Date(timeIntervalSince1970: minute * 60)
-        }.max()
     }
 
     /// `bton/features-20261028-0145`, UTC: a second run in a day gets its own branch.
