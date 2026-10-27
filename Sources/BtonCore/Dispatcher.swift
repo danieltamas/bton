@@ -12,6 +12,7 @@ actor Dispatcher {
     let github: GitHubClient
     let leases: LeaseStore
     let jobs: JobStore
+    let home: BtonHome
     let log: @Sendable (String) -> Void
     let runner = ProcessRunner()
     /// Agents this instance started; Foundation reaps a child only while its Process lives.
@@ -30,6 +31,8 @@ actor Dispatcher {
     var environments: [String: [String: String]] = [:]
     /// Each watched repo's work label, by lowercased slug.
     private(set) var workLabels: [String: String] = [:]
+    /// The code graph store of each repo that builds one, by lowercased slug.
+    private(set) var graphStores: [String: URL] = [:]
     /// Called after every job ends, so the next one starts without waiting for the next tick.
     private var jobEnded: (@Sendable () -> Void)?
 
@@ -38,13 +41,15 @@ actor Dispatcher {
     func useRepos(_ repos: [WatchedRepo]) {
         environments = Dictionary(repos.map { ($0.slug.lowercased(), $0.environment ?? [:]) }) { first, _ in first }
         workLabels = Dictionary(repos.compactMap { repo in repo.workLabel.map { (repo.slug.lowercased(), $0) } }) { first, _ in first }
+        graphStores = Dictionary(repos.filter(\.buildsGraph).map { ($0.slug.lowercased(), CodeGraph.store(for: $0.slug, home: home)) }) { first, _ in first }
     }
 
-
-    init(github: GitHubClient, leases: LeaseStore, jobs: JobStore, log: @escaping @Sendable (String) -> Void) {
+    /// `home` is where the repos' graph stores live; the job store's home unless given.
+    init(github: GitHubClient, leases: LeaseStore, jobs: JobStore, home: BtonHome? = nil, log: @escaping @Sendable (String) -> Void) {
         self.github = github
         self.leases = leases
         self.jobs = jobs
+        self.home = home ?? jobs.home
         self.log = log
     }
 
@@ -164,6 +169,23 @@ actor Dispatcher {
         if let pid { await terminate(id, pid: pid) }
     }
 
+    /// Links the repo's built graph into the job's worktree and says what the agent is told about
+    /// it; nil when the repo has no graph yet. A name the tree already uses is left alone and
+    /// noted: the graph is a help, never what fails a job.
+    private func graphLine(for repo: String, in worktree: URL, base: String, job: UUID) -> String? {
+        guard let store = graphStores[repo.lowercased()], CodeGraph.isBuilt(store), let marker = CodeGraph.marker(in: store) else { return nil }
+        do {
+            if case let .kept(reason) = try CodeGraph.link(into: worktree, store: store) {
+                jobs.note(job, "\(CodeGraph.linkName) kept: \(reason)")
+                return nil
+            }
+        } catch {
+            jobs.note(job, "\(CodeGraph.linkName) kept: \(error.localizedDescription)")
+            return nil
+        }
+        return CodeGraph.instructionLine(base: base, marker: marker)
+    }
+
     /// Worktree, checks, then the command, or the agent's spawn: `watch` takes the agent from there.
     private func run(_ job: Job, _ candidate: DispatchCandidate, clone: URL, flow: Flow?,
                      agents: [String: AgentTemplate], environment: [String: String]) async {
@@ -190,6 +212,7 @@ actor Dispatcher {
             job.worktree = worktree.path
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
+            let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
@@ -238,6 +261,7 @@ actor Dispatcher {
             job.review = reviewTarget(for: candidate, flow: flow)
             let isClaude = template.argv.first.map(AgentHardening.isClaude) == true
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
+            if isClaude, let graphLine { instructions = [instructions, graphLine].compactMap { $0 }.joined(separator: "\n\n") }
             let helpers = isClaude ? try offerHelpers(candidate.helpers, agents: agents, to: job.id, in: worktree) : nil
             if let helpers { instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n") }
             var scratch: String?
