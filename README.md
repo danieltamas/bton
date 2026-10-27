@@ -19,8 +19,15 @@
 curl -fsSL https://raw.githubusercontent.com/danieltamas/bton/main/install.sh | bash
 ```
 
+Or with Homebrew:
+
+```bash
+brew install --cask danieltamas/tap/bton
+```
+
 To update, press Update in Settings, About when a newer release is out (from v0.5.1; from v0.5.4
-an arrow in the menu's header says one is), or run the same line again.
+an arrow in the menu's header says one is), or run the same line again. A cask install then wants
+`brew upgrade --cask danieltamas/tap/bton` once, so Homebrew's record matches.
 
 <p align="center">
   <img src="docs/media/hero.png" alt="Bton: pull requests and jobs in the macOS menu bar" width="880">
