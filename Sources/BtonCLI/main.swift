@@ -71,7 +71,7 @@ do {
             }
             let owner = move.owner.map { move.ownerFromRotation ? "\($0) (rotation)" : move.ownerWroteIt ? "\($0) (author: needs another reviewer)" : $0 } ?? "unassigned"
             let dispatch = FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: read.viewer) ? "\tdispatch" : ""
-            print("#\(pr.number)\t\(move.tier)\t\(move.name)\t\(owner)\(dispatch)")
+            print("#\(pr.number)\t\(move.tier)\(move.tierReason.map { " (\($0))" } ?? "")\t\(move.name)\t\(owner)\(dispatch)")
         }
     case "lease":
         guard arguments.count >= 4, BtonConfig.isRepoSlug(arguments[2]), let item = LeaseItem(arguments[3]) else { fail(usage) }

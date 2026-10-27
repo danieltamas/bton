@@ -38,6 +38,10 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public var cost: Decimal?
     /// One of this Mac's jobs is working on it now.
     public var isWorking = false
+    /// The paths the PR changes, as far as one read gets (the first 100); empty when GitHub did not say.
+    public var changedFiles: [String] = []
+    /// The PR changes more files than were read: its tier counts as the highest.
+    public var changedFilesTruncated = false
 
     public init(repo: String, number: Int, title: String, author: String, authorAssociation: String, url: URL,
                 headSha: String, headRef: String, baseRef: String, body: String, isDraft: Bool, labels: [String],

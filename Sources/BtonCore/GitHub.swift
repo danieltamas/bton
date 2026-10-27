@@ -54,11 +54,28 @@ public struct GitHubClient: Sendable {
             let page = try Self.decodeOpenPullRequests(try await gh(arguments), repo: repo)
             pullRequests += page.pullRequests
             guard let next = page.nextPage else {
+                for index in pullRequests.indices where pullRequests[index].changedFilesTruncated {
+                    await readAllFiles(of: &pullRequests[index])
+                }
                 return OpenPullRequests(viewer: page.viewer, defaultBranch: page.defaultBranch,
                                         pullRequests: pullRequests)
             }
             after = next
         }
+    }
+
+    /// GitHub lists at most this many files of a PR; a PR with more counts as too big to read.
+    static let fileListLimit = 3000
+
+    /// A PR with more than the first page of files gets the full list from the REST endpoint. A
+    /// failed read leaves it marked truncated, so its tier counts as the highest.
+    private func readAllFiles(of pr: inout PullRequest) async {
+        guard let data = try? await gh(["api", "--paginate", "repos/\(pr.repo)/pulls/\(pr.number)/files?per_page=100",
+                                        "--jq", ".[].filename"]) else { return }
+        let files = String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
+        guard files.count > pr.changedFiles.count else { return }
+        pr.changedFiles = files
+        pr.changedFilesTruncated = files.count >= Self.fileListLimit
     }
 
     /// The flow file from the default branch; nil when the repo has none. Never a PR branch's
@@ -192,6 +209,7 @@ public struct GitHubClient: Sendable {
             assignees(first: 10) { nodes { login } }
             comments(last: 100) { nodes { author { login } authorAssociation body createdAt } }
             commits(last: 1) { nodes { commit { committedDate } } }
+            files(first: 100) { totalCount nodes { path } }
           }
         }
       }
@@ -208,7 +226,10 @@ public struct GitHubClient: Sendable {
             let baseRefName: String, body: String, updatedAt: Date, authorAssociation: String, mergeable: String?
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
             let commits: Nodes<CommitNode>?
+            let files: Files?
         }
+        struct Files: Decodable { let totalCount: Int; let nodes: [Path] }
+        struct Path: Decodable { let path: String }
         struct CommitNode: Decodable { struct Commit: Decodable { let committedDate: Date }; let commit: Commit }
         struct Comment: Decodable { let author: Author?; let authorAssociation: String?; let body: String; let createdAt: Date }
         let data: Payload
@@ -240,6 +261,9 @@ public struct GitHubClient: Sendable {
                             .sorted { $0.createdAt < $1.createdAt },
                         updatedAt: row.updatedAt)
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
+            pr.changedFiles = row.files?.nodes.map(\.path) ?? []
+            // No file list at all (a partial answer) counts as too many to read: it never hides a sensitive path.
+            pr.changedFilesTruncated = row.files.map { $0.totalCount > $0.nodes.count } ?? true
             pr.conflicting = row.mergeable == "CONFLICTING"
             pr.mergeable = row.mergeable == "MERGEABLE"
             pr.btonMarkers = Set(row.comments.nodes.flatMap { BtonMarker.keys(in: $0.body) })

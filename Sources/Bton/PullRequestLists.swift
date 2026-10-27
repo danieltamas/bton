@@ -68,6 +68,7 @@ private struct PullRequestRow: View {
                             if showRepo { RepoName(repo: pr.repo) }
                             if let tier = pr.move?.tier, !tier.isEmpty {
                                 Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
+                                    .help(pr.move?.tierReason.map { "\(tier): \($0)" } ?? tier)
                             }
                             if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
                             if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }

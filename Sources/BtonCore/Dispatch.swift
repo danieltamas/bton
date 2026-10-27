@@ -68,7 +68,7 @@ public enum DispatchPlanner {
     /// flow's own `merge` dispatch, so the repo's merge command and its checks still decide.
     public static func mergeCandidate(_ pr: PullRequest, flow: Flow, me: String, repo: String) -> DispatchCandidate? {
         let move = Move(name: "merge", owner: me, ownerFromRotation: false,
-                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr.body, rule: flow.tier), hasDispatch: true)
+                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr, rule: flow.tier), hasDispatch: true)
         guard let rule = flow.dispatch[move.name], pr.author.caseInsensitiveCompare(me) == .orderedSame,
               pr.mergeable, !pr.isDraft, FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
         return candidate(pr, move: move, rule: rule, repo: repo)
@@ -79,7 +79,7 @@ public enum DispatchPlanner {
     /// whose reviewers fix the findings dispatches no `fix`), with `resolvePrompt`.
     public static func resolveCandidate(_ pr: PullRequest, flow: Flow, me: String, repo: String) -> DispatchCandidate? {
         let move = Move(name: "resolve", owner: me, ownerFromRotation: false,
-                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr.body, rule: flow.tier), hasDispatch: true)
+                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr, rule: flow.tier), hasDispatch: true)
         guard pr.conflicting, pr.author.caseInsensitiveCompare(me) == .orderedSame, !pr.isDraft,
               FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
         var made: DispatchCandidate
@@ -136,7 +136,7 @@ public enum DispatchPlanner {
 
     private static func candidate(_ pr: PullRequest, move: Move, rule: DispatchRule, repo: String) -> DispatchCandidate {
         let filling = { (template: String) in
-            fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil)
+            fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil, tier: move.tier)
         }
         var candidate = DispatchCandidate(target: .pullRequest(pr), move: move,
                                           key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
@@ -188,8 +188,10 @@ public enum DispatchPlanner {
 
     /// Only numbers, SHAs, the repo slug and the base branch from the flow: no PR text reaches an
     /// argv or a prompt.
-    public static func fill(_ template: String, repo: String, number: Int, head: String, base: String, issue: Int?) -> String {
+    public static func fill(_ template: String, repo: String, number: Int, head: String, base: String, issue: Int?,
+                            tier: String? = nil) -> String {
         var values = ["{repo}": repo, "{number}": String(number), "{head}": head, "{base}": base]
+        if let tier { values["{tier}"] = tier }
         if let issue { values["{issue}"] = String(issue) }
         return fill(template, values)
     }
@@ -199,6 +201,9 @@ public enum DispatchPlanner {
     public static func fill(_ template: String, _ values: [String: String]) -> String {
         template.replacing(/\{[a-z]+\}/) { values[String($0.output)] ?? String($0.output) }
     }
+
+    /// How long a review that exited 2 (a tool this Mac lacks) waits before it is tried again.
+    static let waitingPause: TimeInterval = 30 * 60
 
     /// Every job on the key was retried by the owner, so the lease may run it again too.
     public static func isRetry(_ key: JobKey, jobs: [Job]) -> Bool {
@@ -246,7 +251,12 @@ public enum DispatchPlanner {
     /// lease, which the schedule's agent claims before it acts.
     /// `first` holds the owner's run-next picks, `owner/name#item`: they go before every turn.
     public static func select(_ candidates: [DispatchCandidate], jobs: [Job], maxAgents: Int,
-                              agents: [String: AgentTemplate], first: [String] = []) -> [DispatchCandidate] {
+                              agents: [String: AgentTemplate], first: [String] = [],
+                              now: Date = .now) -> [DispatchCandidate] {
+        // A review that waits for a missing tool tries again after a pause, unless the owner picked it.
+        let pause = now.addingTimeInterval(-waitingPause)
+        let waiting = Set(jobs.filter { $0.detail?.hasPrefix("waiting:") == true && ($0.endedAt ?? .distantPast) > pause }
+            .map(\.key))
         let seen = Set(jobs.filter { $0.retry != true }.map(\.key))
         let running = jobs.filter { $0.status == .running }
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
@@ -256,7 +266,8 @@ public enum DispatchPlanner {
         // What could never start here leaves its repo's turn to a candidate that can.
         let startable = candidates.filter { candidate in
             let repo = candidate.key.repo.lowercased()
-            return !seen.contains(candidate.key) && !busyItems.contains("\(repo)#\(candidate.key.item)")
+            let pressed = first.contains("\(repo)#\(candidate.key.item)")
+            return !seen.contains(candidate.key) && (pressed || !waiting.contains(candidate.key)) && !busyItems.contains("\(repo)#\(candidate.key.item)")
                 && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
                 && candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil)
         }

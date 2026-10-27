@@ -15,7 +15,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 |-------|---------|
 | `version` | `1`. |
 | `base` | The branch PRs must target. A PR with another base is shown and never dispatched. |
-| `tier` | `{ "marker", "values", "default" }`: how a PR body names its tier (below). |
+| `tier` | `{ "marker", "values", "default", "paths"? }`: how a PR body names its tier, and which changed files raise it (below). |
 | `reviews` | Per tier, the headings that count as a review: `[{ "heading", "notByAuthor"? }]`. |
 | `fixed` | The heading of a response comment, e.g. `## Fixed:`. |
 | `reviewers` | Optional logins for the reviewer rotation (below). |
@@ -41,6 +41,26 @@ unedited `**Tier:** quick fix | feature | high-risk` gives the default.
 Lines like these are all valid: `**Tier:** quick fix`, `Tier: quick fix.`,
 `**Tier: quick fix.** No migration...`, `**Tier: High-risk** (migration, PII).`,
 `**Tier:** feature. No migration, no runtime code...`.
+
+### Tier floored by paths
+
+The author names a tier, but the change sets a floor. `tier.paths` maps a tier to globs:
+
+```json
+"tier": { "marker": "Tier:", "values": ["quick fix", "feature", "high-risk"], "default": "feature",
+          "paths": { "high-risk": ["migrations/**", ".github/**", "scripts/wt"], "feature": ["gateway/src/tools/**"] } }
+```
+
+A PR's tier is the highest of the one its body names (or `default`) and every `paths` tier that
+one of its changed files matches, in the order of `values` (lowest first). The files come from
+GitHub with the PR, never from the local tree; a PR with more than 3000 changed files (all GitHub lists) counts as the
+highest tier. The PR row's tier chip says what raised it on hover (`high-risk: migrations/031_x.sql`)
+and `bton moves` prints it. Globs follow gitignore syntax against the path from the repo root: `*`
+and `?` stay inside one path part, `**` crosses parts, a pattern with a slash is anchored at the
+root and one without matches at any depth, and a directory's pattern covers what is under it.
+There is no negation or `[...]` class, and a `paths` key that is not one of `values`, or a pattern
+starting with `!` or containing `[` or a backslash, makes the flow invalid. A PR whose file list
+GitHub did not return counts as the highest tier. Without `paths` the body's tier stands.
 
 ## Reviews
 
@@ -133,17 +153,27 @@ agent's review would be posted as the author and ignored.
 
 - `agent` names an entry in this Mac's `agents` config. A Mac without that entry never starts
   the move.
-- `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`. Nothing else is
+- `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`, `{tier}` (the PR's tier, floored by
+  `tier.paths`). Nothing else is
   substituted: PR and issue text never goes into a prompt or an argv.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
   line is a review (rules above) naming the current head.
-- `command`: an argv run instead of an agent (merge), in a fresh worktree of the base. After the
+- `command`: an argv run instead of an agent (merge, or a review), in a fresh worktree of the base
+  (the base branch, never the PR's head, so a PR cannot rewrite the script that reviews it). A move
+  takes a `command` or an `agent`, never both. After the
   checks, right before the command, Bton re-reads the PR on GitHub and runs it only if the PR is
   still open at the head the move started on (`{head}`); a moved head, a closed PR or a failed
   read fails the job and nothing runs. The command should still pin that head
   (`gh pr merge {number} --squash --match-head-commit {head}`) to close the seconds between the
   read and the merge. A team's own merge script must do the same: pass it `{head}` and have it
   refuse any other head.
+- A command on a move with `"post": "comment"` is a review command: it gets `BTON_OUT`, a file
+  path, and writes the review there. Bton posts it under the same rules as an agent's final
+  message (first line a review heading of the PR's tier naming the current head; anything else
+  fails the job and posts nothing). Exit 0 posts; exit 2 means "unavailable here" (a tool this Mac
+  lacks): nothing is posted, the job shows `waiting: ...` and runs again after 30 minutes (at once if you press it), so a
+  Mac that has the tool takes it; any other exit fails the job. Pass the PR's head and tier to the
+  script with `{head}` and `{tier}`.
 - `helpers`: up to three agents of this Mac's `agents` config that a Claude agent may ask for a
   second opinion through Bton's `ask` tool (`mcp__bton__ask`). Bton runs the helper itself,
   outside the agent's sandbox, Claude and codex read-only (any other program as its template

@@ -24,10 +24,10 @@ actor Dispatcher {
     private var expiryWatches: [UUID: Task<Void, Never>] = [:]
     private var locks: [UUID: LocalLock] = [:]
     private var work: [UUID: Task<Void, Never>] = [:]
-    private var lost: [UUID: String] = [:]
-    private var stopping: Set<UUID> = []
+    var lost: [UUID: String] = [:]
+    var stopping: Set<UUID> = []
     /// Each watched repo's environment, by lowercased slug, to redact what a job posts.
-    private var environments: [String: [String: String]] = [:]
+    var environments: [String: [String: String]] = [:]
     /// Each watched repo's work label, by lowercased slug.
     private(set) var workLabels: [String: String] = [:]
     /// Called after every job ends, so the next one starts without waiting for the next tick.
@@ -165,7 +165,7 @@ actor Dispatcher {
             jobs.note(job.id, "worktree \(worktree.path)")
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
-                : candidate.agent == nil ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
+                : candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
             // Not in the saved environment: a posted "1" must not be redacted.
             let runEnvironment = candidate.pressed ? environment.merging(["BTON_PRESSED": "1"]) { $1 } : environment
             if let checks, !checks.isEmpty,
@@ -190,25 +190,22 @@ actor Dispatcher {
                     _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
                     return await finish(job, status: .failed, detail: refusal)
                 }
-                let status = try await runLogged(command, in: trusted, job: job.id, environment: runEnvironment, timeout: candidate.timeout)
+                job.review = reviewTarget(for: candidate, flow: flow)
+                let out = jobs.outputURL(job.id).appendingPathExtension("post")
+                let status = try await runLogged(command, in: trusted, job: job.id,
+                                                 environment: job.review == nil ? runEnvironment : runEnvironment.merging(["BTON_OUT": out.path]) { $1 },
+                                                 timeout: candidate.timeout)
                 if await !Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner) {
                     jobs.note(job.id, "kept \(trusted.path): the command left changes in it")
                 }
-                return await finish(job, status: status == 0 ? .succeeded : .failed,
-                                    detail: status == 0 ? nil : "\(command.first ?? "command") exited \(status)")
+                return await finishCommand(job, status: status, command: command, out: out)
             }
             guard let agent = candidate.agent, let template = agents[agent], let prompt = candidate.prompt else {
                 return await finish(job, status: .failed, detail: "no agent or prompt for \(candidate.move.name)")
             }
             try Task.checkCancellation()
             job.deadline = .now + candidate.timeout.timeInterval
-            job.review = candidate.postComment
-                ? candidate.pr.map { pr in
-                    ReviewTarget(number: pr.number, head: pr.headSha,
-                                 headings: flow.map { DispatchPlanner.commentHeadings(for: candidate.move, flow: $0) } ?? [],
-                                 clearLabels: flow.map { DispatchPlanner.clearedLabels(for: candidate.move, flow: $0) })
-                }
-                : nil
+            job.review = reviewTarget(for: candidate, flow: flow)
             let isClaude = template.argv.first.map(AgentHardening.isClaude) == true
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
             let helpers = isClaude ? try offerHelpers(candidate.helpers, agents: agents, to: job.id, in: worktree) : nil
@@ -290,45 +287,7 @@ actor Dispatcher {
                                 detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
         }
         guard let review = job.review else { return await finish(job, status: .succeeded, detail: nil) }
-        guard let body = DispatchPlanner.reviewComment(fromFinalMessage: output, headings: review.headings,
-                                                       head: review.head) else {
-            return await finish(job, status: .failed, detail: "final message names no review heading for the current head")
-        }
-        guard lost[job.id] == nil, !stopping.contains(job.id) else {
-            return await finish(job, status: .cancelled, detail: "stopped")
-        }
-        do {
-            let file = jobs.outputURL(job.id).appendingPathExtension("comment")
-            let redacted = DispatchPlanner.redact(DispatchPlanner.redact(body, environment: try jobs.startedEnvironment(job.id)),
-                                                  environment: environments[job.key.repo.lowercased()] ?? [:])
-            try redacted.write(to: file, atomically: true, encoding: .utf8)
-            try await github.comment(repo: job.key.repo, number: review.number, bodyFile: file)
-            // The comment is what counts; the GitHub review only mirrors it, so a refusal (a PR of
-            // one's own) is noted and the job still succeeds. The verdict comes from the body checked
-            // before redaction, which may rewrite its head marker.
-            if let verdict = FlowEngine.review(fromFirstLine: FlowEngine.firstLine(of: body), headings: review.headings)?.verdict {
-                do {
-                    try await github.submitReview(verdict, repo: job.key.repo, number: review.number, head: review.head,
-                                                  summary: FlowEngine.firstLine(of: redacted))
-                } catch {
-                    jobs.note(job.id, "could not file the GitHub review: \(error.localizedDescription)")
-                }
-            }
-            var kept: [String] = []
-            for label in review.clearLabels ?? [] {
-                do {
-                    try await github.removeLabel(label, repo: job.key.repo, number: review.number)
-                } catch {
-                    jobs.note(job.id, "could not remove \(label): \(error.localizedDescription)")
-                    kept.append(label)
-                }
-            }
-            // The posted decision stands, but the label would hold the PR on this move: say so loudly.
-            await finish(job, status: kept.isEmpty ? .succeeded : .failed,
-                         detail: kept.isEmpty ? nil : "decision posted; remove \(kept.joined(separator: ", ")) by hand")
-        } catch {
-            await finish(job, status: .failed, detail: "posting the review failed: \(error.localizedDescription)")
-        }
+        await postReview(job, text: output, review: review)
     }
 
     private func hold(_ lease: Lease, for id: UUID) {
@@ -377,7 +336,7 @@ actor Dispatcher {
         work[id]?.cancel()
     }
 
-    private func finish(_ job: Job, status: Job.Status, detail: String?) async {
+    func finish(_ job: Job, status: Job.Status, detail: String?) async {
         var job = job
         try? FileManager.default.removeItem(at: Self.scratch(job.id))
         expiryWatches.removeValue(forKey: job.id)?.cancel()
@@ -407,7 +366,8 @@ actor Dispatcher {
             // label and the lease would stay until the lease expired, and the PR read as busy.
             await Task { [job] in
                 await self.removeWorkLabel(from: job)
-                try? await self.leases.release(lease)
+                // A review that waited for a missing tool did not run: another Mac may take it.
+                try? await self.leases.release(lease, ran: job.detail?.hasPrefix("waiting:") != true)
             }.value
         }
         lost[job.id] = nil

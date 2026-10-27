@@ -45,9 +45,12 @@ public struct Move: Hashable, Sendable {
     /// The move waits on a review its owner wrote the PR for, on a tier that counts no review
     /// from the PR's author: the owner's review can never clear it, so it is never started.
     public let ownerWroteIt: Bool
+    /// What raised the tier above the PR body's: a changed file that matches `tier.paths`.
+    public let tierReason: String?
 
     public init(name: String, owner: String?, ownerFromRotation: Bool, tier: String, hasDispatch: Bool, labels: [String] = [],
-                ownerWroteIt: Bool = false) {
+                ownerWroteIt: Bool = false, tierReason: String? = nil) {
+        self.tierReason = tierReason
         self.name = name
         self.owner = owner
         self.ownerFromRotation = ownerFromRotation
@@ -98,7 +101,7 @@ public enum FlowEngine {
 
     /// The PR's counting reviews for its tier, and its decisions, oldest first.
     public static func reviews(of pr: PullRequest, flow: Flow) -> [Review] {
-        let counting = flow.reviews[tier(of: pr.body, rule: flow.tier)] ?? []
+        let counting = flow.reviews[tier(of: pr, rule: flow.tier)] ?? []
         return pr.comments.filter(isTrusted).compactMap { comment in
             if let decision = flow.decision, let author = comment.author,
                decision.by.contains(where: { $0.caseInsensitiveCompare(author) == .orderedSame }),
@@ -122,7 +125,8 @@ public enum FlowEngine {
     }
 
     public static func move(for pr: PullRequest, flow: Flow) -> Move? {
-        let tier = tier(of: pr.body, rule: flow.tier)
+        let verdict = tierVerdict(of: pr, rule: flow.tier)
+        let tier = verdict.tier
         guard let rule = rule(for: pr, flow: flow) else { return nil }
         let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
         // The rotation never picks the author for `assignee`; an author who assigned themselves
@@ -133,7 +137,7 @@ public enum FlowEngine {
             && owner?.caseInsensitiveCompare(pr.author) == .orderedSame
         return Move(name: rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier,
                     hasDispatch: flow.dispatch[rule.move] != nil,
-                    labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt)
+                    labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt, tierReason: verdict.reason)
     }
 
     /// The rule's `label:` conditions that no other rule names: removing one ends this move and

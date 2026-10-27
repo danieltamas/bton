@@ -42,7 +42,16 @@ public struct Flow: Decodable, Sendable {
                heading.isEmpty || flow.allReviewHeadings.contains(where: { $0.hasPrefix(heading) || heading.hasPrefix($0) }) {
                 return .invalid("decision.heading \(heading) overlaps a review heading")
             }
+            for (tier, globs) in flow.tier.paths ?? [:] {
+                guard flow.tier.values.contains(tier) else { return .invalid("tier.paths.\(tier) is not one of tier.values") }
+                if let bad = globs.first(where: { !PathGlob.isValid($0) }) {
+                    return .invalid("tier.paths.\(tier): \(bad) is not a glob (no negation, no empty pattern)")
+                }
+            }
             for (move, rule) in flow.dispatch {
+                if rule.command != nil && (rule.agent != nil || rule.prompt != nil) {
+                    return .invalid("dispatch.\(move): a move runs a command or an agent, not both")
+                }
                 if let helpers = rule.helpers, helpers.count > 3 || !helpers.allSatisfy(BtonConfig.isAgentName) {
                     return .invalid("dispatch.\(move).helpers: up to three agent names")
                 }
@@ -74,8 +83,10 @@ public struct TierRule: Decodable, Sendable {
     public let marker: String
     public let values: [String]
     public let defaultTier: String
+    /// Globs of changed files by tier: a PR touching one is at least that tier, whatever its body says.
+    public let paths: [String: [String]]?
 
-    enum CodingKeys: String, CodingKey { case marker, values, defaultTier = "default" }
+    enum CodingKeys: String, CodingKey { case marker, values, defaultTier = "default", paths }
 }
 
 public struct ReviewHeading: Decodable, Sendable {
