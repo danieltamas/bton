@@ -15,6 +15,8 @@
   <img src="https://img.shields.io/badge/license-MIT-22C55E" alt="MIT">
 </p>
 
+https://github.com/user-attachments/assets/89e15657-4f22-4f51-b9f8-b553a34687cd
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/danieltamas/bton/main/install.sh | bash
 ```
