@@ -52,8 +52,10 @@ public enum FeatureStatuses {
     /// the base is the release branch itself, so "in develop" never applies.
     public static func standing(of feature: FeatureRegistry.Feature, facts: FeatureFacts, git: FeatureGit,
                                 base: String, hasRelease: Bool) -> FeatureStanding {
-        let prs = feature.prs.compactMap { facts.pullRequests[$0.number] }
-        let issues = feature.issues.compactMap { facts.issues[$0.number] }
+        // A number linked twice (title and body) is one issue or PR; by number, so two PRs
+        // merged in the same release resolve the same way every sync.
+        let prs = Set(feature.prs.map(\.number)).sorted().compactMap { facts.pullRequests[$0] }
+        let issues = Set(feature.issues.map(\.number)).sorted().compactMap { facts.issues[$0] }
         let merged = prs.filter { $0.state == "MERGED" }
         let live = merged.compactMap { pr in pr.mergeCommit.flatMap { git.releasedAt[$0] }.map { (pr.number, $0) } }
             .min { $0.1 < $1.1 }

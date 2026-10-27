@@ -479,7 +479,7 @@ final class AppStore {
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
         let snapshot = await engine.tick { read in await self.apply(read) }
         apply(snapshot)
-        local.start(repos: config.repos, defaults: snapshot.defaultBranches)
+        local.start(repos: config.repos, defaults: snapshot.defaultBranches, flows: snapshot.flows)
         notify(since: before)
     }
 

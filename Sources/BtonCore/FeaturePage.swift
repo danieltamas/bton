@@ -58,7 +58,14 @@ public struct FeaturePage: Sendable, Equatable {
             var parent = feature.parent
             while let id = parent, kept.insert(id).inserted { parent = registry.feature(id)?.parent }
         }
-        let byParent = Dictionary(grouping: open.filter { kept.contains($0.id) }) { $0.parent ?? "" }
+        // A sub-feature of a closed feature hangs under the nearest open ancestor, or the area.
+        let openIDs = Set(open.map(\.id))
+        func openParent(of feature: FeatureRegistry.Feature) -> String {
+            var parent = feature.parent
+            while let id = parent, !openIDs.contains(id) { parent = registry.feature(id)?.parent }
+            return parent ?? ""
+        }
+        let byParent = Dictionary(grouping: open.filter { kept.contains($0.id) }, by: openParent)
         func rows(under parent: String, area: String, depth: Int) -> [Row] {
             (byParent[parent] ?? []).filter { $0.area == area || depth > 0 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 .flatMap { [Row(feature: $0, standing: standing($0), depth: depth)] + rows(under: $0.id, area: area, depth: depth + 1) }

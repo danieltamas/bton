@@ -47,13 +47,17 @@ public struct LocalBranchReport: Sendable, Equatable {
 public enum LocalBranches {
     static let timeout: Duration = .seconds(60)
 
-    public static func sync(clone: URL, working: String, defaultBranch: String,
+    /// `fetchOnly` names branches brought up to date under `refs/remotes/origin` and not synced
+    /// or reported: the flow's base and release branches, which the features page reads.
+    public static func sync(clone: URL, working: String, defaultBranch: String, fetchOnly: [String] = [],
                             runner: ProcessRunner = ProcessRunner()) async -> LocalBranchReport {
         var report = LocalBranchReport()
         report.working = working
         report.defaultBranch = defaultBranch
         var names: [String] = []
         for name in [working, defaultBranch] where isPlain(name) && !names.contains(name) { names.append(name) }
+        var fetched = names
+        for name in fetchOnly where isPlain(name) && !fetched.contains(name) { fetched.append(name) }
         guard !names.isEmpty else {
             report.problem = "no branch to sync"
             return report
@@ -66,7 +70,7 @@ public enum LocalBranches {
             return (result.status == 0, String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
                     result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        let fetch = await git(["fetch", "--quiet", "--no-tags", "origin"] + names.map { "+refs/heads/\($0):refs/remotes/origin/\($0)" }, clone)
+        let fetch = await git(["fetch", "--quiet", "--no-tags", "origin"] + fetched.map { "+refs/heads/\($0):refs/remotes/origin/\($0)" }, clone)
         if !fetch.ok { report.problem = "fetching origin failed: " + firstLine(fetch.err) }
         let checkouts = checkedOut(await git(["worktree", "list", "--porcelain"], clone).out)
         let counts = { (left: String, right: String) async -> (Int, Int)? in

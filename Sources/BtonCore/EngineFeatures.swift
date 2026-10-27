@@ -61,6 +61,8 @@ extension Engine {
                 var git = FeatureGit()
                 if let path = repo.path {
                     git = await FeatureGit.read(clone: URL(fileURLWithPath: path, isDirectory: true), base: base, to: to, commits: commits)
+                    // A clone that could not be read would turn every live feature into an idea.
+                    if let problem = git.problem { throw FeatureGit.Failure(command: "", reason: problem) }
                 }
                 report = Self.report(repo: repo.slug, registry: registry, facts: state.facts, git: git, base: base, hasRelease: hasRelease)
             }

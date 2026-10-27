@@ -12,13 +12,15 @@ final class LocalSync {
 
     /// Syncs every repo with a clone, unless a sync still runs: it never holds up GitHub's.
     /// A repo GitHub could not read this time has no default branch and waits for the next one.
-    func start(repos: [WatchedRepo], defaults: [String: String]) {
+    func start(repos: [WatchedRepo], defaults: [String: String], flows: [String: FlowStatus] = [:]) {
         guard running == nil else { return }
         running = Task { [weak self] in
             for repo in repos {
                 guard let path = repo.path, let main = defaults[repo.slug], !main.isEmpty else { continue }
+                let flow = flows[repo.slug]?.flow
                 let report = await LocalBranches.sync(clone: URL(fileURLWithPath: path), working: repo.branch ?? main,
-                                                      defaultBranch: main)
+                                                      defaultBranch: main,
+                                                      fetchOnly: [flow?.base, flow?.release?.from, flow?.release?.to].compactMap { $0 })
                 self?.reports[repo.slug] = report
             }
             self?.running = nil

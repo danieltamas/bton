@@ -55,9 +55,9 @@ public struct FeatureFacts: Sendable, Equatable {
     public static func query(numbers: [Int]) -> String {
         let fields = """
           __typename
-          ... on Issue { number state createdAt labels(first: 30) { nodes { name } } \
+          ... on Issue { number issueState: state createdAt labels(first: 30) { nodes { name } } \
         timelineItems(itemTypes: [LABELED_EVENT], last: 30) { nodes { ... on LabeledEvent { createdAt label { name } } } } }
-          ... on PullRequest { number state createdAt mergedAt baseRefName mergeCommit { oid } }
+          ... on PullRequest { number prState: state createdAt mergedAt baseRefName mergeCommit { oid } }
         """
         let aliases = numbers.map { "    n\($0): issueOrPullRequest(number: \($0)) {\n\(fields)\n    }" }
         return """
@@ -74,7 +74,17 @@ public struct FeatureFacts: Sendable, Equatable {
         struct Node: Decodable {
             let __typename: String
             let number: Int
-            let state: String
+            // The two `state` enums differ, so the query reads each under its own name; a
+            // response made by hand (fixtures, an older cache) may still say `state`.
+            let issueState: String?
+            let prState: String?
+            let plainState: String?
+            var state: String { issueState ?? prState ?? plainState ?? "" }
+
+            enum CodingKeys: String, CodingKey {
+                case __typename, number, issueState, prState, createdAt, mergedAt, baseRefName, mergeCommit, labels, timelineItems
+                case plainState = "state"
+            }
             let createdAt: Date
             let mergedAt: Date?
             let baseRefName: String?
@@ -86,14 +96,26 @@ public struct FeatureFacts: Sendable, Equatable {
         struct Label: Decodable { let name: String }
         struct Commit: Decodable { let oid: String }
         struct Event: Decodable { let createdAt: Date?; let label: Label? }
+        struct Problem: Decodable { let type: String?; let message: String? }
         let data: Payload
+        let errors: [Problem]?
+    }
+
+    public struct QueryFailure: Error, LocalizedError {
+        public let messages: [String]
+        public var errorDescription: String? { "facts query: " + messages.joined(separator: "; ") }
     }
 
     public static func decode(_ data: Data) throws -> FeatureFacts {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var facts = FeatureFacts()
-        for case let node? in try decoder.decode(Response.self, from: data).data.repository.values {
+        let response = try decoder.decode(Response.self, from: data)
+        // A number that is no issue or PR of the repo comes back as a NOT_FOUND beside the rest of
+        // the data: that link is ignored, the others are read. Any other error is a failed read.
+        let failures = (response.errors ?? []).filter { $0.type != "NOT_FOUND" }
+        guard failures.isEmpty else { throw QueryFailure(messages: failures.map { $0.message ?? "unknown error" }) }
+        for case let node? in response.data.repository.values {
             switch node.__typename {
             case "Issue":
                 var labeledAt: [String: Date] = [:]
@@ -127,9 +149,14 @@ extension GitHubClient {
         var facts = FeatureFacts()
         for start in stride(from: 0, to: numbers.count, by: FeatureFacts.chunk) {
             let page = Array(numbers[start..<min(start + FeatureFacts.chunk, numbers.count)])
-            let data = try await gh(["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
-                                     "-f", "query=\(FeatureFacts.query(numbers: page))"])
-            facts.merge(try FeatureFacts.decode(data))
+            let result = try await runner.run(ghPath, ["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
+                                                       "-f", "query=\(FeatureFacts.query(numbers: page))"], timeout: .seconds(60))
+            // gh exits 1 when the response carries errors but still prints it; the decoder tells
+            // a NOT_FOUND (one link, ignored) from a failure.
+            guard result.status == 0 || !result.stdout.isEmpty else {
+                throw Failure.ghFailed(status: result.status, stderr: result.stderr)
+            }
+            facts.merge(try FeatureFacts.decode(result.stdout))
         }
         return facts
     }

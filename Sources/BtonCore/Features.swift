@@ -69,6 +69,8 @@ public struct FeatureRegistry: Decodable, Sendable, Equatable {
     /// What keeps the registry from being used, in the order a person would fix it.
     var problem: String? {
         var ids = Set<String>()
+        for area in areas where area.id.isEmpty { return "an area has an empty id" }
+        for feature in features where feature.id.isEmpty { return "a feature has an empty id" }
         for area in areas where !ids.insert(area.id).inserted { return "duplicate id: \(area.id)" }
         for feature in features where !ids.insert(feature.id).inserted { return "duplicate id: \(feature.id)" }
         let areaIDs = Set(areas.map(\.id))

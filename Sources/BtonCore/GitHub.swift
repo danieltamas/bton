@@ -20,7 +20,7 @@ public struct GitHubClient: Sendable {
     static let ghCandidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
 
     let ghPath: String
-    private let runner = ProcessRunner()
+    let runner = ProcessRunner()
 
     public init() throws {
         guard let path = Self.locateGh(resolve: Executables.resolve, candidates: Self.ghCandidates) else {
