@@ -93,7 +93,7 @@ private struct IssueAskRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Avatar(login: ask.asker)
-                        Text("\(ask.asker) \(ask.handoff ? "handed this to you" : "asked")").foregroundStyle(Theme.textSecondary)
+                        Text("\(ask.asker) \(ask.handoff ? "handed off" : "asked")").foregroundStyle(Theme.textSecondary)
                         Text("·").foregroundStyle(Theme.textTertiary)
                         RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary)
                     }

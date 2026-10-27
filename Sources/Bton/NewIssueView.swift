@@ -365,8 +365,8 @@ struct NewIssueView: View {
             HStack(spacing: 8) {
                 if !busy {
                     let model = store.voiceSettings?.model ?? .defaultModel
-                    let usable = store.voiceSettings?.enabled == true && store.voice.downloaded.contains(model)
-                    if usable && (store.voice.preparing[model] != nil || someoneRecording) {
+                    let usable = store.voiceSettings?.enabled == true && (store.isDemo || store.voice.downloaded.contains(model))
+                    if usable && !store.isDemo && (store.voice.preparing[model] != nil || someoneRecording) {
                         ProgressView().controlSize(.small).frame(width: 30, height: 30)
                             .help(someoneRecording ? "Another new issue is being dictated" : "Loading the voice model: you can record when it is done")
                     } else {
@@ -387,7 +387,7 @@ struct NewIssueView: View {
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
         .task {
-            if let settings = store.voiceSettings, settings.enabled { await store.voice.prepare(settings.model ?? .defaultModel) }
+            if !store.isDemo, let settings = store.voiceSettings, settings.enabled { await store.voice.prepare(settings.model ?? .defaultModel) }
         }
     }
 

@@ -19,7 +19,15 @@ enum DemoShots {
         try write(hero(prs: panel(.pullRequests), jobs: panel(.jobs)), to: directory.appendingPathComponent("hero.png"))
         try write(panel(.pullRequests), to: directory.appendingPathComponent("pull-requests.png"))
         try write(panel(.jobs), to: directory.appendingPathComponent("jobs.png"))
+        try write(panel(.issues), to: directory.appendingPathComponent("issues.png"))
+        store.demoReplies = [1: .questions("Should the CSV sit beside the PDF export or replace it?")]
+        let started = NewIssueSession(repo: repo)
+        started.turns = [.init(text: "Let customers download their invoices as a CSV file.", round: 1)]
+        let dictated = NewIssueSession(repo: repo)
+        dictated.draft = "Retry a failed webhook delivery three times, with a growing delay, before it is marked failed."
+        store.newIssues = [started, dictated]
         try write(panel(.triage), to: directory.appendingPathComponent("triage.png"))
+        store.newIssues = []
         try write(triageIssue(store), to: directory.appendingPathComponent("triage-issue.png"))
         try write(newIssue(store, ready: false), to: directory.appendingPathComponent("new-issue.png"))
         try write(newIssue(store, ready: true), to: directory.appendingPathComponent("new-issue-ready.png"))
@@ -131,6 +139,7 @@ enum DemoShots {
         ]
         config.repos = [WatchedRepo(slug: repo, path: "/Users/maya/code/checkout", branch: "main",
                                     environment: ["DATABASE_URL": "postgres://test@127.0.0.1:5999/checkout"])]
+        config.voice = VoiceSettings(enabled: true)
         config.schedules = [ScheduleEntry(name: "Nightly triage", everyMinutes: 1440, enabled: true,
                                           repo: repo, agent: "claude", prompt: "Triage new issues.", number: 1)]
         return config
@@ -161,6 +170,9 @@ enum DemoShots {
             IssueAsk(repo: repo, number: 388, title: "Apple Pay button missing on Safari 17",
                      url: URL(string: "https://github.com/\(repo)/issues/388")!, asker: "lee",
                      askedAt: now.addingTimeInterval(-34 * 60), commentID: "demo-388"),
+            IssueAsk(repo: repo, number: 402, title: "Webhook retries: which backoff, and who owns the dead-letter queue?",
+                     url: URL(string: "https://github.com/\(repo)/issues/402")!, asker: "jonas",
+                     askedAt: now.addingTimeInterval(-6 * 60), commentID: "demo-402", handoff: true),
         ]
         snapshot.triage = triage
         snapshot.jobs = [

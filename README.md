@@ -29,6 +29,7 @@ an arrow in the menu's header says one is), or run the same line again.
 <p align="center">
   <a href="#one-pr-start-to-finish">How it works</a> &nbsp;|&nbsp;
   <a href="#what-you-get">Features</a> &nbsp;|&nbsp;
+  <a href="#talk-to-your-teammates-agents">Teams</a> &nbsp;|&nbsp;
   <a href="#triage-issues-in-three-clicks">Triage</a> &nbsp;|&nbsp;
   <a href="#write-a-new-issue-with-an-agent">New issue</a> &nbsp;|&nbsp;
   <a href="#get-started">Get started</a> &nbsp;|&nbsp;
@@ -96,9 +97,10 @@ where your flow says a person decides.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <b>Questions on issues</b><br>
-      When a teammate mentions you on an issue, it counts in what is waiting on you. Draft reply
-      has a read-only agent write your answer; you edit it and post it as you, after a confirm.
+      <b>Questions on issues, and handoffs</b><br>
+      When a teammate or their agent mentions you on an issue, it counts in what is waiting on you.
+      Draft reply has a read-only agent write your answer; you edit it and post it as you, after a
+      confirm. <code>bton handoff</code> lets an agent ask a teammate directly.
     </td>
     <td width="50%" valign="top">
       <b>Find any PR, and know why it failed</b><br>
@@ -108,10 +110,10 @@ where your flow says a person decides.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <b>Issues written with an agent</b><br>
-      Describe an idea in a few words; a read-only agent reads the repo and what is open or done,
-      asks what is missing, and writes the issue. Score it with the Triage questions and create it
-      with its priority and stage already set.
+      <b>Issues written with an agent, by voice if you like</b><br>
+      Describe an idea in a few words, or dictate it; a read-only agent reads the repo and what is
+      open or done, asks what is missing, and writes the issue. Start as many as you like: each is
+      its own draft in Triage.
     </td>
     <td width="50%" valign="top">
       <b>Triage in three clicks</b><br>
@@ -121,6 +123,34 @@ where your flow says a person decides.
   </tr>
 </table>
 
+## Talk to your teammates' agents
+
+Everyone on the team runs their own agents. When one of them needs a decision from a person, it
+should not end up in a chat window that someone copies by hand. It goes where the work is: a
+comment on the GitHub issue, addressed to that person.
+
+```bash
+bton handoff harbor/checkout 402 --to jonas "Retries: exponential backoff or fixed 30 s? I recommend exponential, capped at 5 min. Dead-letter queue: ours or the payments team's? Evidence: #402."
+```
+
+That posts one comment as you, starting with `@jonas`, once (running it again says "already
+posted"). On Jonas's Mac, Bton shows it in the Issues tab as **handed off**, counts it in what is
+waiting on him, and Draft reply starts his own read-only agent on the thread and the code. He edits
+the answer and posts it as himself. Nobody copies anything between windows, and GitHub stays the
+only place the conversation lives.
+
+<p align="center">
+  <img src="docs/media/issues.png" alt="The Issues tab: an ask from lee and a handoff from jonas, each with Draft reply" width="404">
+</p>
+
+- **Agents Bton starts know to use it.** The built-in playbook tells each one to hand a decision to
+  the named teammate instead of leaving it for you to relay, so every repo is covered with nothing
+  to set up. An agent you start by hand can run the same command.
+- **Only collaborators count.** A comment from someone without write access never shows up, and its
+  text never reaches an agent.
+- **One person per message.** The text cannot mention anyone else, carry HTML comments or run past
+  4000 characters, so a handoff never pings a third person.
+
 ## Triage issues in three clicks
 
 The Triage tab lists open issues that are not `stage:ready`, in progress or in review. Click one and
@@ -128,11 +158,11 @@ answer three questions. No agent runs, so it opens instantly.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/triage.png" alt="The Triage tab"></td>
+    <td width="50%"><img src="docs/media/triage.png" alt="The Triage tab: two new issues in progress as hatched cards above the open issues"></td>
     <td width="50%"><img src="docs/media/triage-issue.png" alt="An issue with its three questions answered and a score of 8 of 9"></td>
   </tr>
   <tr>
-    <td align="center"><b>Every open issue that still needs a priority or a stage</b></td>
+    <td align="center"><b>Every open issue that still needs a priority or a stage, and your drafts</b></td>
     <td align="center"><b>Three answers give a score and the labels</b></td>
   </tr>
 </table>
@@ -175,11 +205,18 @@ edits or the web, and what people wrote in issues reaches it as files to read, n
 Each turn is one short job on the default branch, so a conversation needs a Claude Code agent named
 `claude` in Settings > Agents.
 
-**Speak instead of typing.** Switch on Settings > Voice and a microphone button sits beside Send.
-Click it, talk while the sound waves move, click **Stop**, and the words appear in the box for you
-to edit before you send. Whisper (through WhisperKit) runs on this Mac: the model is downloaded
-once into `~/.bton/models`, recording needs no network, the audio is never saved, and the agent
-only receives the text.
+**Several at once.** Every New issue is its own conversation. Go back to the list while an agent
+works and it stays there as a hatched card that says whether the agent is working, has replied
+or stopped; click it to continue. Drafts survive a restart and a reinstall, and the agent keeps
+its own notes between turns, reads the repo's code map first when it has one, and runs on Sonnet
+unless you pick another model in Settings > Agents.
+
+**Speak instead of typing.** The microphone beside Send leads to Settings > Voice the first time:
+Bton checks that your Mac can run the model, downloads it once into `~/.bton/models`, and loads it
+before you can record. Then click the microphone, talk while the sound waves move and your words
+appear above them, click **Stop**, and the text is in the box to edit before you send. Whisper
+(through WhisperKit) runs on this Mac: recording needs no network, the audio is never saved, and
+the agent only receives the text.
 
 <table>
   <tr>

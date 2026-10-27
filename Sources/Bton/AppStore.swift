@@ -61,6 +61,8 @@ final class AppStore {
     var schedules: [ScheduleEntry] { config.schedules }
     var agents: [String: AgentTemplate] { config.agents }
     var supervisor: SupervisorSettings? { config.supervisor }
+    /// Set by `showDemo`: the screenshots never read this Mac's voice models.
+    private(set) var isDemo = false
     var voiceSettings: VoiceSettings? { config.voice }
     var draftModel: String { config.draftModel ?? BtonConfig.defaultDraftModel }
     var pollSeconds: Int { config.pollSeconds }
@@ -454,6 +456,7 @@ final class AppStore {
 
     /// Made-up data and no engine, for the README's screenshots (`DemoShots`).
     func showDemo(_ snapshot: Engine.Snapshot, config: BtonConfig) {
+        isDemo = true
         self.config = config
         apply(snapshot)
     }
