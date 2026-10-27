@@ -83,7 +83,7 @@ struct SupervisorPane: View {
 
     @ViewBuilder private func spend(budget: Decimal) -> some View {
         if let spent = Supervision.spentToday(store.jobs, now: .now) {
-            Text("$\(spent.formatted(.number.precision(.fractionLength(2)))) of $\(budget) today")
+            Text(verbatim: "$\(spent.formatted(.number.precision(.fractionLength(2)))) of $\(budget) today")
                 .font(.meta.monospacedDigit()).foregroundStyle(Theme.textTertiary)
         } else {
             Text("Today's spend is unknown: a supervise job has no price")

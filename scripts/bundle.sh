@@ -34,6 +34,7 @@ export ZERO_AR_DATE=1
 slices=()
 for arch in "${archs[@]}"; do
   flags=(-c release --scratch-path "$scratch" --triple "$arch-apple-macosx14.0"
+         -Xswiftc -Xfrontend -Xswiftc -no-clang-module-breadcrumbs
          -Xswiftc -file-prefix-map -Xswiftc "$src=/bton"
          -Xswiftc -file-prefix-map -Xswiftc "$scratch=/bton/.build")
   swift build "${flags[@]}" >&2
