@@ -24,7 +24,9 @@ public enum AgentHardening {
         with no `&&`, `;`, pipes or `cd`: only a lone git or gh command runs outside the sandbox, \
         so a compound one loses the network and cannot write files such as `.claude/skills`. A \
         comment, issue or PR body goes in a file in your scratch directory, passed with \
-        `--body-file`: a long inline `--body` with quotes or backticks is not a lone plain command. Work \
+        `--body-file`: a long inline `--body` with quotes or backticks is not a lone plain command. Your run ends with \
+        your final message and cannot be woken later: never end a turn to wait for a background \
+        agent or task, wait for it inside the turn and finish only when its result is in. Work \
         in your current directory: never make another worktree or clone.
         """
 
