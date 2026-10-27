@@ -32,6 +32,7 @@ enum DemoShots {
         try write(newIssue(store, ready: false), to: directory.appendingPathComponent("new-issue.png"))
         try write(newIssue(store, ready: true), to: directory.appendingPathComponent("new-issue-ready.png"))
         try write(pane(ReposPane()).environment(store), to: directory.appendingPathComponent("settings-repos.png"))
+        try write(pane(SchedulesPane()).environment(store), to: directory.appendingPathComponent("settings-schedules.png"))
         try write(pane(AgentsPane()).environment(store), to: directory.appendingPathComponent("settings-agents.png"))
     }
 
@@ -83,7 +84,7 @@ enum DemoShots {
 
     /// A new issue part-way through its conversation, or with the issue written and scored.
     private static func newIssue(_ store: AppStore, ready: Bool) -> some View {
-        let session = NewIssueSession(repo: "acme/shop")
+        let session = NewIssueSession(repo: repo)
         session.turns = [.init(text: "Let customers download their invoices as a CSV file.", round: 1)]
         store.demoReplies = [1: .questions("""
             #212 already adds PDF invoices (open, stage:spec), and src/invoices/export.ts has the PDF writer. \
@@ -137,11 +138,24 @@ enum DemoShots {
                                            "--permission-mode", "acceptEdits"]),
             "codex": AgentTemplate(argv: ["codex", "exec", "--sandbox", "workspace-write", "{prompt}"]),
         ]
-        config.repos = [WatchedRepo(slug: repo, path: "/Users/maya/code/checkout", branch: "main",
-                                    environment: ["DATABASE_URL": "postgres://test@127.0.0.1:5999/checkout"])]
+        config.repos = [
+            WatchedRepo(slug: repo, path: "/Users/maya/code/checkout", branch: "main",
+                        environment: ["DATABASE_URL": "postgres://test@127.0.0.1:5999/checkout"]),
+            WatchedRepo(slug: "harbor/api", path: "/Users/maya/code/api", branch: "main"),
+            WatchedRepo(slug: "harbor/mobile", path: "/Users/maya/code/mobile", branch: "main"),
+            WatchedRepo(slug: "harbor/docs", path: "/Users/maya/code/docs", branch: "main"),
+        ]
         config.voice = VoiceSettings(enabled: true)
-        config.schedules = [ScheduleEntry(name: "Nightly triage", everyMinutes: 1440, enabled: true,
-                                          repo: repo, agent: "claude", prompt: "Triage new issues.", number: 1)]
+        config.schedules = [
+            ScheduleEntry(name: "Nightly triage", everyMinutes: 1440, enabled: true,
+                          repo: repo, agent: "claude", prompt: "Triage new issues.", number: 1),
+            ScheduleEntry(name: "Dependency sweep", everyMinutes: 10080, enabled: true,
+                          repo: "harbor/api", agent: "codex", prompt: "Update patch-level dependencies.", number: 2),
+            ScheduleEntry(name: "Flaky test hunt", everyMinutes: 1440, enabled: true,
+                          repo: "harbor/mobile", agent: "claude", prompt: "Find and fix flaky tests.", number: 3),
+            ScheduleEntry(name: "Docs drift check", everyMinutes: 10080, enabled: true,
+                          repo: "harbor/docs", agent: "claude", prompt: "Compare the docs with the code.", number: 4),
+        ]
         return config
     }
 
@@ -173,6 +187,12 @@ enum DemoShots {
             IssueAsk(repo: repo, number: 402, title: "Webhook retries: which backoff, and who owns the dead-letter queue?",
                      url: URL(string: "https://github.com/\(repo)/issues/402")!, asker: "jonas",
                      askedAt: now.addingTimeInterval(-6 * 60), commentID: "demo-402", handoff: true),
+            IssueAsk(repo: "harbor/api", number: 77, title: "Rate limits for the public orders endpoint: per key or per IP?",
+                     url: URL(string: "https://github.com/harbor/api/issues/77")!, asker: "lee",
+                     askedAt: now.addingTimeInterval(-2 * 3600), commentID: "demo-77"),
+            IssueAsk(repo: "harbor/mobile", number: 215, title: "Push permission prompt: ask at launch or after the first order?",
+                     url: URL(string: "https://github.com/harbor/mobile/issues/215")!, asker: "jonas",
+                     askedAt: now.addingTimeInterval(-5 * 3600), commentID: "demo-215"),
         ]
         snapshot.triage = triage
         snapshot.jobs = [
