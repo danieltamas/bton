@@ -125,6 +125,29 @@ public actor Engine {
         }
     }
 
+    /// The registry job when due. An automatic run also asks the item's lease when the last run
+    /// started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
+    /// means no automatic run this tick.
+    private func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
+                                     pullRequests: [PullRequest], merged: [MergedPullRequest]),
+                            agents: [String: AgentTemplate], leases: LeaseStore) async -> DispatchCandidate? {
+        let slug = read.repo.slug
+        let pressed = next.contains(Self.pick(repo: slug, item: FeatureJob.item))
+        let make = { (teamLast: Date?) -> DispatchCandidate? in
+            FeatureJob.candidate(jobs: self.jobs.all(), repo: slug, flow: read.flow,
+                                 defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
+                                 agents: agents, work: read.repo.work.flatMap(AgentPick.init),
+                                 registry: self.featureStates[slug.lowercased()]?.report?.registry ?? .none,
+                                 pullRequests: read.pullRequests, merged: read.merged,
+                                 issues: self.openIssues[slug.lowercased()] ?? [],
+                                 startsMoves: read.repo.startsMoves, pressed: pressed, teamLast: teamLast)
+        }
+        guard let local = make(nil) else { return nil }
+        if pressed { return local }
+        guard let item = LeaseItem(FeatureJob.item), let state = try? await leases.state(of: item, in: slug) else { return nil }
+        return make(FeatureJob.lastStart(state))
+    }
+
     /// The merged PRs with a head whose leftovers were never looked at, or not for an hour.
     static func cleanupDue(_ merged: [MergedPullRequest], tried: [String: Date], now: Date) -> [MergedPullRequest] {
         merged.filter { pr in !pr.headSha.isEmpty && tried[pr.id].map { now.timeIntervalSince($0) >= 3_600 } ?? true }
@@ -266,16 +289,7 @@ public actor Engine {
                                                          runNow: runNow, changedAt: changedAt)
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
-                    if let registry = FeatureJob.candidate(jobs: jobs.all(), repo: read.repo.slug, flow: read.flow,
-                                                           defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
-                                                           agents: config.agents, work: read.repo.work.flatMap(AgentPick.init),
-                                                           registry: snapshot.features[read.repo.slug]?.registry ?? .none,
-                                                           pullRequests: read.pullRequests, merged: read.merged,
-                                                           issues: openIssues[read.repo.slug.lowercased()] ?? [],
-                                                           startsMoves: read.repo.startsMoves,
-                                                           pressed: next.contains(Self.pick(repo: read.repo.slug, item: FeatureJob.item))) {
-                        pending.append((registry, clone, read.flow))
-                    }
+                    if let registry = await featureJob(read, agents: config.agents, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
                     // One supervisor at a time: the first repo with a flagged job takes this tick's.
                     if !pending.contains(where: { $0.candidate.key.move == Supervision.move }),
                        let supervise = Supervision.candidate(settings: config.supervisor, agents: config.agents, jobs: jobs.all(),

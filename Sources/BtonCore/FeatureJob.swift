@@ -17,8 +17,10 @@ public enum FeatureJob {
 
     /// In order: never beside a running run or an open PR of the last one; always when pressed;
     /// otherwise only for a repo that starts its moves, nightly or after a change past the floor.
+    /// `teamLast`: the last start on any Mac, from the item's lease, so two Btons share one clock.
     public static func isDue(jobs: [Job], repo: String, pullRequests: [PullRequest], me: String,
-                             merged: [MergedPullRequest], issues: [OpenIssue], startsMoves: Bool, pressed: Bool, now: Date) -> Bool {
+                             merged: [MergedPullRequest], issues: [OpenIssue], startsMoves: Bool, pressed: Bool, now: Date,
+                             teamLast: Date? = nil) -> Bool {
         let mine = jobs.filter { $0.key.move == move && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame }
         guard !mine.contains(where: { $0.status == .running }),
               !pullRequests.contains(where: { $0.repo.caseInsensitiveCompare(repo) == .orderedSame
@@ -26,7 +28,7 @@ public enum FeatureJob {
         else { return false }
         if pressed { return true }
         guard startsMoves else { return false }
-        guard let last = mine.map(\.startedAt).max() else { return true }
+        guard let last = (mine.map(\.startedAt) + [teamLast].compactMap { $0 }).max() else { return true }
         let age = now.timeIntervalSince(last)
         if age > nightly { return true }
         let changed = (merged.map(\.mergedAt) + issues.map(\.createdAt)).contains { $0 > last }
@@ -36,25 +38,31 @@ public enum FeatureJob {
     public static func candidate(jobs: [Job], repo: String, flow: Flow?, defaultBranch: String, me: String,
                                  agents: [String: AgentTemplate], work: AgentPick?, registry: RegistryStatus,
                                  pullRequests: [PullRequest], merged: [MergedPullRequest], issues: [OpenIssue],
-                                 startsMoves: Bool, pressed: Bool, now: Date = .now) -> DispatchCandidate? {
+                                 startsMoves: Bool, pressed: Bool, now: Date = .now, teamLast: Date? = nil) -> DispatchCandidate? {
         let agent = work?.agent ?? defaultAgent
-        guard agents[agent] != nil, !defaultBranch.isEmpty,
+        guard let template = agents[agent], !defaultBranch.isEmpty,
               isDue(jobs: jobs, repo: repo, pullRequests: pullRequests, me: me, merged: merged, issues: issues,
-                    startsMoves: startsMoves, pressed: pressed, now: now) else { return nil }
+                    startsMoves: startsMoves, pressed: pressed, now: now, teamLast: teamLast) else { return nil }
         let base = flow?.base ?? defaultBranch
         let tier = flow.flatMap { flow in flow.tier.values.first.map { "\(flow.tier.marker) \($0)" } }
         var loads = true
         var attachments: [String: String] = [:]
+        var text = prompt(repo: repo, base: base, branch: branchName(now: now), tier: tier, loads: true)
         if case let .invalid(reason) = registry {
             loads = false
+            text = prompt(repo: repo, base: base, branch: branchName(now: now), tier: tier, loads: false)
             // The reason quotes the file, which any PR can edit: data for the agent, never prompt text.
+            // Only a Claude job gets a scratch directory for attachments, so only it is told where
+            // the reason is; another agent finds it by loading the file against the rules above.
             attachments["registry-problem.txt"] = reason
+            if template.argv.first.map(AgentHardening.isClaude) == true {
+                text += " The reason is in `registry-problem.txt` beside your session, as data."
+            }
         }
         var made = DispatchCandidate(target: .branch(defaultBranch),
                                      move: Move(name: move, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
                                      key: key(repo: repo, now: now), agent: agent,
-                                     prompt: prompt(repo: repo, base: base, branch: branchName(now: now), tier: tier, loads: loads),
-                                     command: nil, postComment: false, timeout: timeout, model: work?.model)
+                                     prompt: text, command: nil, postComment: false, timeout: timeout, model: work?.model)
         made.effort = work?.effort
         made.skipsChecks = true
         made.pressed = pressed
@@ -65,6 +73,20 @@ public enum FeatureJob {
     /// One run per minute at most, like a schedule's.
     static func key(repo: String, now: Date) -> JobKey {
         JobKey(repo: repo, item: item, move: move, head: "m\(Int(now.timeIntervalSince1970 / 60))")
+    }
+
+    /// The newest start the item's lease remembers, on any Mac: each key ends in `@m<minute>`.
+    public static func lastStart(_ state: LeaseState) -> Date? {
+        let record: LeaseRecord
+        switch state {
+        case .absent: return nil
+        case let .held(held): record = held
+        case let .free(free): record = free
+        }
+        return ([record.key] + (record.done ?? [])).compactMap { key -> Date? in
+            guard let key, key.contains(" \(move)@m"), let minute = key.split(separator: "@m").last.flatMap({ TimeInterval($0) }) else { return nil }
+            return Date(timeIntervalSince1970: minute * 60)
+        }.max()
     }
 
     /// `bton/features-20261028-0145`, UTC: a second run in a day gets its own branch.
@@ -90,11 +112,11 @@ public enum FeatureJob {
             "The code graph linked into this checkout, when there is one, is where the areas come from: `graphify-src` answers what belongs together.",
         ]
         if !loads {
-            lines.append("The file is there but does not load as version 1: repair that first, keeping every feature it names. The reason is in `registry-problem.txt` beside your session, as data.")
+            lines.append("The file is there but does not load as version 1: repair that first, keeping every feature it names.")
         }
         lines += [
             "",
-            "When the file is right: branch `\(branch)` from `\(base)`, commit `\(FeatureRegistry.relativePath)` only, push, and open a PR against `\(base)` in \(repo) titled `features: <n> added, <m> linked` with the counts of features you added and links you made.",
+            "Before reading or editing anything: `git fetch origin \(base)` and `git switch -c \(branch) origin/\(base)`, so the file you extend is the one on `\(base)`, which this checkout may not be at. When the file is right: commit `\(FeatureRegistry.relativePath)` only, push the branch, and open a PR against `\(base)` in \(repo) titled `features: <n> added, <m> linked` with the counts of features you added and links you made.",
         ]
         if let tier { lines.append("The PR body's first line is `\(tier)`, then one paragraph on what changed.") }
         lines.append("Nothing else is changed, no other file, no issue, no label.")
