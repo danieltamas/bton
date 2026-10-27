@@ -3,6 +3,7 @@ import SwiftUI
 /// A small dropdown beside the search box that narrows every list to one repo. A button and a
 /// popover rather than a native `Menu`, which shows no pointing hand.
 struct RepoFilter: View {
+    @Environment(AppStore.self) private var store
     let repos: [String]
     @Binding var selection: String?
     @State private var open = false
@@ -28,7 +29,15 @@ struct RepoFilter: View {
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 row(nil, title: "All repos")
-                ForEach(repos, id: \.self) { row($0, title: $0) }
+                ForEach(repos, id: \.self) { slug in
+                    HStack(spacing: 4) {
+                        row(slug, title: slug)
+                        IconButton(symbol: "chevron.right", help: "The repo's page: branches and features", size: 22) {
+                            open = false
+                            store.openRepoPage(slug)
+                        }
+                    }
+                }
             }
             .padding(6)
         }

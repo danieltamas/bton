@@ -2,6 +2,7 @@ import AppKit
 import BtonCore
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -35,6 +36,10 @@ final class AppStore {
     private(set) var ready: [ReadyIssue] = []
     /// The issue open in the triage tab.
     var triaging: TriageIssue?
+    /// The repo whose page (branches, features) the window shows in place of its lists.
+    var viewingRepo: String?
+    /// Each watched repo's feature registry with its statuses, as last read.
+    private(set) var features: [String: FeatureReport] = [:]
     /// The new issue on screen, if any.
     var composing: NewIssueSession?
     /// Every new issue in the making, each its own conversation: they outlive a tab switch and
@@ -69,6 +74,8 @@ final class AppStore {
     var draftModel: String { config.draftModel ?? BtonConfig.defaultDraftModel }
     var graphifyPython: String? { config.graphifyPython }
     var pollSeconds: Int { config.pollSeconds }
+    /// The poll interval as the footer and the repo page word it: "2m" or "45s".
+    var pollEvery: String { Duration.seconds(pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)) }
     var maxAgents: Int { config.maxAgents }
     private(set) var prices = PriceList(models: [:])
     /// Which Settings pane opens next, and the schedule it shows.
@@ -328,6 +335,17 @@ final class AppStore {
     }
 
     /// The job's output and error log, in TextEdit: nothing opens a `.out` file by default.
+    /// Shows the repo's page over the lists, closing whatever else was over them.
+    func openRepoPage(_ slug: String) {
+        withAnimation(Motion.spring) {
+            watchingJob = nil
+            readingDraft = nil
+            triaging = nil
+            composing = nil
+            viewingRepo = slug
+        }
+    }
+
     func openLogs(of job: Job) {
         let files = outputFiles(of: job).filter(Self.hasContent)
         guard !files.isEmpty, let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit")
@@ -491,6 +509,7 @@ final class AppStore {
         issueAsks = snapshot.issueAsks
         // A repo that could not be read keeps its issues, like its PRs.
         triage = snapshot.triage + triage.filter { unread($0.repo) }
+        features = features.filter { unread($0.key) }.merging(snapshot.features) { _, read in read }
         // The engine keeps an unread repo's last issues in its own list, so the carried ones are not added twice.
         let readNow = Set(snapshot.ready.map(\.id))
         ready = snapshot.ready + ready.filter { unread($0.repo) && !readNow.contains($0.id) }

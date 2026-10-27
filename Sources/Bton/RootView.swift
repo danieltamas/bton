@@ -53,6 +53,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: store.watchingJob)
                 .animation(Motion.spring, value: store.readingDraft)
                 .animation(Motion.spring, value: store.triaging)
+                .animation(Motion.spring, value: store.viewingRepo)
                 .animation(Motion.spring, value: store.composing?.id)
             footer
         }
@@ -283,6 +284,7 @@ struct RootView: View {
             store.readingDraft = nil
             store.triaging = nil
             store.composing = nil
+            store.viewingRepo = nil
         }
     }
 
@@ -362,6 +364,10 @@ struct RootView: View {
         } else if let issue = store.triaging {
             TriageView(issue: issue) { withAnimation(Motion.spring) { store.triaging = nil } }
                 .id(issue.id)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let slug = store.viewingRepo {
+            RepoPage(slug: slug) { withAnimation(Motion.spring) { store.viewingRepo = nil } }
+                .id(slug)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let id = store.watchingJob, let job = store.jobs.first(where: { $0.id == id }) {
             SessionView(job: job, title: jobTitle(job, schedules: store.schedules)) {
@@ -446,7 +452,7 @@ struct RootView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             if store.local.reports.isEmpty {
-                Text("Checks GitHub every \(Duration.seconds(store.pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))")
+                Text("Checks GitHub every \(store.pollEvery)")
                     .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
             } else {
                 BranchSummary()

@@ -3,13 +3,14 @@ import SwiftUI
 /// The lists' search: a PR number or words from a title or a login. Escape or the cross clears it.
 struct SearchField: View {
     @Binding var text: String
+    var prompt = "Search PRs: #367, a title, a login"
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
                 .foregroundStyle(focused ? Theme.mint : Theme.textTertiary)
-            TextField("Search PRs: #367, a title, a login", text: $text)
+            TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textPrimary)

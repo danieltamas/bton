@@ -9,7 +9,10 @@ struct BranchSummary: View {
 
     var body: some View {
         let reports = store.repos.compactMap { repo in store.local.reports[repo.slug].map { (repo: repo.slug, report: $0) } }
-        Button { open = true } label: {
+        Button {
+            // One repo: its page. Several: pick one from the popover.
+            if reports.count == 1, let slug = reports.first?.repo { store.openRepoPage(slug) } else { open = true }
+        } label: {
             HStack(spacing: 8) {
                 if reports.count == 1, let report = reports.first?.report {
                     // With more repos watched, the line says whose branches these are.
@@ -37,15 +40,35 @@ struct BranchSummary: View {
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
-        .help("Your local branches against origin")
+        .help("Your local branches against origin; the repo's page")
         .popover(isPresented: $open, arrowEdge: .top) {
-            BranchDetails(reports: reports, every: Duration.seconds(store.pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(reports, id: \.repo) { item in
+                    Button {
+                        open = false
+                        store.openRepoPage(item.repo)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(RepoFilter.short(item.repo)).font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
+                            ForEach(item.report.branches) { BranchMark(status: $0) }
+                            Spacer(minLength: 12)
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.textTertiary)
+                        }
+                        .font(.system(size: 10.5, weight: .medium))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .help("The repo's page: branches and features")
+                }
+            }
+            .padding(6)
         }
     }
 }
 
 /// One branch: a tick when it matches origin, an arrow and a count when it does not.
-private struct BranchMark: View {
+struct BranchMark: View {
     let status: BranchStatus
 
     var body: some View {
@@ -71,7 +94,8 @@ private struct CompactLabel: LabelStyle {
     }
 }
 
-private struct BranchDetails: View {
+/// A repo's branches in words, in the page header's popover.
+struct BranchDetails: View {
     let reports: [(repo: String, report: LocalBranchReport)]
     let every: String
 
