@@ -337,6 +337,20 @@ struct IconButton: View {
     }
 }
 
+extension View {
+    /// A list's main action (New issue): floats at the bottom right over the list, never in a bar
+    /// above it. The list scrolls clear of it, so its last row is never covered.
+    func floatingAction(title: String, symbol: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        contentMargins(.bottom, 64, for: .scrollContent)
+            .overlay(alignment: .bottomTrailing) {
+                PillButton(title: title, symbol: symbol, disabled: disabled, action: action)
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 12)
+            }
+    }
+}
+
 /// A pill button with its trailing icon in a disc of its own, flush with the right edge.
 struct PillButton: View {
     let title: String

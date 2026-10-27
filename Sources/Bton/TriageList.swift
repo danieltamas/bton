@@ -21,12 +21,7 @@ struct TriageList: View {
     let newIssue: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Spacer()
-                PillButton(title: "New issue", symbol: "plus", prominent: false, action: newIssue)
-            }
-            .padding(.horizontal, 14)
+        Group {
             if issues.isEmpty {
                 EmptyState(symbol: "checklist", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to triage",
                            detail: "Open issues that are not stage:ready, in progress or in review show here.")
@@ -36,6 +31,7 @@ struct TriageList: View {
                 }
             }
         }
+        .floatingAction(title: "New issue", symbol: "plus", action: newIssue)
     }
 }
 
