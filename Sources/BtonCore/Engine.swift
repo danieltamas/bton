@@ -35,6 +35,8 @@ public actor Engine {
     let github: GitHubClient
     let jobs: JobStore
     let log: @Sendable (String) -> Void
+    /// Each watched repo's code graph, rebuilt after a sync when its branch moved.
+    let graphs: CodeGraphBuilder
     private var dispatcher: Dispatcher?
     /// When each labelled PR's lease was last read for the work label cleanup, by "repo#number".
     private var labelReadAt: [String: Date] = [:]
@@ -88,7 +90,11 @@ public actor Engine {
         unsetenv("BTON_PRESSED")
         jobs = try JobStore(home: home)
         self.log = log
+        graphs = CodeGraphBuilder(home: home, log: log)
     }
+
+    /// Awaits the code graph builds a tick started; tests only.
+    public func waitForGraphBuilds() async { await graphs.waitForBuilds() }
 
     public func onJobEnded(_ handler: @escaping @Sendable () -> Void) async {
         jobEnded = handler
@@ -189,6 +195,11 @@ public actor Engine {
                                   held: IssueIntake.held(by: jobs.all(), repo: repo.slug))
             }
             snapshot.loggedOut = heldAgents().sorted()
+            // Started here, before dispatch, and never awaited: a build runs beside the agents.
+            for read in reads where read.repo.buildsGraph {
+                await graphs.refresh(repo: read.repo, branch: read.repo.branch ?? read.defaultBranch,
+                                     python: CodeGraph.python(configured: config.graphifyPython), ghPath: github.ghPath)
+            }
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
             await refreshPricesIfDue()
