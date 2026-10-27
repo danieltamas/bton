@@ -33,6 +33,9 @@ final class AppStore {
     private(set) var triage: [TriageIssue] = []
     /// The issue open in the triage tab.
     var triaging: TriageIssue?
+    var composing: NewIssueSession?
+    /// The README's screenshots show agent replies no job produced.
+    var demoReplies: [Int: NewIssues.Reply] = [:]
     /// Every ask notified this run (`IssueAsk.notice`), so a mention edited out and back is not new.
     @ObservationIgnored var notifiedAsks: Set<String> = []
     /// Asks I replied to from Bton (`IssueAsk.notice`), shown as posted until a sync reads the reply.

@@ -18,14 +18,22 @@ struct TriageList: View {
     @Environment(AppStore.self) private var store
     let issues: [TriageIssue]
     let showRepo: Bool
+    let newIssue: () -> Void
 
     var body: some View {
-        if issues.isEmpty {
-            EmptyState(symbol: "checklist", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to triage",
-                       detail: "Open issues that are not stage:ready, in progress or in review show here.")
-        } else {
-            RowStack(items: issues) { issue in
-                TriageRow(issue: issue, showRepo: showRepo)
+        VStack(spacing: 8) {
+            HStack {
+                Spacer()
+                PillButton(title: "New issue", symbol: "plus", prominent: false, action: newIssue)
+            }
+            .padding(.horizontal, 14)
+            if issues.isEmpty {
+                EmptyState(symbol: "checklist", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to triage",
+                           detail: "Open issues that are not stage:ready, in progress or in review show here.")
+            } else {
+                RowStack(items: issues) { issue in
+                    TriageRow(issue: issue, showRepo: showRepo)
+                }
             }
         }
     }
@@ -97,36 +105,7 @@ struct TriageView: View {
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    ForEach(Array(IssueTriage.questions.enumerated()), id: \.offset) { index, question in
-                        VStack(alignment: .leading, spacing: 6) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(index + 1). \(question.text)").font(.system(size: 12.5, weight: .semibold))
-                                    .foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
-                                Text(question.help).font(.meta).foregroundStyle(Theme.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            ForEach(Array(question.options.enumerated()), id: \.offset) { choice, option in
-                                Button { withAnimation(Motion.snappy) { answers[index] = choice } } label: {
-                                    HStack(alignment: .top, spacing: 8) {
-                                        Image(systemName: answers[index] == choice ? "largecircle.fill.circle" : "circle")
-                                            .padding(.top, 1)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(option.label).fixedSize(horizontal: false, vertical: true)
-                                            if !option.hint.isEmpty {
-                                                Text(option.hint).font(.meta).foregroundStyle(Theme.textTertiary)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(answers[index] == choice ? Theme.mint : Theme.textSecondary)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(PressStyle())
-                            }
-                        }
-                    }
+                    TriageQuestions(answers: $answers)
                 }
                 .padding(.horizontal, 14)
             }
@@ -167,6 +146,44 @@ struct TriageView: View {
     }
 }
 
-private extension String {
+/// The three scored questions, answered with a click; shared by triage and a new issue.
+struct TriageQuestions: View {
+    @Binding var answers: [Int?]
+
+    var body: some View {
+        ForEach(Array(IssueTriage.questions.enumerated()), id: \.offset) { index, question in
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(index + 1). \(question.text)").font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
+                    Text(question.help).font(.meta).foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array(question.options.enumerated()), id: \.offset) { choice, option in
+                    Button { withAnimation(Motion.snappy) { answers[index] = choice } } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: answers[index] == choice ? "largecircle.fill.circle" : "circle")
+                                .padding(.top, 1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(option.label).fixedSize(horizontal: false, vertical: true)
+                                if !option.hint.isEmpty {
+                                    Text(option.hint).font(.meta).foregroundStyle(Theme.textTertiary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(answers[index] == choice ? Theme.mint : Theme.textSecondary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                }
+            }
+        }
+    }
+}
+
+extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
 }

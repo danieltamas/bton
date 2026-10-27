@@ -30,6 +30,7 @@ an arrow in the menu's header says one is), or run the same line again.
   <a href="#one-pr-start-to-finish">How it works</a> &nbsp;|&nbsp;
   <a href="#what-you-get">Features</a> &nbsp;|&nbsp;
   <a href="#triage-issues-in-three-clicks">Triage</a> &nbsp;|&nbsp;
+  <a href="#write-a-new-issue-with-an-agent">New issue</a> &nbsp;|&nbsp;
   <a href="#get-started">Get started</a> &nbsp;|&nbsp;
   <a href="#security">Security</a>
 </p>
@@ -105,6 +106,19 @@ where your flow says a person decides.
       gets a Retry. When an agent's login expires its jobs wait instead of failing one by one.
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Issues written with an agent</b><br>
+      Describe an idea in a few words; a read-only agent reads the repo and what is open or done,
+      asks what is missing, and writes the issue. Score it with the Triage questions and create it
+      with its priority and stage already set.
+    </td>
+    <td width="50%" valign="top">
+      <b>Triage in three clicks</b><br>
+      Open issues that are not ready, scored out of 9 with three plain questions, no agent in the
+      way. Apply sets <code>priority:</code> and <code>stage:</code> in one edit.
+    </td>
+  </tr>
 </table>
 
 ## Triage issues in three clicks
@@ -133,6 +147,33 @@ The score is out of 9: **6 or more is `priority:high`, 3 to 5 is `medium`, below
 third answer also sets the stage: a clear plan is `stage:ready`; an open decision, or work that
 touches auth, billing, personal data, a migration or deletion, is `stage:spec`; a missing repro stays
 at `stage:triage`. Apply writes both labels in one edit.
+
+## Write a new issue with an agent
+
+New issue, in the Triage tab, starts an issue from a few words. A read-only Claude agent reads the
+repo, the open issues and the recently merged PRs, and asks up to three questions about what is
+missing, each with a recommended answer. It says so when the idea overlaps something that is open
+or already done. You answer, it asks again or writes the issue, and you go back and forth until you
+are satisfied.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/new-issue.png" alt="A new issue: the agent asks three questions that name what the repo already has"></td>
+    <td width="50%"><img src="docs/media/new-issue-ready.png" alt="The written issue, the three scoring questions and the Create issue button"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Questions based on what exists and what is planned</b></td>
+    <td align="center"><b>Edit the issue, score it, Create</b></td>
+  </tr>
+</table>
+
+When the agent has written the issue, the title and body are editable. The same three questions as
+in Triage sit under it, so the issue is created with its `priority:` and `stage:` labels already
+set, and does not come back to Triage. **Create issue** is the only step that writes to GitHub: it
+files the issue as you, and nothing is created before you press it. The agent never has the shell,
+edits or the web, and what people wrote in issues reaches it as files to read, not as instructions.
+Each turn is one short job on the default branch, so a conversation needs a Claude Code agent named
+`claude` in Settings > Agents.
 
 <table>
   <tr>

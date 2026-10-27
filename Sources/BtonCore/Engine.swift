@@ -63,6 +63,7 @@ public actor Engine {
     var issuesReadThisTick: Set<String> = []
     /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
     var draftRequests: [IssueAsk] = []
+    var composeRequests: [NewIssues.Request] = []
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
@@ -233,6 +234,8 @@ public actor Engine {
                     }
                     pending += draftCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                me: read.viewer, agents: config.agents).map { ($0, clone, nil) }
+                    pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
+                                                 me: read.viewer, agents: config.agents, merged: read.merged).map { ($0, clone, nil) }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
                     unplanned.insert(read.repo.slug.lowercased())
@@ -281,6 +284,7 @@ public actor Engine {
                 // Only the ask that ran: a newer one on the same issue, asked meanwhile, stays.
                 let drafted = startedKeys.union(ran)
                 draftRequests.removeAll { drafted.contains(IssueDrafts.key(for: $0)) }
+                composeRequests.removeAll { drafted.contains($0.key) }
                 next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }

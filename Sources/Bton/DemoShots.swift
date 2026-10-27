@@ -21,6 +21,8 @@ enum DemoShots {
         try write(panel(.jobs), to: directory.appendingPathComponent("jobs.png"))
         try write(panel(.triage), to: directory.appendingPathComponent("triage.png"))
         try write(triageIssue(store), to: directory.appendingPathComponent("triage-issue.png"))
+        try write(newIssue(store, ready: false), to: directory.appendingPathComponent("new-issue.png"))
+        try write(newIssue(store, ready: true), to: directory.appendingPathComponent("new-issue-ready.png"))
         try write(pane(ReposPane()).environment(store), to: directory.appendingPathComponent("settings-repos.png"))
         try write(pane(AgentsPane()).environment(store), to: directory.appendingPathComponent("settings-agents.png"))
     }
@@ -66,6 +68,43 @@ enum DemoShots {
         }
         .padding(.top, 14)
         .frame(width: 404, height: 860)
+        .background(Backdrop())
+        .environment(store)
+        .preferredColorScheme(Theme.scheme)
+    }
+
+    /// A new issue part-way through its conversation, or with the issue written and scored.
+    private static func newIssue(_ store: AppStore, ready: Bool) -> some View {
+        let session = NewIssueSession(repo: "acme/shop")
+        session.turns = [.init(text: "Let customers download their invoices as a CSV file.", round: 1)]
+        store.demoReplies = [1: .questions("""
+            #212 already adds PDF invoices (open, stage:spec), and src/invoices/export.ts has the PDF writer. \
+            Should the CSV sit beside it or replace it?
+
+            1. One row per invoice, or one per line item? I suggest one per line item, with the invoice number repeated.
+            2. Which period can be exported? I suggest any range, up to 12 months at a time.
+            3. Who can export: shop owners only, or staff too? I suggest owners only, like the PDF.
+            """)]
+        if ready {
+            session.turns.append(.init(text: "One row per line item. Any range up to 12 months. Owners only.", round: 2))
+            store.demoReplies[2] = .ready(title: "Export invoices as CSV, one row per line item", body: """
+                Shop owners can download their invoices for a date range as a CSV file.
+
+                **Exists:** `src/invoices/export.ts` writes the PDF; #212 plans the PDF layout. The CSV reuses its query.
+
+                **Out of scope:** XLSX, scheduled exports.
+
+                - [ ] A range of up to 12 months downloads a CSV, one row per line item
+                - [ ] Only owners see the button
+                - [ ] The invoice number repeats on each of its rows
+                """)
+            session.answers = [1, 1, 0]
+        }
+        return VStack(spacing: 0) {
+            NewIssueView(session: session) {}
+        }
+        .padding(.top, 14)
+        .frame(width: 404, height: ready ? 1120 : 560)
         .background(Backdrop())
         .environment(store)
         .preferredColorScheme(Theme.scheme)

@@ -21,6 +21,7 @@ struct JobList: View {
 /// `#343 review` for a PR, the schedule's name for a schedule.
 func jobTitle(_ job: Job, schedules: [ScheduleEntry]) -> String {
     if let entry = schedules.first(where: { $0.item == job.key.item }) { return entry.name }
+    if job.key.item.hasPrefix("new-") { return "new issue" }
     if job.key.item.hasPrefix("pr-") { return "#\(job.key.item.dropFirst(3)) \(job.key.move)" }
     return "\(job.key.item) \(job.key.move)"
 }

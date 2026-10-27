@@ -47,4 +47,31 @@ extension Engine {
         }
         return made
     }
+
+    /// Asks the agent for the next turn of a new issue, first in line at the next sync.
+    public func requestCompose(_ request: NewIssues.Request) {
+        composeRequests.removeAll { $0.key == request.key }
+        composeRequests.append(request)
+        runNext(repo: request.repo, item: request.key.item)
+    }
+
+    /// The turns this repo's requests ask for. A turn that already ran ends its request; one whose
+    /// issues were not read this tick waits for a read, so the agent never works from a stale list.
+    func composeCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
+                           merged: [MergedPullRequest]) -> [DispatchCandidate] {
+        guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
+        let issues = openIssues[repo.lowercased()] ?? []
+        let all = jobs.all()
+        let ran = Set(all.map(\.key))
+        var made: [DispatchCandidate] = []
+        composeRequests.removeAll { request in
+            guard request.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
+            guard let candidate = NewIssues.candidate(request, issues: issues, merged: merged, agents: agents,
+                                                      defaultBranch: defaultBranch, me: me),
+                  !ran.contains(candidate.key) || DispatchPlanner.isRetry(candidate.key, jobs: all) else { return true }
+            made.append(candidate)
+            return false
+        }
+        return made
+    }
 }

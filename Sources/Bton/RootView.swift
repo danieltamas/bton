@@ -52,6 +52,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: store.watchingJob)
                 .animation(Motion.spring, value: store.readingDraft)
                 .animation(Motion.spring, value: store.triaging)
+                .animation(Motion.spring, value: store.composing?.id)
             footer
         }
         .frame(width: 404, height: Self.height)
@@ -270,6 +271,7 @@ struct RootView: View {
             store.watchingJob = nil
             store.readingDraft = nil
             store.triaging = nil
+            store.composing = nil
         }
     }
 
@@ -301,21 +303,31 @@ struct RootView: View {
             asks: store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) },
             triage: store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) },
             jobs: store.jobs.filter { job in
+                guard job.key.move != NewIssues.move else { return false }
                 let item = job.key.item
                 let numbers = item.hasPrefix("pr-") ? Int(item.dropFirst(3)).map { [$0] } ?? [] : store.work.numbers(of: job)
                 let texts = [jobTitle(job, schedules: store.schedules)] + numbers.flatMap { known["\(job.key.repo)#\($0)"] ?? [] }
                 return keep(job.key.repo) && search.matches(numbers: numbers, texts: texts)
             },
             merged: store.merged.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author]) },
-            repoJobs: store.jobs.filter { keep($0.key.repo) })
+            repoJobs: store.jobs.filter { keep($0.key.repo) && $0.key.move != NewIssues.move })
     }
 
     // MARK: content
+
+    private func startNewIssue(_ shown: String?) {
+        guard let repo = shown ?? store.repos.first?.slug else { return }
+        withAnimation(Motion.spring) { store.composing = NewIssueSession(repo: repo) }
+    }
 
     @ViewBuilder private var content: some View {
         let showRepo = store.repos.count > 1
         if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let session = store.composing {
+            NewIssueView(session: session) { withAnimation(Motion.spring) { store.composing = nil } }
+                .id(session.id)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let issue = store.triaging {
             TriageView(issue: issue) { withAnimation(Motion.spring) { store.triaging = nil } }
@@ -347,7 +359,7 @@ struct RootView: View {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
                 case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
-                case .triage: TriageList(issues: lists.triage, showRepo: showRepo)
+                case .triage: TriageList(issues: lists.triage, showRepo: showRepo, newIssue: { startNewIssue(shown) })
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
                 case .merged: MergedList(items: lists.merged, showRepo: showRepo)
