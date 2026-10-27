@@ -411,6 +411,9 @@ final class AppStore {
         await refresh()
     }
 
+    /// Starts the repo's registry job before anything else: the page's Build the registry.
+    func buildRegistry(_ slug: String) async { await runNext(repo: slug, item: FeatureJob.item) }
+
     /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
     /// The move's run on this head that failed and may run again, if one did.

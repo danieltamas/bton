@@ -96,8 +96,12 @@ struct RepoPage: View {
             EmptyState(symbol: "square.grid.3x3", title: "Not read yet",
                        detail: "The repo's registry shows after the next sync.")
         case .none?:
-            EmptyState(symbol: "square.grid.3x3", title: "No feature registry yet",
-                       detail: "The registry job builds .bton/features.json from the code graph, the issues and the merged PRs.")
+            VStack(spacing: 0) {
+                EmptyState(symbol: "square.grid.3x3", title: "No feature registry yet",
+                           detail: "The registry job builds .bton/features.json from the code graph, the issues and the merged PRs.")
+                    .frame(maxHeight: .infinity)
+                registryAction.padding(.bottom, 28)
+            }
         case let .invalid(reason)?:
             VStack {
                 ProblemText(text: "\(FeatureRegistry.relativePath): \(reason)").padding(.horizontal, 14)
@@ -111,6 +115,25 @@ struct RepoPage: View {
             } else {
                 FeatureTree(page: page) { row in withAnimation(Motion.spring) { detail = row } }
             }
+        }
+    }
+}
+
+extension RepoPage {
+    /// The empty state's action: the first registry job, its starting state, or the run in progress.
+    @ViewBuilder fileprivate var registryAction: some View {
+        if let job = store.jobs.first(where: { $0.status == .running && $0.key.move == FeatureJob.move
+                                                && $0.key.repo.caseInsensitiveCompare(slug) == .orderedSame }) {
+            PillButton(title: "Building the registry", symbol: "rectangle.and.text.magnifyingglass", prominent: false) {
+                // The job's session shows in place of the page, which the lists come back to.
+                withAnimation(Motion.spring) { store.viewingRepo = nil; store.watchingJob = job.id }
+            }
+            .help("The registry job runs: see its session")
+        } else if store.isNext(repo: slug, item: FeatureJob.item) {
+            StartingLabel(repo: slug, reason: store.waitingReason(repo: slug, item: FeatureJob.item))
+        } else {
+            PillButton(title: "Build the registry", symbol: "sparkles") { Task { await store.buildRegistry(slug) } }
+                .help("An agent reads the issues, the merged PRs and the code graph, writes the registry and opens a PR")
         }
     }
 }
