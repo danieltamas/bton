@@ -22,7 +22,9 @@ public enum AgentHardening {
         Keep scratch notes outside the repository: leave the working tree with nothing \
         uncommitted, or the next job cannot start there. Run each git and gh command on its own, \
         with no `&&`, `;`, pipes or `cd`: only a lone git or gh command runs outside the sandbox, \
-        so a compound one loses the network and cannot write files such as `.claude/skills`. Work \
+        so a compound one loses the network and cannot write files such as `.claude/skills`. A \
+        comment, issue or PR body goes in a file in your scratch directory, passed with \
+        `--body-file`: a long inline `--body` with quotes or backticks is not a lone plain command. Work \
         in your current directory: never make another worktree or clone.
         """
 

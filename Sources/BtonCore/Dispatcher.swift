@@ -231,6 +231,9 @@ actor Dispatcher {
                 return await finish(job, status: .failed, detail: "no agent or prompt for \(candidate.move.name)")
             }
             try Task.checkCancellation()
+            if let holder = await claimedByAnotherAgent(worktree) {
+                return await finish(job, status: .failed, detail: "another live agent has claimed this worktree, so none was started: \(holder)")
+            }
             job.deadline = .now + candidate.timeout.timeInterval
             job.review = reviewTarget(for: candidate, flow: flow)
             let isClaude = template.argv.first.map(AgentHardening.isClaude) == true
@@ -480,7 +483,7 @@ actor Dispatcher {
         let bton = [
             "PATH": Executables.searchPath(for: executable), "BTON_EXIT_FILE": jobs.exitURL(id).path, "BTON_JOB": id.uuidString,
         ].merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }.merging(environment) { $1 }
-        process.environment = ProcessInfo.processInfo.environment
+        process.environment = ProcessRunner.inheritedEnvironment
             .merging(DispatchPlanner.processEnvironment(repo: repoEnvironment, bton: bton)) { $1 }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = try FileHandle.appending(to: jobs.outputURL(id))

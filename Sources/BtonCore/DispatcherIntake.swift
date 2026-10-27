@@ -99,6 +99,17 @@ extension Dispatcher {
         return (try? await leases.release(lease, ran: false)) != nil
     }
 
+    /// What `repo-sync check` says when another live agent holds the worktree, nil when none does or
+    /// the tool is not installed. Asked before the agent starts: its own edit hooks would refuse every
+    /// write there and the run would only spend its budget finding that out.
+    func claimedByAnotherAgent(_ worktree: URL) async -> String? {
+        guard let tool = Executables.resolve("repo-sync"),
+              let checked = try? await runner.run(tool, ["check", "."], in: worktree, timeout: .seconds(30)),
+              checked.status == 2 else { return nil }
+        let text = (String(data: checked.stdout, encoding: .utf8) ?? "") + checked.stderr
+        return String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+    }
+
     static let intakeStep: Duration = .seconds(120)
     /// The most an issue's work runs, however steadily it changes its worktree.
     static let intakeCeiling: TimeInterval = 8 * 3_600

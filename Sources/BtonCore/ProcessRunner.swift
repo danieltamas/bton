@@ -14,6 +14,18 @@ public struct ProcessRunner: Sendable {
     /// is added to this process's own. `started` gets the child's process group as it starts;
     /// `output` gets each chunk of stdout and stderr as it is read, so a run that is stopped
     /// still shows how far it got.
+    /// This process's environment without the identity of whatever session started Bton. Launched
+    /// from an agent's shell, Bton would hand that session's id and pid to every worktree and agent it
+    /// starts, and their claims would be filed under it: the real agent then finds its own tree held
+    /// by "another live agent".
+    static var inheritedEnvironment: [String: String] {
+        ProcessInfo.processInfo.environment.filter { name, _ in
+            !(name == "CLAUDECODE" || name == "CLAUDE_PID" || name == "CODEX_SESSION_ID" || name.hasPrefix("REPO_SYNC_")
+              || ["SESSION_ID", "SESSION_ATTENDED", "CHILD_SESSION", "ENTRYPOINT", "MESSAGING_SOCKET", "MESSAGING_TOKEN"]
+                  .contains { name == "CLAUDE_CODE_\($0)" })
+        }
+    }
+
     public func run(_ executable: String, _ arguments: [String], in directory: URL? = nil,
                     environment: [String: String] = [:], timeout: Duration,
                     started: (@Sendable (Int32) -> Void)? = nil,
@@ -22,9 +34,7 @@ public struct ProcessRunner: Sendable {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.currentDirectoryURL = directory
-        if !environment.isEmpty {
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
-        }
+        process.environment = Self.inheritedEnvironment.merging(environment) { $1 }
         process.standardInput = FileHandle.nullDevice
         let stdout = Pipe(), stderr = Pipe()
         process.standardOutput = stdout
