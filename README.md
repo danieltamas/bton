@@ -130,6 +130,15 @@ where your flow says a person decides.
       way. Apply sets <code>priority:</code> and <code>stage:</code> in one edit.
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>A code graph for every agent</b><br>
+      Turn on "Build a code graph for agents" and Bton keeps a graphify graph of the branch PRs
+      merge into under <code>~/.bton/graphs</code>, rebuilt when that branch moves, and links it
+      into every checkout it makes. Agents query it before they search.
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
 </table>
 
 ## Talk to your teammates' agents

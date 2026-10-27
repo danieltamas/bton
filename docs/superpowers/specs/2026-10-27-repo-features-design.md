@@ -33,9 +33,11 @@ clone, built by hand, outside Bton's control.
 
 ### 1. Code graph store
 
-**Setting.** Settings > Repos gets a per-repo switch "Code graph", off by default. Settings >
-Agents gets a "graphify" binary path beside gh and claude. A repo with the switch off behaves
-exactly as today.
+**Setting.** Settings > Repos gets a per-repo switch "Build a code graph for agents", off by
+default. Settings > Agents takes the Python that has graphify installed (graphify's CLI has no
+build command; the code rebuild is a function of its `watch` module, so the venv's Python is what
+Bton runs); empty looks in `~/.venvs/graphifyy-arm64` and `~/.local/pipx/venvs/graphifyy`. A repo
+with the switch off behaves exactly as today.
 
 **Store.** `~/.bton/graphs/<owner>__<repo>/` (under `BtonHome`, so `BTON_HOME` moves it).
 Bton places a symlink named `graphify-out` in the clone and in every worktree it prepares
@@ -43,12 +45,16 @@ Bton places a symlink named `graphify-out` in the clone and in every worktree it
 agent-os hooks and the reminder look for that name only, so they keep working unchanged.
 
 **Builds.** After a sync, when the default branch tip differs from the commit the last build
-recorded and no build runs, Bton runs a full `graphify` build in the clone, niced, behind a
-lock in `~/.bton/locks/`. Before an agent starts in a PR worktree, Bton runs the incremental
-`graphify update .` there, which costs no API calls, so the graph matches the PR head.
+recorded and no build runs, Bton runs graphify's code rebuild (`graphify.watch._rebuild_code`, no
+LLM) in `.worktrees/bton-graph`, detached at that tip, niced, with a 30-minute timeout; graphify
+takes its own lock in the store. PR and schedule worktrees get the link only: the store is one
+per repo and shared by every job (lexito's is 157 MB), so a rebuild from a PR head would replace
+the graph the other jobs read. The agent is told which commit the graph is of instead.
 
-**Prompt.** Every dispatched prompt for a repo with a graph gets one line: the code graph is at
-`graphify-out/`; query it with `graphify-src "<question>"` before searching.
+**Prompt.** Every Claude job in a repo with a built graph gets one line with its team
+instructions: the code graph at `graphify-out/` is of the base at this commit, the branch's own
+changes may not be in it; query it with `graphify-src "<question>"` before searching. Codex and
+other CLIs get the link only.
 
 **Failure.** A build that fails or exceeds its timeout logs to the job log and leaves the
 previous graph in place. A missing or non-executable binary shows the switch red in Settings
