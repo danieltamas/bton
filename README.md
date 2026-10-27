@@ -137,7 +137,12 @@ where your flow says a person decides.
       merge into under <code>~/.bton/graphs</code>, rebuilt when that branch moves, and links it
       into every checkout it makes. Agents query it before they search.
     </td>
-    <td width="50%" valign="top"></td>
+    <td width="50%" valign="top">
+      <b>Every feature and where it is</b><br>
+      A repo's page, from the footer's branch line: each feature of <code>.bton/features.json</code>
+      as live, in develop, building, ready, spec or idea, with its timeline and PRs, what develop
+      holds that main lacks, and when the last release was.
+    </td>
   </tr>
 </table>
 
