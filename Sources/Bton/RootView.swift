@@ -30,6 +30,7 @@ struct RootView: View {
     /// What the PR, job and merged lists are narrowed to while typed; each tab counts its matches.
     @State private var query = ""
     @Namespace private var island
+    @State private var tabBarWidth: CGFloat = 0
     @State private var visible = true
 
     init(tab: Tab = .pullRequests) {
@@ -214,24 +215,34 @@ struct RootView: View {
 
     // MARK: tabs
 
-    /// Every tab's count while they all fit the panel; otherwise only the open tab's, so a busy day
-    /// never pushes a tab off the edge.
+    /// Every tab keeps its count; when the open tab's name does not fit beside them, it shows its icon
+    /// like the others, so the bar reads the same whichever tab is open and never pushes one off the edge.
     private var tabIsland: some View {
-        ViewThatFits(in: .horizontal) {
-            tabs(counted: { _ in true })
-            tabs(counted: { $0 == tab })
-        }
-        .padding(.horizontal, 14)
+        tabs(named: nameFits)
+            .padding(.horizontal, 14)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabBarWidth = $0 }
     }
 
-    private func tabs(counted: @escaping (Tab) -> Bool) -> some View {
+    /// Whether the open tab's name fits beside every count. Decided from the bar's width and the
+    /// counts, not by trying both layouts: a layout that flips while a tab animates drops the name
+    /// and restarts the highlight.
+    private var nameFits: Bool {
+        let tabsWidth = Tab.allCases.reduce(CGFloat(0)) { total, item in
+            let digits = CGFloat(String(count(for: item)).count)
+            return total + 16 + 12 + 5 + (count(for: item) > 0 ? 5 + 10 + digits * 6.5 : 0) + 2
+        }
+        let name = CGFloat(tab.rawValue.count) * 7.5 + 5
+        return tabBarWidth == 0 || tabsWidth + name + 6 + 28 <= tabBarWidth
+    }
+
+    private func tabs(named: Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(Tab.allCases) { item in
                 Button { show(item) } label: {
                     HStack(spacing: 5) {
                         Image(systemName: item.symbol).font(.system(size: 12, weight: .semibold))
-                        if tab == item { Text(item.rawValue).font(.system(size: 12, weight: .semibold)) }
-                        if counted(item), count(for: item) > 0 {
+                        if tab == item, named { Text(item.rawValue).font(.system(size: 12, weight: .semibold)) }
+                        if count(for: item) > 0 {
                             Text("\(count(for: item))").font(.system(size: 9.5, weight: .bold)).monospacedDigit()
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background((tab == item ? Theme.mint.opacity(0.22) : Theme.wash.opacity(0.09)), in: Capsule())
@@ -319,7 +330,23 @@ struct RootView: View {
         // One repo, or the repo filter on a repo: that is the repo. Otherwise I pick it first.
         guard let first = store.repos.first?.slug else { return }
         let repo = shown ?? (store.repos.count == 1 ? first : nil)
-        withAnimation(Motion.spring) { store.composing = NewIssueSession(repo: repo ?? first, chosen: repo != nil) }
+        // Each new issue is its own conversation, whatever else is in progress.
+        let session = NewIssueSession(repo: repo ?? first, chosen: repo != nil)
+        withAnimation(Motion.spring) {
+            store.newIssues.append(session)
+            store.composing = session
+        }
+    }
+
+    /// Back from New issue: a conversation in progress stays in Triage; an empty or created one goes.
+    private func closeNewIssue(_ session: NewIssueSession) {
+        withAnimation(Motion.spring) {
+            store.composing = nil
+            if session.created != nil || (session.turns.isEmpty && session.draft.isEmpty) {
+                if store.voice.owner == session.id { store.voice.cancel() }
+                store.forget(session)
+            }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -328,7 +355,7 @@ struct RootView: View {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let session = store.composing {
-            NewIssueView(session: session) { withAnimation(Motion.spring) { store.composing = nil } }
+            NewIssueView(session: session) { closeNewIssue(session) }
                 .id(session.id)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let issue = store.triaging {

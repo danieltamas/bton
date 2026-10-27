@@ -33,7 +33,11 @@ final class AppStore {
     private(set) var triage: [TriageIssue] = []
     /// The issue open in the triage tab.
     var triaging: TriageIssue?
+    /// The new issue on screen, if any.
     var composing: NewIssueSession?
+    /// Every new issue in the making, each its own conversation: they outlive a tab switch and
+    /// are listed in Triage until created or discarded.
+    var newIssues: [NewIssueSession] = []
     /// The README's screenshots show agent replies no job produced.
     var demoReplies: [Int: NewIssues.Reply] = [:]
     /// Every ask notified this run (`IssueAsk.notice`), so a mention edited out and back is not new.
@@ -57,12 +61,15 @@ final class AppStore {
     var schedules: [ScheduleEntry] { config.schedules }
     var agents: [String: AgentTemplate] { config.agents }
     var supervisor: SupervisorSettings? { config.supervisor }
+    var voiceSettings: VoiceSettings? { config.voice }
+    var draftModel: String { config.draftModel ?? BtonConfig.defaultDraftModel }
     var pollSeconds: Int { config.pollSeconds }
     var maxAgents: Int { config.maxAgents }
     private(set) var prices = PriceList(models: [:])
     /// Which Settings pane opens next, and the schedule it shows.
     var settingsPane: SettingsPane = .general
     let home = BtonHome()
+    @ObservationIgnored private(set) lazy var voice = VoiceController(home: home)
     /// Made once: making one prepares the home on disk, too much for every render that asks for
     /// a job's files.
     @ObservationIgnored private lazy var jobStore = try? JobStore(home: home)
@@ -106,6 +113,7 @@ final class AppStore {
 
     func start() {
         guard loop == nil else { return }
+        loadNewIssues()
         do {
             config = try BtonConfig.loadOrCreate(home: home)
             // The skeleton's "Poll GitHub" ran nothing; the sync interval is under General now.
@@ -128,9 +136,11 @@ final class AppStore {
             }
         }
         loop = Task { [weak self] in
+            var resumed = false
             while !Task.isCancelled {
                 let started = Date.now
                 await self?.refresh()
+                if !resumed { resumed = true; await self?.resumeNewIssues() }
                 // Fixed rate: a tick starts every pollSeconds, however long the last one took.
                 let seconds = Double(self?.config.pollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(max(0, seconds - Date.now.timeIntervalSince(started))))
@@ -496,7 +506,7 @@ enum SettingsError: Error, LocalizedError {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general = "General", repos = "Repos", agents = "Agents", schedules = "Schedules", supervisor = "Supervisor",
-         prices = "Prices", about = "About"
+         voice = "Voice", prices = "Prices", about = "About"
     var id: Self { self }
 }
 

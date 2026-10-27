@@ -148,6 +148,7 @@ struct ScheduleEditor: View {
                     .help("Skips a run when no PR in the repo was opened, updated or merged since the last successful run started")
             }
             .toggleStyle(.switch).controlSize(.small).tint(Theme.color(forMove: "schedule"))
+            .pointingHandCursor()
             .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
             if let problem { ProblemText(text: problem) }
             HStack(spacing: 8) {
@@ -192,6 +193,7 @@ struct ScheduleEditor: View {
                  color: installed ? Theme.mint : Theme.neutral, style: picked ? .tinted : .outline)
         }
         .buttonStyle(.plain)
+        .pointingHandCursor(installed || picked)
         .disabled(!installed && !picked)
         .help(installed ? "Let the agent ask \(name)" : "Install its program first")
     }

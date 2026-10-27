@@ -133,7 +133,7 @@ struct IssueAskAcceptanceTests {
         else { Issue.record("Issue draft must target the default branch") }
         #expect(c.agent == "claude" && c.move.name == "draft")
         #expect(c.command == nil && !c.postComment && c.skipsChecks)
-        #expect(c.helpers.isEmpty && c.model == nil && c.timeout == .seconds(900))
+        #expect(c.helpers.isEmpty && c.model == BtonConfig.defaultDraftModel && c.timeout == .seconds(900))
         #expect(c.denied == Supervision.deniedTools)
         #expect(c.prompt == IssueDrafts.prompt)
         #expect(c.attachments == ["issue.md": IssueDrafts.thread(issue)])

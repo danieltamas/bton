@@ -26,7 +26,8 @@ extension Engine {
     /// The draft jobs this repo's requests ask for, from the issues as read this tick. A request
     /// whose ask is gone or changed, or whose draft already ran, ends here; one whose issues were
     /// not read this tick waits for a read, rather than start on a thread that may be answered.
-    func draftCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate]) -> [DispatchCandidate] {
+    func draftCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
+                         model: String) -> [DispatchCandidate] {
         guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
@@ -40,7 +41,7 @@ extension Engine {
         draftRequests.removeAll { ask in
             guard ask.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
             guard let issue = issues.first(where: { $0.number == ask.number }),
-                  let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch, me: me),
+                  let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch, me: me, model: model),
                   !ran.contains(candidate.key) || DispatchPlanner.isRetry(candidate.key, jobs: all) else { return true }
             made.append(candidate)
             return false
@@ -58,16 +59,18 @@ extension Engine {
     /// The turns this repo's requests ask for. A turn that already ran ends its request; one whose
     /// issues were not read this tick waits for a read, so the agent never works from a stale list.
     func composeCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
-                           merged: [MergedPullRequest]) -> [DispatchCandidate] {
+                           merged: [MergedPullRequest],
+                           clone: URL, model: String) -> [DispatchCandidate] {
         guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
         let ran = Set(all.map(\.key))
+        let codeMap = NewIssues.codeMap(inClone: clone)
         var made: [DispatchCandidate] = []
         composeRequests.removeAll { request in
             guard request.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
-            guard let candidate = NewIssues.candidate(request, issues: issues, merged: merged, agents: agents,
-                                                      defaultBranch: defaultBranch, me: me),
+            guard let candidate = NewIssues.candidate(request, issues: issues, merged: merged, codeMap: codeMap, agents: agents,
+                                                      defaultBranch: defaultBranch, me: me, model: model),
                   !ran.contains(candidate.key) || DispatchPlanner.isRetry(candidate.key, jobs: all) else { return true }
             made.append(candidate)
             return false

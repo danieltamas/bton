@@ -20,6 +20,7 @@ struct SearchField: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .help("Clear the search")
             }
         }

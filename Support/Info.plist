@@ -20,6 +20,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Bton listens only while you record a new issue by voice. The audio is turned into text on this Mac and is never saved or sent.</string>
     <!-- menu bar only: no Dock icon, no main window -->
     <key>LSUIElement</key>
     <true/>

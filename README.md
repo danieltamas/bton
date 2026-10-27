@@ -175,6 +175,12 @@ edits or the web, and what people wrote in issues reaches it as files to read, n
 Each turn is one short job on the default branch, so a conversation needs a Claude Code agent named
 `claude` in Settings > Agents.
 
+**Speak instead of typing.** Switch on Settings > Voice and a microphone button sits beside Send.
+Click it, talk while the sound waves move, click **Stop**, and the words appear in the box for you
+to edit before you send. Whisper (through WhisperKit) runs on this Mac: the model is downloaded
+once into `~/.bton/models`, recording needs no network, the audio is never saved, and the agent
+only receives the text.
+
 <table>
   <tr>
     <td width="50%"><img src="docs/media/pull-requests.png" alt="Pull requests"></td>

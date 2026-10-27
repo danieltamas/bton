@@ -129,6 +129,7 @@ struct MenuField: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .pointingHandCursor()
         .frame(maxWidth: .infinity)
     }
 }

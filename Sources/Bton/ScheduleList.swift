@@ -109,6 +109,7 @@ struct ScheduleRow: View {
                     Toggle("", isOn: Binding(get: { entry.enabled },
                                              set: { try? store.setSchedule(entry.number, enabled: $0) }))
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(color)
+                        .pointingHandCursor()
                     if entry.enabled {
                         nextRun.font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
                     }

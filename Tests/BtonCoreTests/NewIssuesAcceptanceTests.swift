@@ -70,3 +70,74 @@ import Testing
         #expect(!argv.contains { $0.contains("secret body") })
     }
 }
+
+@Suite struct CodeMapAcceptanceTests {
+    private func clone(_ report: (URL) throws -> Void) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("codemap-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("graphify-out"), withIntermediateDirectories: true)
+        try report(dir)
+        return dir
+    }
+
+    @Test func readsTheReportAndCutsItAtTheLimit() throws {
+        let dir = try clone { try String(repeating: "x", count: 70_000).write(to: $0.appendingPathComponent("graphify-out/GRAPH_REPORT.md"), atomically: true, encoding: .utf8) }
+        #expect(NewIssues.codeMap(inClone: dir)?.count == 60_000)
+    }
+
+    @Test func noReportIsNoMap() throws {
+        #expect(NewIssues.codeMap(inClone: try clone { _ in }) == nil)
+    }
+
+    @Test func aLinkOutOfTheCloneIsNeverFollowed() throws {
+        let secret = FileManager.default.temporaryDirectory.appendingPathComponent("secret-\(UUID().uuidString)")
+        try "private key".write(to: secret, atomically: true, encoding: .utf8)
+        let dir = try clone { try FileManager.default.createSymbolicLink(at: $0.appendingPathComponent("graphify-out/GRAPH_REPORT.md"), withDestinationURL: secret) }
+        #expect(NewIssues.codeMap(inClone: dir) == nil)
+    }
+}
+
+@Suite struct TurnNotesAcceptanceTests {
+    @Test func theOwnerSeesTheReplyAndTheNextTurnGetsTheNotes() {
+        let message = "Which provider?\n\n---notes---\nbilling is in gateway/src/billing.ts\nissue #12 overlaps"
+        #expect(NewIssues.reply(from: message) == .questions("Which provider?"))
+        #expect(NewIssues.notes(from: message) == "billing is in gateway/src/billing.ts\nissue #12 overlaps")
+    }
+
+    @Test func aReadyIssueKeepsNoNotesInItsBody() {
+        let message = "## Ready\nTitle: Pay by WhatsApp\n\nBody text.\n---notes---\nchecked billing.ts"
+        #expect(NewIssues.reply(from: message) == .ready(title: "Pay by WhatsApp", body: "Body text."))
+        #expect(NewIssues.notes(from: message) == "checked billing.ts")
+    }
+
+    @Test func aReplyWithoutNotesIsUnchanged() {
+        #expect(NewIssues.reply(from: "Just a question?") == .questions("Just a question?"))
+        #expect(NewIssues.notes(from: "Just a question?") == nil)
+    }
+
+    @Test func notesAreAttachedToTheNextTurnOnly() throws {
+        let request = NewIssues.Request(id: "1", repo: "o/r", turn: 2, conversation: "c", notes: "n")
+        let candidate = try #require(NewIssues.candidate(request, issues: [], merged: [], agents: ["claude": AgentTemplate(argv: ["/usr/local/bin/claude", "-p"])],
+                                                         defaultBranch: "main", me: "me"))
+        #expect(candidate.attachments[NewIssues.notesFile] == "n")
+    }
+}
+
+@Suite struct DraftModelAcceptanceTests {
+    private let agents = ["claude": AgentTemplate(argv: ["/usr/local/bin/claude", "-p"])]
+
+    @Test func aNewIssueTurnRunsOnTheChosenModelNotTheAgentsDefault() throws {
+        let request = NewIssues.Request(id: "1", repo: "o/r", turn: 1, conversation: "c")
+        let byDefault = try #require(NewIssues.candidate(request, issues: [], merged: [], agents: agents, defaultBranch: "main", me: "me"))
+        #expect(byDefault.model == BtonConfig.defaultDraftModel)
+        let chosen = try #require(NewIssues.candidate(request, issues: [], merged: [], agents: agents, defaultBranch: "main", me: "me",
+                                                       model: "claude-opus-5-5"))
+        #expect(chosen.model == "claude-opus-5-5")
+    }
+
+    @Test func theChoiceIsSavedInTheConfigAndAnOldConfigHasNone() throws {
+        var config = BtonConfig.initial
+        config.draftModel = "claude-opus-5-5"
+        #expect(try JSONDecoder().decode(BtonConfig.self, from: JSONEncoder().encode(config)).draftModel == "claude-opus-5-5")
+        #expect(try JSONDecoder().decode(BtonConfig.self, from: JSONEncoder().encode(BtonConfig.initial)).draftModel == nil)
+    }
+}

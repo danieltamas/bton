@@ -33,6 +33,7 @@ struct SettingsView: View {
         case .agents: AgentsPane()
         case .schedules: SchedulesPane()
         case .supervisor: SupervisorPane()
+        case .voice: VoicePane()
         case .prices: PricesPane()
         case .about: AboutPane()
         }
@@ -87,6 +88,7 @@ extension SettingsPane {
         case .agents: "cpu"
         case .schedules: "clock.arrow.circlepath"
         case .supervisor: Theme.symbol(forMove: Supervision.move)
+        case .voice: "mic"
         case .prices: "dollarsign.circle"
         case .about: "info.circle"
         }
@@ -99,6 +101,7 @@ extension SettingsPane {
         case .agents: Theme.hue(0xC792FF, light: 0x8E51C7)
         case .schedules: Theme.color(forMove: "schedule")
         case .supervisor: Theme.color(forMove: Supervision.move)
+        case .voice: Theme.hue(0xFF7A8A, light: 0xC2415A)
         case .prices: Theme.hue(0xFFB547, light: 0x9E6801)
         case .about: Theme.neutral
         }

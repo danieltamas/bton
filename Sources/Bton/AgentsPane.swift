@@ -39,6 +39,12 @@ struct AgentsPane: View {
             ForEach(Array(store.agents.keys.sorted().enumerated()), id: \.element) { index, name in
                 AgentCard(name: name, argv: store.agents[name]?.argv ?? [], isNew: false) {}.riseIn(index)
             }
+            SettingsCard(title: "Drafts and new issues",
+                         detail: "The Claude model that drafts replies to issue questions and writes new issues. Not your Claude default, which may be the dearest model.") {
+                MenuField(title: ClaudeModel.label(for: store.draftModel), options: ClaudeModel.choices.compactMap { $0.id == nil ? nil : $0.label }) { label in
+                    do { try store.update { $0.draftModel = ClaudeModel.choices.first { $0.label == label }?.id } } catch { problem = error.localizedDescription }
+                }
+            }
             if store.agents.isEmpty && !adding {
                 EmptyState(symbol: "cpu", title: "No agents", detail: "Without one, Bton starts nothing on this Mac.")
                     .frame(height: 220)

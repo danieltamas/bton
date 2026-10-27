@@ -22,16 +22,77 @@ struct TriageList: View {
 
     var body: some View {
         Group {
-            if issues.isEmpty {
+            if issues.isEmpty && store.newIssues.isEmpty {
                 EmptyState(symbol: "checklist", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to triage",
                            detail: "Open issues that are not stage:ready, in progress or in review show here.")
             } else {
-                RowStack(items: issues) { issue in
-                    TriageRow(issue: issue, showRepo: showRepo)
+                // The drafts are the first rows of the list, so they scroll with it and never cover an issue.
+                RowStack(items: issues, row: { issue in TriageRow(issue: issue, showRepo: showRepo) }) {
+                    ForEach(store.newIssues, id: \.id) { inProgress($0) }
                 }
             }
         }
         .floatingAction(title: "New issue", symbol: "plus", action: newIssue)
+    }
+
+    /// A new issue I left to look at something else: it is kept until I discard it or create it. A click reopens it.
+    @ViewBuilder private func inProgress(_ session: NewIssueSession) -> some View {
+        Group {
+            let said = session.turns.first?.text ?? session.draft
+            HoverCard(accent: Theme.mint, action: { withAnimation(Motion.spring) { store.composing = session } }) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Eyebrow(text: "New issue in progress", color: Theme.mint)
+                    Text(said.nonEmpty ?? "Not started").font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    status(of: session)
+                }
+                .padding(.trailing, 34)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .overlay {
+                // Hatched with a dashed edge: it is a draft, not an issue on GitHub yet.
+                let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                ZStack {
+                    Hatching().stroke(Theme.mint.opacity(0.13), lineWidth: 1).clipShape(shape)
+                    shape.strokeBorder(Theme.mint.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                }
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .topTrailing) {
+                IconButton(symbol: "trash", help: "Discard this new issue", size: 24) {
+                    withAnimation(Motion.spring) { store.forget(session) }
+                }
+                .padding(10)
+            }
+        }
+    }
+
+    @ViewBuilder private func status(of session: NewIssueSession) -> some View {
+        if let turn = session.turns.last {
+            if session.created != nil {
+                Text("Created").font(.meta).foregroundStyle(Theme.success)
+            } else if store.reply(of: session, round: turn.round) != nil {
+                Text("The agent has replied: open it to answer").font(.meta).foregroundStyle(Theme.mint)
+            } else if let job = store.job(of: session, round: turn.round) {
+                switch job.status {
+                case .failed, .cancelled:
+                    Text("The agent stopped before it answered: open it to try again").font(.meta).foregroundStyle(Theme.danger)
+                default:
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text("The agent is working · \(NewIssueView.elapsed(since: job.startedAt, now: context.date))")
+                            .font(.meta.monospacedDigit()).foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(NewIssueView.waiting(session, store: store, now: context.date))
+                        .font(.meta.monospacedDigit()).foregroundStyle(Theme.textTertiary)
+                }
+            }
+        } else {
+            Text("Not sent to the agent yet").font(.meta).foregroundStyle(Theme.textTertiary)
+        }
     }
 }
 
@@ -182,4 +243,18 @@ struct TriageQuestions: View {
 
 extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Diagonal lines across a rect, for what is still a draft.
+private struct Hatching: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        var x = -rect.height
+        while x < rect.width {
+            path.move(to: CGPoint(x: x, y: rect.height))
+            path.addLine(to: CGPoint(x: x + rect.height, y: 0))
+            x += 9
+        }
+        return path
+    }
 }

@@ -13,6 +13,12 @@ public struct BtonConfig: Codable, Sendable {
     public var schedules: [ScheduleEntry]
     /// nil or not enabled: no supervisor agent runs; the watchdog's flags still show.
     public var supervisor: SupervisorSettings? = nil
+    /// nil or not enabled: no microphone button in New issue.
+    public var voice: VoiceSettings? = nil
+    /// The Claude model that drafts replies to issue asks and writes new issues; nil: `defaultDraftModel`.
+    /// Not the agent's own default: a draft is one read and one answer, and that default can be the dearest model.
+    public var draftModel: String? = nil
+    public static let defaultDraftModel = "claude-sonnet-5-5"
 
     /// Where the skeleton kept its config; read once, moved to `$BTON_HOME`.
     public static let legacyURL = FileManager.default.homeDirectoryForCurrentUser

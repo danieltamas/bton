@@ -164,6 +164,7 @@ private struct BranchPicker: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
+            .pointingHandCursor()
             .fixedSize()
         }
         .task(id: repo.path) {
@@ -200,6 +201,7 @@ private struct RepoSwitch: View {
                 do { try set(on); problem = nil } catch { problem = error.localizedDescription }
             }))
             .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.mint)
+            .pointingHandCursor()
         }
         .help(help)
     }
@@ -224,7 +226,7 @@ private struct EnvironmentEditor: View {
                     problem = nil
                     editing.toggle()
                 }
-                .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
+                .buttonStyle(.plain).pointingHandCursor().font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
             }
             if editing {
                 GlassEditor(text: $text, monospaced: true, minHeight: 70)
@@ -273,7 +275,7 @@ private struct WorkLabelEditor: View {
                     problem = nil
                     editing.toggle()
                 }
-                .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
+                .buttonStyle(.plain).pointingHandCursor().font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.mint)
             }
             if editing {
                 TextField("bton:working", text: $text)

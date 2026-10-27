@@ -75,5 +75,5 @@ if [[ -z $version ]] && security find-identity -p codesigning 2>/dev/null | grep
   identity="Bton Local"
 fi
 codesign --force --sign "$identity" "$app/Contents/MacOS/BtonCLI"
-codesign --force --sign "$identity" "$app"
+codesign --force --sign "$identity" --entitlements Support/Bton.entitlements "$app"
 echo "$app"

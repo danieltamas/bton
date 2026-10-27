@@ -38,14 +38,14 @@ public enum IssueDrafts {
 
     /// The draft job for an ask, while the issue as read still asks it.
     public static func candidate(ask: IssueAsk, issue: OpenIssue, agents: [String: AgentTemplate],
-                                 defaultBranch: String, me: String) -> DispatchCandidate? {
+                                 defaultBranch: String, me: String, model: String = BtonConfig.defaultDraftModel) -> DispatchCandidate? {
         guard let first = agents[defaultAgent]?.argv.first, AgentHardening.isClaude(first), !defaultBranch.isEmpty,
               let current = IssueAsks.ask(in: issue, me: me), current.draftable, current.commentID == ask.commentID
         else { return nil }
         var candidate = DispatchCandidate(
             target: .branch(defaultBranch), move: Move(name: move, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
             key: key(for: ask),
-            agent: defaultAgent, prompt: prompt, command: nil, postComment: false, timeout: .seconds(60 * timeoutMinutes))
+            agent: defaultAgent, prompt: prompt, command: nil, postComment: false, timeout: .seconds(60 * timeoutMinutes), model: model)
         candidate.skipsChecks = true
         candidate.denied = Supervision.deniedTools
         candidate.attachments = [attachment: thread(issue)]

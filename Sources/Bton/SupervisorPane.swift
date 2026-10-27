@@ -23,6 +23,7 @@ struct SupervisorPane: View {
                     Toggle("Start the supervisor on flagged jobs", isOn: Binding(get: { settings.enabled },
                                                                                   set: { on in save { try store.setSupervisor(enabled: on) } }))
                         .toggleStyle(.switch).tint(Theme.mint)
+                        .pointingHandCursor()
                         .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                     Spacer()
                     spend(budget: settings.dailyBudget ?? Supervision.defaultBudget)

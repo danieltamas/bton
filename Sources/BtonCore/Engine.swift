@@ -233,9 +233,11 @@ public actor Engine {
                         pending.append((supervise, clone, read.flow))
                     }
                     pending += draftCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
-                                               me: read.viewer, agents: config.agents).map { ($0, clone, nil) }
+                                               me: read.viewer, agents: config.agents,
+                                               model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
                     pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
-                                                 me: read.viewer, agents: config.agents, merged: read.merged).map { ($0, clone, nil) }
+                                                 me: read.viewer, agents: config.agents, merged: read.merged,
+                                                 clone: clone, model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
                     unplanned.insert(read.repo.slug.lowercased())
