@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.9.0 (2026-10-27)
+
+**Triage open issues from the menu bar, and icon tabs.** A new Triage tab lists the open issues that are not yet `stage:ready`, in progress or in review. Click one and answer three plain questions: how bad the problem is today, how soon it needs doing, and whether someone could start building it today. The answers add up to a score out of 9 that sets the priority (6 or more high, 3 to 5 medium, below that low) and the stage (a clear plan is ready, an open decision or a risky area goes to spec, a missing repro stays in triage). Apply sets both labels in one edit. No agent runs, so an issue opens at once. The tab bar is now icons only; the open tab also shows its name, so six tabs fit. The README has a new layout and fresh screenshots.
+
 ## 0.8.4 (2026-10-27)
 
 **A PR no longer waits out a dead merge's lease.** When Bton restarted in the middle of a merge's checks, the failed job kept the PR's lease for up to 15 minutes, so the PR sat on "waiting" and its merge could not start again. A relaunched Bton now releases that lease as it fails the job, and the merge starts at the next sync.

@@ -23,14 +23,22 @@ To update, press Update in Settings, About when a newer release is out (from v0.
 an arrow in the menu's header says one is), or run the same line again.
 
 <p align="center">
-  <img src="docs/media/hero.png" alt="Bton" width="860">
+  <img src="docs/media/hero.png" alt="Bton: pull requests and jobs in the macOS menu bar" width="880">
+</p>
+
+<p align="center">
+  <a href="#one-pr-start-to-finish">How it works</a> &nbsp;|&nbsp;
+  <a href="#what-you-get">Features</a> &nbsp;|&nbsp;
+  <a href="#triage-issues-in-three-clicks">Triage</a> &nbsp;|&nbsp;
+  <a href="#get-started">Get started</a> &nbsp;|&nbsp;
+  <a href="#security">Security</a>
 </p>
 
 ## One PR, start to finish
 
 You open PR #412 and go back to work. Here is what happens next:
 
-| | | |
+| Where | What happens | Cost |
 |---|---|---|
 | **Ana's Mac** | Claude reviews #412 in a fresh worktree, asks Codex for a second opinion, posts `## Review: changes` | $0.41 |
 | **Your Mac** | Claude fixes both findings, runs the tests, pushes, replies `## Fixed:` | $0.63 |
@@ -39,65 +47,92 @@ You open PR #412 and go back to work. Here is what happens next:
 | **Your Mac** | Runs your merge script. #412 is in. | |
 
 Nobody opened a terminal (that repo has "Start the flow's moves on every sync" on). Each step
-showed up in the menu bar with the model that did it and what it cost. A person is asked only where your flow says a person decides.
+showed up in the menu bar with the model that did it and what it cost. A person is asked only
+where your flow says a person decides.
 
 ## What you get
 
-**The next move on every PR.** `review`, `fix`, `resolve`, `merge` or `decide`, and whose it is.
-The menu bar counts what is waiting on you.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <b>The next move on every PR</b><br>
+      <code>review</code>, <code>fix</code>, <code>resolve</code>, <code>merge</code> or <code>decide</code>, and whose it is.
+      The menu bar counts what is waiting on you.
+    </td>
+    <td width="50%" valign="top">
+      <b>Agents when you say so</b><br>
+      A sync only reads your PRs. Agents start from your schedules and the buttons you press, in a
+      worktree at the PR's head, after your repo's checks. Turn on "Start the flow's moves on every
+      sync" and every move that is yours starts by itself.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Take a teammate's move</b><br>
+      A review the flow gave a teammate offers Take it: Bton assigns the PR to you on GitHub and
+      starts the move here. "Take teammates' moves automatically" does that on every sync.
+    </td>
+    <td width="50%" valign="top">
+      <b>A playbook built in</b><br>
+      Every agent reads the diff once, runs targeted tests first, backs every finding with
+      evidence and keeps comments short, with rules for rebased heads, lockfiles, migrations and
+      flaky tests. Your flow and your CLAUDE.md still win.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>A watchdog and a supervisor</b><br>
+      Jobs that failed, timed out, lost their lease or cost far more than usual are flagged. The
+      optional Supervisor (Settings > Supervisor) looks at each once: it retries with a note, or
+      says what needs a human. It only reads, and stops at a daily budget.
+    </td>
+    <td width="50%" valign="top">
+      <b>Scheduled agents</b><br>
+      Triage issues nightly, refresh docs weekly: your prompt, your repo, on a timer, in a clean
+      worktree. A schedule can claim a PR with <code>bton lease claim</code>, so no move starts
+      there while it works.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Questions on issues</b><br>
+      When a teammate mentions you on an issue, it counts in what is waiting on you. Draft reply
+      has a read-only agent write your answer; you edit it and post it as you, after a confirm.
+    </td>
+    <td width="50%" valign="top">
+      <b>Find any PR, and know why it failed</b><br>
+      Search by number, title or login. A failed job names the last line its agent printed and
+      gets a Retry. When an agent's login expires its jobs wait instead of failing one by one.
+    </td>
+  </tr>
+</table>
 
-**Agents when you say so.** A sync only reads your PRs. Agents start from your schedules and from
-the buttons you press: a worktree at the PR's head, your repo's checks, then Claude Code, Codex or
-any CLI you configure. A move of yours that an agent takes (a review, a fix) shows as a pill with
-a play mark: press it and the agent starts in Bton, no trip to GitHub. Turn on "Start the flow's
-moves on every sync" for a repo and every move that is yours there starts by itself. A review the
-flow gives a teammate as the PR's assignee offers Take it: Bton assigns the PR to you on GitHub
-and starts the move here. "Take teammates' moves automatically" does that on every sync.
+## Triage issues in three clicks
 
-**A playbook built in.** Every agent Bton starts follows the same way of working a PR: read the
-diff once, targeted tests first, every finding with evidence, scoped re-reviews, short comments,
-and the edge cases of each move (rebased heads, lockfiles and migrations, flaky tests, wrong
-findings, conflicts where both sides changed behaviour). Your flow and your CLAUDE.md still win.
+The Triage tab lists open issues that are not `stage:ready`, in progress or in review. Click one and
+answer three questions. No agent runs, so it opens instantly.
 
-**A watchdog and a supervisor.** Bton flags every job that failed, timed out, lost its lease or
-cost far more than that move usually does, on its row and in a notification. Turn on the
-Supervisor (Settings > Supervisor) and an agent looks at each flagged job once: it retries the
-move with a note on what to do differently, or tells you what needs a human. It only reads: no
-shell, no edits, no GitHub writes. It stops at a daily budget.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/triage.png" alt="The Triage tab"></td>
+    <td width="50%"><img src="docs/media/triage-issue.png" alt="An issue with its three questions answered and a score of 8 of 9"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Every open issue that still needs a priority or a stage</b></td>
+    <td align="center"><b>Three answers give a score and the labels</b></td>
+  </tr>
+</table>
 
-**Questions on issues.** When a teammate mentions you on an open issue, it shows on the Issues
-tab, counts in what is waiting on you and notifies you. Press Draft reply and a read-only agent reads the thread and the code and drafts your answer. Edit it in place, then
-Post reply comments it on the issue as you (after a confirm), or copy it. Nothing is posted
-unless you press it.
+| Question | Points |
+|---|---|
+| **Who is hurt, and how badly?** Blocks users or corrupts data / degrades a main flow / minor / nobody would notice | 5 / 3 / 1 / 0 |
+| **What does waiting cost?** Now (incident, release, blocks other work) / this month / whenever | 3 / 2 / 0 |
+| **What does it take to start?** A clear, small plan is a quick win | 1 / 0 |
 
-**One Mac per move, no server.** Every teammate runs Bton with their own `gh` login. A lease on
-GitHub hands each move to exactly one Mac. Name a work label for a repo (Settings > Repos) and a PR
-carries it while any Bton works on it, so teammates without Bton see it on GitHub.
-
-**Conflicts fix themselves.** When your PR falls behind its base and conflicts, an agent merges
-the base in, resolves, tests and pushes. Any PR of yours GitHub can merge gets a Merge button
-that runs your repo's own merge command, so its checks still decide: a merge a check stopped says
-which check, and offers Retry merge. A Fix conflicts whose agent pushed nothing (it stopped for a
-ruling) fails, links its report and offers a Retry. While an agent works a PR, its row offers no second start.
-
-**Your develop and main stay current.** After every sync Bton fast-forwards your local working
-branch and the default branch when they are only behind origin, so you and your agents start from
-what is merged. A branch with commits of its own is never touched. The footer shows each one
-against origin and what develop has that main lacks.
-
-**Costs in plain sight.** Every job shows its model and its cost; the panel totals today and the
-week.
-
-**Scheduled agents.** Triage issues nightly, refresh docs weekly: your prompt, your repo, on a
-timer, in a clean worktree. A schedule's row names the PR it is on and the PRs it worked on. A
-schedule's agent can claim a PR with `bton lease claim`, so no move starts there while it works.
-
-**Find any PR.** Search by number, title or login across open PRs, jobs and Merged. A move of
-yours that failed gets a Retry on its row, and so does a failed issue draft.
-
-**A failure says why.** A job whose agent exits names the last line it printed. When an agent's
-login expired, its jobs wait instead of failing one after another: a notice says how to log in
-again, and its jobs start once you press I've logged in.
+The score is out of 9: **6 or more is `priority:high`, 3 to 5 is `medium`, below that `low`.** The
+third answer also sets the stage: a clear plan is `stage:ready`; an open decision, or work that
+touches auth, billing, personal data, a migration or deletion, is `stage:spec`; a missing repro stays
+at `stage:triage`. Apply writes both labels in one edit.
 
 <table>
   <tr>

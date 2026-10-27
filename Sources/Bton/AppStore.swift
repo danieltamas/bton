@@ -30,6 +30,9 @@ final class AppStore {
     var readingDraft: IssueAsk?
     /// Questions put to me on open issues, newest first.
     private(set) var issueAsks: [IssueAsk] = []
+    private(set) var triage: [TriageIssue] = []
+    /// The issue open in the triage tab.
+    var triaging: TriageIssue?
     /// Every ask notified this run (`IssueAsk.notice`), so a mention edited out and back is not new.
     @ObservationIgnored var notifiedAsks: Set<String> = []
     /// Asks I replied to from Bton (`IssueAsk.notice`), shown as posted until a sync reads the reply.
@@ -459,6 +462,8 @@ final class AppStore {
         openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
         merged = snapshot.merged + merged.filter { unread($0.repo) }
         issueAsks = snapshot.issueAsks
+        // A repo that could not be read keeps its issues, like its PRs.
+        triage = snapshot.triage + triage.filter { unread($0.repo) }
         lastRefresh = snapshot.at
     }
 }

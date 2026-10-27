@@ -19,6 +19,8 @@ enum DemoShots {
         try write(hero(prs: panel(.pullRequests), jobs: panel(.jobs)), to: directory.appendingPathComponent("hero.png"))
         try write(panel(.pullRequests), to: directory.appendingPathComponent("pull-requests.png"))
         try write(panel(.jobs), to: directory.appendingPathComponent("jobs.png"))
+        try write(panel(.triage), to: directory.appendingPathComponent("triage.png"))
+        try write(triageIssue(store), to: directory.appendingPathComponent("triage-issue.png"))
         try write(pane(ReposPane()).environment(store), to: directory.appendingPathComponent("settings-repos.png"))
         try write(pane(AgentsPane()).environment(store), to: directory.appendingPathComponent("settings-agents.png"))
     }
@@ -55,6 +57,18 @@ enum DemoShots {
         .padding(.top, 56)
         .padding(.bottom, 92)
         .background(Backdrop())
+    }
+
+    /// An issue open in the Triage tab with its three questions answered.
+    private static func triageIssue(_ store: AppStore) -> some View {
+        VStack(spacing: 0) {
+            TriageView(issue: triage[0], answered: [0, 1, 0]) {}
+        }
+        .padding(.top, 14)
+        .frame(width: 404, height: 860)
+        .background(Backdrop())
+        .environment(store)
+        .preferredColorScheme(Theme.scheme)
     }
 
     private static func pane(_ content: some View) -> some View {
@@ -109,6 +123,7 @@ enum DemoShots {
                      url: URL(string: "https://github.com/\(repo)/issues/388")!, asker: "lee",
                      askedAt: now.addingTimeInterval(-34 * 60), commentID: "demo-388"),
         ]
+        snapshot.triage = triage
         snapshot.jobs = [
             job("pr-395", "fix", agent: "claude", minutes: 26 * 60, took: 38, status: .succeeded, cost: 21.80),
             job("pr-398", "merge", agent: nil, minutes: 190, took: 3, status: .failed, detail: "`bash scripts/check.sh` exited 1"),
@@ -119,6 +134,24 @@ enum DemoShots {
             job("pr-412", "review", agent: "claude", minutes: 9, took: nil, status: .running, cost: 0.84),
         ]
         return snapshot
+    }
+
+    private static var triage: [TriageIssue] {
+        let issue = { (number: Int, title: String, labels: [String], body: String, days: Double) in
+            TriageIssue(repo: repo, number: number, title: title, url: URL(string: "https://github.com/\(repo)/issues/\(number)")!,
+                        createdAt: now.addingTimeInterval(-days * 86400), body: body, labels: labels)
+        }
+        return [
+            issue(421, "Saved cards fail to charge after a currency switch", [],
+                  "Customers who switch currency in the cart and pay with a saved card get a generic error, and the order stays unpaid. "
+                      + "Reproduced on staging with EUR to RON. The payment intent is created in the old currency.", 1),
+            issue(417, "Order confirmation email shows the wrong delivery date", ["priority:medium", "stage:triage"],
+                  "The date uses the warehouse time zone, not the customer's.", 4),
+            issue(399, "Dark mode: low contrast on the cart's discount banner", ["stage:triage"],
+                  "The banner text is grey on a dark green background.", 9),
+            issue(390, "Support multiple shipping addresses per account", ["priority:low", "stage:spec"],
+                  "Customers who ship to family ask for an address book.", 16),
+        ]
     }
 
     private static func pr(_ number: Int, _ title: String, by author: String, minutes: Double, move: Move,

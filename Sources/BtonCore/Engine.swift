@@ -21,6 +21,8 @@ public actor Engine {
         public var defaultBranches: [String: String] = [:]
         /// Questions put to me on open issues, newest first.
         public var issueAsks: [IssueAsk] = []
+        /// Open issues waiting for a priority and a stage.
+        public var triage: [TriageIssue] = []
         /// Agents whose CLI login expired: none of their jobs starts until I log in again.
         public var loggedOut: [String] = []
 
@@ -176,6 +178,7 @@ public actor Engine {
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
             snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
+            snapshot.triage = config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) }
             snapshot.loggedOut = heldAgents().sorted()
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }

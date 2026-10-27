@@ -3,8 +3,20 @@ import BtonCore
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case pullRequests = "PRs", issues = "Issues", jobs = "Jobs", schedule = "Schedule", merged = "Merged"
+    case pullRequests = "PRs", issues = "Issues", triage = "Triage", jobs = "Jobs", schedule = "Schedule", merged = "Merged"
     var id: Self { self }
+
+    /// Every tab is an icon; only the open one also shows its name.
+    var symbol: String {
+        switch self {
+        case .pullRequests: "arrow.triangle.branch"
+        case .issues: "bubble.left.and.text.bubble.right"
+        case .triage: "checklist"
+        case .jobs: "bolt"
+        case .schedule: "calendar.badge.clock"
+        case .merged: "arrow.triangle.merge"
+        }
+    }
 }
 
 /// The menu bar window: a bento of what needs me, a floating tab island, and the list below.
@@ -39,6 +51,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: tab)
                 .animation(Motion.spring, value: store.watchingJob)
                 .animation(Motion.spring, value: store.readingDraft)
+                .animation(Motion.spring, value: store.triaging)
             footer
         }
         .frame(width: 404, height: Self.height)
@@ -215,7 +228,8 @@ struct RootView: View {
             ForEach(Tab.allCases) { item in
                 Button { show(item) } label: {
                     HStack(spacing: 5) {
-                        Text(item.rawValue).font(.system(size: 12, weight: .semibold))
+                        Image(systemName: item.symbol).font(.system(size: 12, weight: .semibold))
+                        if tab == item { Text(item.rawValue).font(.system(size: 12, weight: .semibold)) }
                         if counted(item), count(for: item) > 0 {
                             Text("\(count(for: item))").font(.system(size: 9.5, weight: .bold)).monospacedDigit()
                                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -227,6 +241,7 @@ struct RootView: View {
                     .fixedSize()
                     .foregroundStyle(tab == item ? Theme.mint : Theme.textSecondary)
                     .padding(.horizontal, 8)
+                    .help(item.rawValue)
                     .padding(.vertical, 7)
                     .frame(maxWidth: .infinity)
                     .background {
@@ -254,6 +269,7 @@ struct RootView: View {
             tab = item
             store.watchingJob = nil
             store.readingDraft = nil
+            store.triaging = nil
         }
     }
 
@@ -263,6 +279,7 @@ struct RootView: View {
         return switch tab {
         case .pullRequests: store.openPullRequests.count
         case .issues: store.issueAsks.count
+        case .triage: store.triage.count
         case .jobs: store.runningJobs
         case .schedule: store.schedules.filter(\.enabled).count
         // The list is GitHub's latest 30 whatever their age, so its length says nothing.
@@ -282,6 +299,7 @@ struct RootView: View {
                 keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author])
             },
             asks: store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) },
+            triage: store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) },
             jobs: store.jobs.filter { job in
                 let item = job.key.item
                 let numbers = item.hasPrefix("pr-") ? Int(item.dropFirst(3)).map { [$0] } ?? [] : store.work.numbers(of: job)
@@ -298,6 +316,10 @@ struct RootView: View {
         let showRepo = store.repos.count > 1
         if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let issue = store.triaging {
+            TriageView(issue: issue) { withAnimation(Motion.spring) { store.triaging = nil } }
+                .id(issue.id)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let id = store.watchingJob, let job = store.jobs.first(where: { $0.id == id }) {
             SessionView(job: job, title: jobTitle(job, schedules: store.schedules)) {
@@ -325,6 +347,7 @@ struct RootView: View {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
                 case .issues: IssueAskList(asks: lists.asks, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
+                case .triage: TriageList(issues: lists.triage, showRepo: showRepo)
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
                 case .merged: MergedList(items: lists.merged, showRepo: showRepo)
@@ -335,7 +358,7 @@ struct RootView: View {
 
     /// Where else the search finds something, so a merged PR searched under PRs is one click away.
     private func noMatch(_ search: SearchQuery, lists: Listed) -> some View {
-        let elsewhere = [Tab.pullRequests, .issues, .jobs, .merged].filter { lists.count(for: $0) > 0 }
+        let elsewhere = [Tab.pullRequests, .issues, .triage, .jobs, .merged].filter { lists.count(for: $0) > 0 }
             .map { "\($0.rawValue) (\(lists.count(for: $0)))" }
         return EmptyState(symbol: "magnifyingglass", title: "Nothing here matches \(search.text)",
                           detail: elsewhere.isEmpty
@@ -346,6 +369,7 @@ struct RootView: View {
     struct Listed {
         let pullRequests: [PullRequest]
         let asks: [IssueAsk]
+        let triage: [TriageIssue]
         let jobs: [Job]
         let merged: [MergedPullRequest]
         /// The repo's jobs whatever the search: the PR list's strip shows every running agent.
@@ -355,6 +379,7 @@ struct RootView: View {
             switch tab {
             case .pullRequests: pullRequests.count
             case .issues: asks.count
+            case .triage: triage.count
             case .jobs: jobs.count
             case .schedule: 0
             case .merged: merged.count
@@ -364,8 +389,8 @@ struct RootView: View {
 
     /// Every repo that has a PR, a job or a merge listed, in a stable order.
     private var listedRepos: [String] {
-        Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.jobs.map(\.key.repo)
-            + store.merged.map(\.repo))).sorted()
+        Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.triage.map(\.repo)
+            + store.jobs.map(\.key.repo) + store.merged.map(\.repo))).sorted()
     }
 
     private func repoFilter(selected: String?) -> some View {

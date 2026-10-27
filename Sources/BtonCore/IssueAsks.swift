@@ -13,9 +13,11 @@ public struct OpenIssue: Hashable, Sendable {
     public let body: String
     /// Oldest first, the last 20.
     public let comments: [IssueComment]
+    public let labels: [String]
 
     public init(repo: String, number: Int, title: String, url: URL, createdAt: Date, author: String?,
-                authorAssociation: String, body: String, comments: [IssueComment]) {
+                authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = []) {
+        self.labels = labels
         self.repo = repo
         self.number = number
         self.title = title
@@ -193,6 +195,7 @@ extension GitHubClient {
           nodes {
             number title url createdAt body authorAssociation
             author { login }
+            labels(first: 30) { nodes { name } }
             comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
           }
         }
@@ -207,8 +210,9 @@ extension GitHubClient {
         struct Repository: Decodable { let issues: Nodes<Row> }
         struct Row: Decodable {
             let number: Int, title: String, url: URL, createdAt: Date, body: String, authorAssociation: String
-            let author: Author?, comments: Nodes<Comment>
+            let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?
         }
+        struct Label: Decodable { let name: String }
         struct Comment: Decodable {
             let databaseId: Int?, author: Author?, authorAssociation: String?, body: String, createdAt: Date, url: URL?
         }
@@ -225,7 +229,8 @@ extension GitHubClient {
                           IssueComment(id: $0.databaseId.map(String.init) ?? "", author: $0.author?.login,
                                        authorAssociation: $0.authorAssociation, body: $0.body,
                                        createdAt: $0.createdAt, url: $0.url)
-                      }.sorted { $0.createdAt < $1.createdAt })
+                      }.sorted { $0.createdAt < $1.createdAt },
+                      labels: row.labels?.nodes.map(\.name) ?? [])
         }
     }
 }
