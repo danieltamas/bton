@@ -26,6 +26,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
 | `decision` | Optional `{ "heading", "move", "by" }`: a ruling that ends a review loop (below). |
+| `release` | Optional `{ "from", "to", "who", "when", "blockedBy"?, "checks"?, "merge"?, "timeoutMinutes"? }`: how `from` (develop) is released to `to` (main). `when` is a list of predicates of which the first match makes a release due (`ahead_commits:N`, `ahead_days:N`, `features_waiting:N`); `blockedBy` any match blocks it (`pr_in_review_on_paths:<glob>`; an open release PR always blocks); `who` is the login whose Bton may start it; `checks` are argv run in a worktree at the `from` tip, each stopped at `timeoutMinutes`, failing closed; `merge` is `merge-commit` (default) or `fast-forward`. With a `release` section the repo page tells a feature "in develop" from one "live" on `to`. |
 
 `who`, `dispatch.<move>.agent` and `dispatch.<move>.prompt` take either one value or an object
 keyed by tier (`{ "quick fix": "author", "feature": "assignee" }`).

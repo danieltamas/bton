@@ -82,10 +82,15 @@ public struct GitHubClient: Sendable {
     /// copy, so a PR cannot change what Bton runs.
     /// The flow on `branch`, or on the default branch when nil.
     public func flowFile(repo: String, branch: String? = nil) async throws -> Data? {
+        try await file(repo: repo, path: Flow.relativePath, branch: branch)
+    }
+
+    /// A file of the repo on `branch`, or on the default branch when nil; nil when there is none.
+    public func file(repo: String, path: String, branch: String? = nil) async throws -> Data? {
         // A name that fails the check is refused, never read as "the default branch".
         if let branch, !WatchedRepo.isBranchName(branch) { throw Failure.invalidBranch(branch) }
         let ref = branch.map { "?ref=\($0)" } ?? ""
-        let result = try await runner.run(ghPath, ["api", "repos/\(repo)/contents/\(Flow.relativePath)\(ref)",
+        let result = try await runner.run(ghPath, ["api", "repos/\(repo)/contents/\(path)\(ref)",
                                                    "-H", "Accept: application/vnd.github.raw"], timeout: .seconds(60))
         if result.status != 0, result.stderr.contains("HTTP 404") { return nil }
         guard result.status == 0 else { throw Failure.ghFailed(status: result.status, stderr: result.stderr) }

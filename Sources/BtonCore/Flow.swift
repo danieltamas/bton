@@ -18,6 +18,26 @@ public struct Flow: Decodable, Sendable {
     public let caps: Caps?
     public let stale: Stale?
     public let decision: Decision?
+    /// How `from` reaches `to` (develop to main): the owner's release move, plan and predicates
+    /// in docs/FLOW.md "Release". Read here so the repo page can tell "in develop" from "live".
+    public let release: Release?
+
+    public struct Release: Decodable, Sendable {
+        public let from: String
+        public let to: String
+        /// The login whose Bton may start the release; every other Bton shows its state only.
+        public let who: String
+        /// First match makes a release due: `ahead_commits:N`, `ahead_days:N`, `features_waiting:N`.
+        public let when: [String]
+        /// Any match blocks it: `pr_in_review_on_paths:<glob>`; `release_pr_open` is always implied.
+        public let blockedBy: [String]?
+        public let checks: [[String]]?
+        /// `merge-commit` (the default) or `fast-forward`.
+        public let merge: String?
+        public let timeoutMinutes: Int?
+
+        public static let merges = ["merge-commit", "fast-forward"]
+    }
 
     /// A person's ruling that ends a review loop (docs/FLOW.md "Decisions"): from one of `by`,
     /// it counts as the latest review whoever authored the PR, and the round cap restarts after it.
@@ -55,6 +75,15 @@ public struct Flow: Decodable, Sendable {
                 if let helpers = rule.helpers, helpers.count > 3 || !helpers.allSatisfy(BtonConfig.isAgentName) {
                     return .invalid("dispatch.\(move).helpers: up to three agent names")
                 }
+            }
+            if let release = flow.release {
+                if let merge = release.merge, !Release.merges.contains(merge) {
+                    return .invalid("release.merge \(merge) is not one of \(Release.merges.joined(separator: ", "))")
+                }
+                for name in [release.from, release.to] where !WatchedRepo.isBranchName(name) {
+                    return .invalid("release: \(name.prefix(100)) is not a branch name")
+                }
+                if release.from == release.to { return .invalid("release: from and to are the same branch") }
             }
             return .ready(flow)
         } catch {
