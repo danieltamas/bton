@@ -65,7 +65,12 @@ public struct FeatureGit: Sendable, Equatable {
 
     private static func exists(_ ref: String, clone: URL, runner: ProcessRunner) async throws -> Bool {
         let result = try await run(["rev-parse", "--verify", "--quiet", ref], clone: clone, runner: runner)
-        return result.status == 0
+        // 1 is "no such ref"; anything else (no repository, ownership refused) is a failed read.
+        switch result.status {
+        case 0: return true
+        case 1: return false
+        default: throw Failure(command: "rev-parse", reason: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
     }
 
     static func isSHA(_ text: String) -> Bool {
