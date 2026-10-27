@@ -66,6 +66,7 @@ import SwiftUI
     }
 
     func prepare(_ model: VoiceModel) async {
+        unloadWhenIdle()
         guard downloaded.contains(model), !ready.contains(model), preparing[model] == nil else { return }
         preparing[model] = .now
         defer { preparing[model] = nil }
@@ -74,6 +75,21 @@ import SwiftUI
             ready.insert(model)
         } catch {
             problem = "The \(model.label) model did not load: \(error.localizedDescription) Delete the download in Settings > Voice and download it again."
+        }
+    }
+
+    @ObservationIgnored private var unloadTask: Task<Void, Never>?
+
+    /// Each use pushes the unload back, so the model stays only while someone opens new issues or dictates.
+    /// A stale `ready` after a race is harmless: a transcription loads the model again by itself.
+    private func unloadWhenIdle() {
+        unloadTask?.cancel()
+        unloadTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Voice.idleUnloadSeconds))
+            guard !Task.isCancelled, let self else { return }
+            guard recorder.phase == .idle, !recorder.starting, preparing.isEmpty else { return unloadWhenIdle() }
+            ready.removeAll()
+            await engine.unload()
         }
     }
 
@@ -93,22 +109,29 @@ import SwiftUI
 
     /// The mic button: starts a recording, or stops it and puts the words in the owner's box.
     func toggle(settings: VoiceSettings, owner: String, deliver: @escaping (String) -> Void) async {
+        unloadWhenIdle()
         switch recorder.phase {
         case .idle:
             guard !recorder.starting else { return }
             problem = nil
             let model = settings.model ?? .defaultModel
+            generation += 1
+            let token = generation
+            // Owned before the load below, so closing this new issue while it loads cancels the recording.
+            self.owner = owner
+            delivery = deliver
+            // Unloaded while the new issue stayed open: load it again, behind the mic's spinner.
+            if transcriber == nil, !ready.contains(model) { await prepare(model) }
+            guard token == generation else { return }
             guard transcriber != nil || ready.contains(model) else {
-                problem = VoiceError.modelMissing.localizedDescription
+                problem = problem ?? VoiceError.modelMissing.localizedDescription
+                release()
                 return
             }
-            generation += 1
             cursor = 0
             pieces = []
             heard = ""
             failedPieces = 0
-            self.owner = owner
-            delivery = deliver
             await recorder.start { [weak self] in Task { await self?.toggle(settings: settings, owner: owner, deliver: deliver) } }
             problem = recorder.problem
             if recorder.phase == .idle { release() } else { stream(settings: settings, token: generation) }

@@ -112,6 +112,8 @@ public enum Voice {
     }
 
     public static let sampleRate = 16_000.0
+    /// A loaded model is let go after this long unused: Large v3 turbo holds about 3 GB, and loading it again takes about 6 s.
+    public static let idleUnloadSeconds = 300.0
     /// A recording ends by itself after this long.
     public static let maxSeconds = 300.0
     /// Silence this long ends a recording that was left on; what was said is kept.

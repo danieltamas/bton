@@ -39,8 +39,14 @@ actor WhisperTranscriber: Transcriber {
         self.home = home
         chosen = model
         let kit = try await pipeline(for: model)
-        // The first transcription after a load pays for the GPU's own set-up (about 8 s of 10 here): pay it now, on a second of silence.
-        _ = try? await kit.transcribe(audioArray: [Float](repeating: 0, count: 16_000), decodeOptions: Self.options(language: "en"))
+        // The first transcription after a load pays for the GPU's own set-up (about 3 s for turbo): pay it now, on silence.
+        // Two seconds of it: WhisperKit skips a clip of a second or less without touching the GPU.
+        _ = try? await kit.transcribe(audioArray: [Float](repeating: 0, count: 32_000), decodeOptions: Self.options(language: "en"))
+    }
+
+    /// Frees the loaded model; the next transcription loads it again.
+    func unload() {
+        loaded = nil
     }
 
     private static func options(language: String?) -> DecodingOptions {
