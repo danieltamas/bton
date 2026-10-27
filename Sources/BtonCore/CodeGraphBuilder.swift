@@ -86,8 +86,9 @@ public actor CodeGraphBuilder {
                 let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                 throw BuildFailure.exited(result.status, String(stderr.suffix(200)))
             }
+            // The marker travels with its graph: a reader never sees one generation's graph with another's marker.
+            try CodeGraph.writeMarker(.init(commit: tip, at: .now), in: staging)
             try publish(staging, as: store)
-            try CodeGraph.writeMarker(.init(commit: tip, at: .now), in: store)
             log("graph \(slug): built at \(tip.prefix(8)) in \(Int(Date.now.timeIntervalSince(started)))s")
         } catch ProcessRunner.Failure.timedOut {
             log("graph \(slug): build timed out after \(Int(buildTimeout.components.seconds / 60)) minutes")
@@ -117,15 +118,16 @@ public actor CodeGraphBuilder {
         return staging
     }
 
-    /// The old store steps aside, the staging takes its name: every checkout's link points at the
-    /// name, so they all see the new graph at once.
+    /// The staging takes the store's name in one rename, so there is no moment without a store
+    /// (a job linking its worktree then would make an empty one in the way) and no moment with
+    /// half of one; every checkout's link points at the name and sees the new graph at once.
     private static func publish(_ staging: URL, as store: URL) throws {
         let files = FileManager.default
-        let previous = URL(fileURLWithPath: store.path + ".prev", isDirectory: true)
-        try? files.removeItem(at: previous)
-        if files.fileExists(atPath: store.path) { try files.moveItem(at: store, to: previous) }
-        try files.moveItem(at: staging, to: store)
-        try? files.removeItem(at: previous)
+        if files.fileExists(atPath: store.path) {
+            _ = try files.replaceItemAt(store, withItemAt: staging)
+        } else {
+            try files.moveItem(at: staging, to: store)
+        }
     }
 
     /// Makes the build tree's `graphify-out` a link to `target`, replacing a link of ours. False
