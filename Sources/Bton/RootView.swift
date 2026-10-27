@@ -316,8 +316,10 @@ struct RootView: View {
     // MARK: content
 
     private func startNewIssue(_ shown: String?) {
-        guard let repo = shown ?? store.repos.first?.slug else { return }
-        withAnimation(Motion.spring) { store.composing = NewIssueSession(repo: repo) }
+        // One repo, or the repo filter on a repo: that is the repo. Otherwise I pick it first.
+        guard let first = store.repos.first?.slug else { return }
+        let repo = shown ?? (store.repos.count == 1 ? first : nil)
+        withAnimation(Motion.spring) { store.composing = NewIssueSession(repo: repo ?? first, chosen: repo != nil) }
     }
 
     @ViewBuilder private var content: some View {

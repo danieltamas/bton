@@ -8,6 +8,8 @@ import SwiftUI
 
     let id = NewIssues.newID()
     var repo: String
+    /// With several repos the issue goes nowhere until I pick one: the agent reads that repo, and the issue is filed there.
+    var repoChosen: Bool
     var turns: [Turn] = []
     private var nextRound = 1
     var draft = ""
@@ -20,7 +22,10 @@ import SwiftUI
     var problem: String?
     var created: URL?
 
-    init(repo: String) { self.repo = repo }
+    init(repo: String, chosen: Bool = true) {
+        self.repo = repo
+        repoChosen = chosen
+    }
 
     func newRound() -> Int {
         defer { nextRound += 1 }
@@ -135,7 +140,7 @@ struct NewIssueView: View {
                 .keyboardShortcut(.cancelAction)
             VStack(alignment: .leading, spacing: 3) {
                 Text("New issue").font(.rowTitle).foregroundStyle(Theme.textPrimary)
-                Text(session.repo).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                Text(session.repoChosen ? session.repo : "Pick a repo").font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 4)
         }
@@ -153,20 +158,43 @@ struct NewIssueView: View {
 
     private var start: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if store.repos.count > 1 {
-                Picker("Repo", selection: $session.repo) {
-                    ForEach(store.repos, id: \.slug) { Text($0.slug).tag($0.slug) }
-                }
-                .labelsHidden()
-                .padding(.horizontal, 14)
-            }
-            Text("Say in a few words what you want. The agent reads the repo and what is open or already done, and asks what is missing.")
+            if store.repos.count > 1 { repoChoice }
+            Text(session.repoChosen
+                 ? "Say in a few words what you want. The agent reads \(session.repo)'s code, its open issues and what was merged, and asks what is missing."
+                 : "The issue is filed in this repo, and the agent reads its code, open issues and merged PRs while you talk.")
                 .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 14)
-            input(placeholder: "What should be built or fixed?", send: "Start")
+            input(placeholder: session.repoChosen ? "What should be built or fixed?" : "Pick a repo first", send: "Start",
+                  locked: !session.repoChosen)
             if let blocked = store.composeBlocked { ProblemText(text: blocked).padding(.horizontal, 14) }
             Spacer(minLength: 0)
         }
+    }
+
+    private var repoChoice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Which repo is this issue for?").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+            ForEach(store.repos, id: \.slug) { repo in
+                let selected = session.repoChosen && session.repo == repo.slug
+                Button {
+                    withAnimation(Motion.snappy) {
+                        session.repo = repo.slug
+                        session.repoChosen = true
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                        Text(repo.slug).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(selected ? Theme.mint : Theme.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+            }
+        }
+        .padding(.horizontal, 14)
     }
 
     // MARK: the conversation
@@ -227,7 +255,7 @@ struct NewIssueView: View {
             .background(mine ? Theme.mint.opacity(0.12) : Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func input(placeholder: String, send: String) -> some View {
+    private func input(placeholder: String, send: String, locked: Bool = false) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
             TextEditor(text: $session.draft)
                 .font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
@@ -235,6 +263,8 @@ struct NewIssueView: View {
                 .scrollIndicators(.never)
                 .padding(8)
                 .frame(height: 74)
+                .disabled(locked)
+                .opacity(locked ? 0.5 : 1)
                 .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(alignment: .topLeading) {
                     if session.draft.isEmpty {
@@ -243,7 +273,7 @@ struct NewIssueView: View {
                     }
                 }
             PillButton(title: send, symbol: "paperplane",
-                       disabled: session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.composeBlocked != nil) {
+                       disabled: locked || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.composeBlocked != nil) {
                 let text = session.draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 Task { await store.send(text, in: session) }
             }
