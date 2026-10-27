@@ -82,6 +82,15 @@ struct ReposPane: View {
                                         rulesPrompt: "Review rules: added to every review this Mac runs here. Empty adds none.") { line, rules in
                             try store.setReviewer(line, rules: rules, for: repo.slug)
                         }
+                        HStack(spacing: 8) {
+                            RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
+                                       help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes, so agents query it before searching.",
+                                       isOn: repo.buildsGraph, problem: $problem) { try store.setCodeGraph($0, for: repo.slug) }
+                            if repo.buildsGraph, CodeGraph.python(configured: store.graphifyPython) == nil {
+                                Chip(text: "graphify's Python not found", symbol: "exclamationmark.triangle", color: Theme.danger)
+                                    .help("Bton looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy; set another path in Settings > Agents")
+                            }
+                        }
                         RepoSwitch(symbol: "play.circle", title: "Start the flow's moves on every sync",
                                    help: "Off (the default): a sync only reads the PRs, and agents start here from your schedules and from Run now, Merge and Retry.",
                                    isOn: repo.startsMoves, problem: $problem) { try store.setStartMoves($0, for: repo.slug) }

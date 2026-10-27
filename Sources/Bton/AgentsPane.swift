@@ -45,6 +45,10 @@ struct AgentsPane: View {
                     do { try store.update { $0.draftModel = ClaudeModel.choices.first { $0.label == label }?.id } } catch { problem = error.localizedDescription }
                 }
             }
+            SettingsCard(title: "Code graphs",
+                         detail: "The Python that has graphify installed, for the repos that build a code graph. Empty looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy.") {
+                GraphifyPythonField()
+            }
             if store.agents.isEmpty && !adding {
                 EmptyState(symbol: "cpu", title: "No agents", detail: "Without one, Bton starts nothing on this Mac.")
                     .frame(height: 220)
@@ -130,5 +134,33 @@ private struct AgentCard: View {
         } catch {
             problem = error.localizedDescription
         }
+    }
+}
+
+/// The graphify Python path, saved when the field is left or Return is pressed.
+private struct GraphifyPythonField: View {
+    @Environment(AppStore.self) private var store
+    @State private var text = ""
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                GlassField(placeholder: "~/.venvs/graphifyy-arm64/bin/python", text: $text, monospaced: true)
+                    .onSubmit(save)
+                if CodeGraph.python(configured: store.graphifyPython) == nil {
+                    Chip(text: "not found", symbol: "exclamationmark.triangle", color: Theme.danger)
+                } else {
+                    Chip(text: "found", symbol: "checkmark", color: Theme.success)
+                }
+            }
+            if let problem { ProblemText(text: problem) }
+        }
+        .onAppear { text = store.graphifyPython ?? "" }
+        .onDisappear(perform: save)
+    }
+
+    private func save() {
+        do { try store.setGraphifyPython(text); problem = nil } catch { problem = error.localizedDescription }
     }
 }

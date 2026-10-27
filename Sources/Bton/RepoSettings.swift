@@ -69,6 +69,17 @@ extension AppStore {
         try updateRepo(slug) { $0.takeMoves = on ? true : nil }
     }
 
+    /// Whether Bton keeps a code graph of the repo for its agents; nil is off.
+    func setCodeGraph(_ on: Bool, for slug: String) throws {
+        try updateRepo(slug) { $0.codeGraph = on ? true : nil }
+    }
+
+    /// The Python with graphify, for every repo's graph; empty means the usual venv places.
+    func setGraphifyPython(_ path: String) throws {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        try update { $0.graphifyPython = trimmed.isEmpty ? nil : trimmed }
+    }
+
     private func updateRepo(_ slug: String, _ change: (inout WatchedRepo) -> Void) throws {
         try update { config in
             for index in config.repos.indices where config.repos[index].slug == slug { change(&config.repos[index]) }

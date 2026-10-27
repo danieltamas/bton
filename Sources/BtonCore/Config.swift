@@ -19,6 +19,9 @@ public struct BtonConfig: Codable, Sendable {
     /// Not the agent's own default: a draft is one read and one answer, and that default can be the dearest model.
     public var draftModel: String? = nil
     public static let defaultDraftModel = "claude-sonnet-5-5"
+    /// The Python that has graphify installed, for the repos that build a code graph. Nil looks
+    /// in the two places the venv is usually made (`CodeGraph.python`).
+    public var graphifyPython: String? = nil
 
     /// Where the skeleton kept its config; read once, moved to `$BTON_HOME`.
     public static let legacyURL = FileManager.default.homeDirectoryForCurrentUser
@@ -119,10 +122,15 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// review prompt. Nil runs the flow's reviewer as the flow says.
     public var reviewer: String?
     public var reviewRules: String?
+    /// true: after a sync, Bton keeps a graphify graph of the branch PRs merge into under
+    /// `~/.bton/graphs` and links it into every checkout it makes, so agents query it before
+    /// searching. Nil is off.
+    public var codeGraph: Bool?
 
     public var resolvesConflicts: Bool { resolveConflicts != false }
     public var startsMoves: Bool { startMoves == true }
     public var takesMoves: Bool { startsMoves && takeMoves == true }
+    public var buildsGraph: Bool { codeGraph == true }
 
     public init(slug: String, path: String?, branch: String? = nil, environment: [String: String]? = nil) {
         self.slug = slug

@@ -67,6 +67,7 @@ final class AppStore {
     private(set) var isDemo = false
     var voiceSettings: VoiceSettings? { config.voice }
     var draftModel: String { config.draftModel ?? BtonConfig.defaultDraftModel }
+    var graphifyPython: String? { config.graphifyPython }
     var pollSeconds: Int { config.pollSeconds }
     var maxAgents: Int { config.maxAgents }
     private(set) var prices = PriceList(models: [:])
