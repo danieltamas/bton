@@ -52,12 +52,12 @@ enum FeatureAcceptanceData {
 
     static func date(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }
 
-    static let release: [String: Any] = [
+    static var release: [String: Any] { [
         "from": "develop", "to": "main", "who": "danieltamas",
         "when": ["ahead_commits:50", "ahead_days:7", "features_waiting:5"],
         "blockedBy": ["pr_in_review_on_paths:migrations/**"],
         "checks": [["bash", "scripts/check.sh"]], "merge": "merge-commit", "timeoutMinutes": 40
-    ]
+    ] }
 
     static func flowData(release: [String: Any]) throws -> Data {
         var object = try #require(JSONSerialization.jsonObject(with: FlowFixture.data()) as? [String: Any])
