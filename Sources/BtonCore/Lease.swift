@@ -4,15 +4,18 @@ import SystemConfiguration
 /// What a lease is for: `pr-304`, `issue-212`.
 public struct LeaseItem: Hashable, Sendable, CustomStringConvertible {
     public let kind: String
+    /// 0 for an item that is one per repo (`features`), not one per PR or issue.
     public let number: Int
+    private let numbered: Bool
 
     public init?(_ text: String) {
-        guard let match = text.wholeMatch(of: /([a-z]+)-([0-9]{1,9})/), let number = Int(match.2) else { return nil }
+        guard let match = text.wholeMatch(of: /([a-z]+)(?:-([0-9]{1,9}))?/) else { return nil }
         kind = String(match.1)
-        self.number = number
+        numbered = match.2 != nil
+        number = match.2.flatMap { Int($0) } ?? 0
     }
 
-    public var description: String { "\(kind)-\(number)" }
+    public var description: String { numbered ? "\(kind)-\(number)" : kind }
     public var ref: String { "refs/bton/leases/\(self)" }
 }
 
