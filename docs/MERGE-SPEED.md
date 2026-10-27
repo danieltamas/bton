@@ -3,6 +3,12 @@
 Measured on the live merge of lexito PR #406 (job `465C9D58`, head `407f592`), then on two trial runs of
 the same suite. Split into what lexito owns and what Bton owns.
 
+**Status 2026-10-26:** lexito items 2 and 3 below are done (lexito #433, `ac4a3ad8`). The `--fast` gate
+leaves the two burst files out and runs stage 2 eight files at a time, then the load-sensitive and
+shared-state files alone: about 4 min instead of about 15 (235s on the final commit, 258-322s on
+earlier runs, 0 failing files, per the lexito worker). A red gate now prints each failing file's last
+40 lines. The rest of this document is the 2026-10-24 measurement that led there.
+
 ## What the merge spent its time on
 
 | Step | Time |
@@ -90,12 +96,14 @@ A killed or timed-out file never drops its DBs; the two trial runs above added s
    service"). Bton's merge then only checks that the required status is green on the exact head. Merge
    becomes about a minute and stops competing with the agents for cores. Costs: CI minutes, `check.sh`
    has to work on Linux, and Bton needs the gate below.
-2. **Move the two burst acceptance tests out of `--fast`** into the full run or a nightly job. Alone
+2. **Done (#433): move the two burst acceptance tests out of `--fast`** into the full run or a nightly
+   job. The full run keeps them; nothing schedules it yet. Alone
    that is about -10 min serial, and it is what lets parallelism pay: with them in, a parallel run still
    waits 4-6 min for them.
-3. **Parallel stage 2.** Keep one process per file, run N at a time (`xargs -P`). Prerequisite: find the
-   cross-file connection killer above, or give each worker its own database server (one container per
-   worker, or a server per shard). Measured on the other 595 files: 165s at 8-way.
+3. **Done (#433): parallel stage 2.** One process per file, 8 at a time (`xargs -P`), then the files
+   that fail under CPU contention (timing asserts) or touch server-wide state (roles, Redis key scans)
+   one at a time. The connection killer above was not pinned; the 8-way runs on 2026-10-26 did not
+   hit it.
 4. **Template databases.** Migrate one template per run, `CREATE DATABASE ... TEMPLATE` per file
    (609ms to 53ms). Only 151 of the 225 pg files use `scratch-db.ts`; the other 74 build their own DBs
    and must move to the shared helper first (`check.sh`'s comment says 16; it is stale).
