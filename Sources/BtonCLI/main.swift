@@ -9,6 +9,7 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton watch [--for <seconds>]   tick every pollSeconds: dispatch this Mac's moves
        bton jobs                      this BTON_HOME's jobs as JSON lines
        bton prs                       one read without dispatching: open PRs and merged totals
+       bton handoff <owner/name> <issue> --to <login> <text>   comment @login on an issue, once
        bton prices refresh            fetch token prices now
        bton ask-server --job <uuid> --cwd <dir> --helper <agent>...   a job's MCP ask tool (Bton starts it)
 exit: 0 done, 1 held by someone else or lost, 2 usage, 3 error (not held)
@@ -185,6 +186,15 @@ do {
         encoder.outputFormatting = .sortedKeys
         for job in try JobStore(home: BtonHome()).all() {
             print(String(decoding: try encoder.encode(job), as: UTF8.self))
+        }
+    case "handoff":
+        guard arguments.count == 6, BtonConfig.isRepoSlug(arguments[1]), let issue = Int(arguments[2]), issue > 0,
+              arguments[3] == "--to" else { fail(usage) }
+        do {
+            let posted = try await GitHubClient().handOff(to: arguments[4], text: arguments[5], repo: arguments[1], issue: issue)
+            print(posted ? "posted" : "already posted")
+        } catch let problem as Handoff.Problem {
+            fail(problem.localizedDescription)
         }
     case "prices":
         guard arguments == ["prices", "refresh"] else { fail(usage) }

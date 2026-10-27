@@ -1,0 +1,77 @@
+import Foundation
+
+/// A message from one person's agent (or the person) to a teammate, as a comment on an issue: the
+/// teammate's @mention is what their Bton already shows as an ask, and the marker only tags it.
+public enum Handoff {
+    public static let maxTextLength = 4000
+
+    public enum Problem: LocalizedError, Equatable {
+        case badLogin, emptyText, tooLong, markup, otherMention(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .badLogin: "not a GitHub login"
+            case .emptyText: "nothing to say"
+            case .tooLong: "longer than \(Handoff.maxTextLength) characters: link the plan instead of pasting it"
+            case .markup: "HTML comments are not allowed in the text"
+            case let .otherMention(login): "the text mentions @\(login): a handoff names one person"
+            }
+        }
+    }
+
+    public static func marker(to login: String) -> String { "<!-- bton:handoff to=\(login) -->" }
+
+    static func isLogin(_ login: String) -> Bool {
+        // GitHub's grammar: alphanumerics and single hyphens, never at either end; the whole string.
+        login.range(of: #"\A[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\z"#, options: .regularExpression) != nil && login.count <= 39
+    }
+
+    /// The comment to post: the teammate's @mention first, the text, the marker last. The text may
+    /// not mention anyone else or carry markup of its own, so a handoff never notifies a third
+    /// person and never quotes another handoff.
+    public static func body(to login: String, text: String) throws -> String {
+        guard isLogin(login) else { throw Problem.badLogin }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw Problem.emptyText }
+        guard text.count <= maxTextLength else { throw Problem.tooLong }
+        guard !text.contains("<!--") else { throw Problem.markup }
+        let mention = try NSRegularExpression(pattern: #"(?<![A-Za-z0-9_/-])@([A-Za-z0-9][A-Za-z0-9/_-]*)"#)
+        for match in mention.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            let named = String(text[Range(match.range(at: 1), in: text)!])
+            if named.caseInsensitiveCompare(login) != .orderedSame { throw Problem.otherMention(named) }
+        }
+        return "@\(login)\n\n\(text)\n\n\(marker(to: login))"
+    }
+
+    /// Whether a comment ends with the marker addressed to `login`: where `body` puts it, so a
+    /// marker quoted or fenced mid-comment does not tag the comment.
+    public static func isHandoff(_ body: String, to login: String) -> Bool {
+        body.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasSuffix(marker(to: login).lowercased())
+    }
+}
+
+extension GitHubClient {
+    /// Posts a handoff on an issue as the running user, once: a comment of theirs with the same
+    /// body already there is the answer. Returns whether it posted.
+    @discardableResult
+    public func handOff(to login: String, text: String, repo: String, issue: Int) async throws -> Bool {
+        let body = try Handoff.body(to: login, text: text)
+        let me = try await viewer()
+        struct Thread: Decodable {
+            struct Author: Decodable { let login: String }
+            struct Comment: Decodable { let author: Author?, body: String }
+            let comments: [Comment]
+        }
+        let thread = try JSONDecoder().decode(Thread.self, from: try await gh(["issue", "view", String(issue), "--repo", repo,
+                                                                                "--json", "comments"]))
+        if thread.comments.contains(where: { $0.author?.login.caseInsensitiveCompare(me) == .orderedSame && $0.body == body }) {
+            return false
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-handoff-\(UUID().uuidString).md")
+        try Data(body.utf8).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try await commentOnIssue(repo: repo, number: issue, bodyFile: file)
+        return true
+    }
+}

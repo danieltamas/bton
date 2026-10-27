@@ -63,9 +63,12 @@ public struct IssueAsk: Identifiable, Hashable, Sendable {
     public let commentID: String
     /// Whether an agent may work on it: the issue's author has write access too, as for a PR.
     public let draftable: Bool
+    /// The comment carries a `bton handoff` marker for me: an agent or a teammate sent it on purpose.
+    public let handoff: Bool
 
     public init(repo: String, number: Int, title: String, url: URL, asker: String, askedAt: Date, commentID: String,
-                draftable: Bool = true) {
+                draftable: Bool = true, handoff: Bool = false) {
+        self.handoff = handoff
         self.repo = repo
         self.number = number
         self.title = title
@@ -170,7 +173,8 @@ public enum IssueAsks {
         let entry = entries[index]
         return IssueAsk(repo: issue.repo, number: issue.number, title: issue.title, url: entry.url ?? issue.url,
                         asker: entry.author ?? "ghost", askedAt: entry.createdAt, commentID: entry.id,
-                        draftable: FlowEngine.trustedAssociations.contains(issue.authorAssociation))
+                        draftable: FlowEngine.trustedAssociations.contains(issue.authorAssociation),
+                        handoff: Handoff.isHandoff(entry.body, to: me))
     }
 
     public static func asks(_ issues: [OpenIssue], me: String) -> [IssueAsk] {

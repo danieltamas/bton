@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 1
+    public static let version = 2
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -57,6 +57,14 @@ public enum PRPlaybook {
     the same approach, stop and report the blocker, evidence and next action.
     Missing access or required evidence is blocked, not success. Preserve existing
     changes; keep scratch outside the repo. Do not discard work merely to clean up.
+    8. Only where this task lets you write, and not when Bton posts the result or a
+    stop rule above applies: when it needs a decision or input from a named teammate
+    on an issue, do not leave it for the owner to relay; run one plain command,
+    bton handoff <repo> <issue> --to <login> "<what is needed, the options, your
+    recommendation, a link to the evidence>"
+    The text names no one but the teammate and holds no HTML comment. It posts as the
+    owner, once; "already posted" is success. Never use it for a PR or for anything a
+    flow, label or check already carries.
     Output only the required result: findings, changes, checks and material limits.
     No narration, praise, repeated context or speculative improvements.
     """
