@@ -40,6 +40,12 @@ enum Worktrees {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The commit a prepared tree is at: what a run in it sees, whatever the remote ref says by then.
+    static func head(of worktree: URL, ghPath: String, runner: ProcessRunner) async throws -> String {
+        try await git(["rev-parse", "HEAD"], in: worktree, ghPath: ghPath, runner: runner)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Bton's own tree at `sha`. An earlier job's leftover changes go to the clone's `git stash`,
     /// named after the tree, for a person to look at; refusing instead stopped the tree's every
     /// later job (a build step that rewrites a tracked file leaves such changes on each run).

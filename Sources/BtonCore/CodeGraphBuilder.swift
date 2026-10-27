@@ -60,33 +60,83 @@ public actor CodeGraphBuilder {
         log("graph \(slug): \(reason)")
     }
 
+    /// The graph is built in a copy of the store and published by a swap, so a build that fails
+    /// half-way, or is stopped, leaves the graph every job reads as it was.
     private static func build(slug: String, clone: URL, branch: String, store: URL, python: String, ghPath: String,
                               runner: ProcessRunner, log: @escaping @Sendable (String) -> Void) async throws {
         let worktree = try await Worktrees.prepare(clone: clone, branch: branch, item: item, ghPath: ghPath, runner: runner)
-        let tip = try await Worktrees.tip(of: branch, clone: clone, ghPath: ghPath, runner: runner)
+        // The tree's own commit, not the remote ref: a dispatch fetching beside this build moves the ref.
+        let tip = try await Worktrees.head(of: worktree, ghPath: ghPath, runner: runner)
         if CodeGraph.marker(in: store)?.commit == tip, CodeGraph.isBuilt(store) { return }
-        for checkout in [clone, worktree] {
-            switch try CodeGraph.link(into: checkout, store: store) {
-            case .moved: log("graph \(slug): moved \(checkout.path)/\(CodeGraph.linkName) into \(store.path)")
-            case let .kept(reason): log("graph \(slug): \(checkout.path): \(reason)")
-            case .linked, .alreadyLinked: break
-            }
+        switch try CodeGraph.link(into: clone, store: store) {
+        case .moved: log("graph \(slug): moved \(clone.path)/\(CodeGraph.linkName) into \(store.path)")
+        case let .kept(reason): log("graph \(slug): \(clone.path): \(reason)")
+        case .linked, .alreadyLinked: break
+        }
+        let staging = try stage(store)
+        guard try point(worktree, at: staging) else {
+            log("graph \(slug): not built: \(worktree.path)/\(CodeGraph.linkName) is a file or directory of the tree")
+            return
         }
         let started = Date.now
-        let result: ProcessOutput
         do {
-            result = try await runner.run("/usr/bin/nice", ["-n", String(niceness), python, "-c", script], in: worktree,
-                                          environment: ["GIT_TERMINAL_PROMPT": "0"], timeout: buildTimeout)
+            let result = try await runner.run("/usr/bin/nice", ["-n", String(niceness), python, "-c", script], in: worktree,
+                                              environment: ["GIT_TERMINAL_PROMPT": "0"], timeout: buildTimeout)
+            guard result.status == 0, CodeGraph.isBuilt(staging) else {
+                let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                throw BuildFailure.exited(result.status, String(stderr.suffix(200)))
+            }
+            try publish(staging, as: store)
+            try CodeGraph.writeMarker(.init(commit: tip, at: .now), in: store)
+            log("graph \(slug): built at \(tip.prefix(8)) in \(Int(Date.now.timeIntervalSince(started)))s")
         } catch ProcessRunner.Failure.timedOut {
             log("graph \(slug): build timed out after \(Int(buildTimeout.components.seconds / 60)) minutes")
-            return
+        } catch let BuildFailure.exited(status, stderr) {
+            log("graph \(slug): build failed (exit \(status)): \(stderr)")
         }
-        guard result.status == 0, CodeGraph.isBuilt(store) else {
-            let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            log("graph \(slug): build failed (exit \(result.status)): \(stderr.suffix(200))")
-            return
+        try? FileManager.default.removeItem(at: staging)
+        // Whatever happened, the tree reads the published graph, like every other checkout.
+        if CodeGraph.isBuilt(store) { _ = try point(worktree, at: store) }
+    }
+
+    private enum BuildFailure: Error {
+        case exited(Int32, String)
+    }
+
+    /// A fresh copy of the store beside it (a clone on APFS, so no slower for a large one), for
+    /// the build to write into; graphify's cache and memory come along.
+    private static func stage(_ store: URL) throws -> URL {
+        let files = FileManager.default
+        let staging = URL(fileURLWithPath: store.path + ".next", isDirectory: true)
+        try? files.removeItem(at: staging)
+        if files.fileExists(atPath: store.path) {
+            try files.copyItem(at: store, to: staging)
+        } else {
+            try files.createDirectory(at: staging, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }
-        try CodeGraph.writeMarker(.init(commit: tip, at: .now), in: store)
-        log("graph \(slug): built at \(tip.prefix(8)) in \(Int(Date.now.timeIntervalSince(started)))s")
+        return staging
+    }
+
+    /// The old store steps aside, the staging takes its name: every checkout's link points at the
+    /// name, so they all see the new graph at once.
+    private static func publish(_ staging: URL, as store: URL) throws {
+        let files = FileManager.default
+        let previous = URL(fileURLWithPath: store.path + ".prev", isDirectory: true)
+        try? files.removeItem(at: previous)
+        if files.fileExists(atPath: store.path) { try files.moveItem(at: store, to: previous) }
+        try files.moveItem(at: staging, to: store)
+        try? files.removeItem(at: previous)
+    }
+
+    /// Makes the build tree's `graphify-out` a link to `target`, replacing a link of ours. False
+    /// when the tree has a file or directory of its own there: the build would write elsewhere.
+    private static func point(_ worktree: URL, at target: URL) throws -> Bool {
+        let files = FileManager.default
+        let path = worktree.appendingPathComponent(CodeGraph.linkName)
+        if let type = try? files.attributesOfItem(atPath: path.path)[.type] as? FileAttributeType {
+            guard type == .typeSymbolicLink else { return false }
+            try files.removeItem(at: path)
+        }
+        return try CodeGraph.link(into: worktree, store: target) == .linked
     }
 }
