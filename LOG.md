@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.8.0 (2026-10-27)
+
+**Bton can take a teammate's move for you.** Settings > Repos has a new switch, "Take teammates' moves automatically" (it shows when "Start the flow's moves on every sync" is on). Each sync then does what Take it does for every move you could take, such as a review a teammate was assigned: it assigns the PR to you on GitHub and starts the move. It takes at most two PRs a sync and tries each PR once per owner and head, so it never fights a teammate who takes the PR back. A take is not your press: the flow's checks still run without `BTON_PRESSED`. Off by default.
+
 ## 0.7.4 (2026-10-26)
 
 **Your press counts as a person's decision.** When you start a move yourself (Merge, a move's pill, Retry, Run Next, Take it), the flow's checks and the merge command now see `BTON_PRESSED=1`. A check that guards a person's call, such as "a person merges PRs with migrations", can let your press through and still stop a move the sync starts on its own: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" || git diff --quiet origin/develop...HEAD -- migrations/"]`. Change the check in your repo's `.bton/flow.json` to use it; until then it refuses your press as before.
