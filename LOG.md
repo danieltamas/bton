@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.10.1 (2026-10-27)
+
+**Voice input no longer keeps 3 GB of memory.** With voice on, Bton held the speech model in memory for as long as it ran, about 3 GB for Large v3 turbo. It now lets the model go five minutes after you last opened a new issue or dictated, and loads it again when you open one; if you press the mic after it was let go, the mic shows a spinner for a few seconds while it loads, then records. The first recording after a load is also faster: the warm-up that was meant to prepare the GPU never ran, so that recording paid about 3 seconds for it.
+
 ## 0.10.0 (2026-10-27)
 
 **Dictate new issues, write several at once, and hand a message to a teammate's agent.** New issue has a microphone: press it, speak, press Stop, and the words land in the box for you to edit; nothing is sent until you press Send. Speech is turned into text on this Mac (Settings > Voice downloads the model and checks that your Mac can run it), in pieces while you speak, so Stop returns almost at once. Each new issue is now its own conversation: start as many as you like, they sit in Triage as hatched cards, survive a restart and a reinstall, and show whether their agent is working, waiting or stopped. The agent reads the repo's code map first when the repo has one, keeps its own notes between turns instead of reading the repo again, and runs on Sonnet unless you pick another model in Settings > Agents. The tab bar keeps every count whichever tab is open. Agents can now ask a teammate something without you relaying it: `bton handoff <repo> <issue> --to <login> "<text>"` comments `@login` on the issue, once, and the teammate's Bton shows it in Issues as "handed off" with a draft reply. Agents Bton starts are told to use it; one you start by hand needs the same command.
