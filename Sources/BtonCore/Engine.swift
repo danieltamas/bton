@@ -265,6 +265,17 @@ public actor Engine {
                                                          defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
                                                          runNow: runNow, changedAt: changedAt)
                         .map { ($0, clone, nil) }
+                    // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
+                    if let registry = FeatureJob.candidate(jobs: jobs.all(), repo: read.repo.slug, flow: read.flow,
+                                                           defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
+                                                           agents: config.agents, work: read.repo.work.flatMap(AgentPick.init),
+                                                           registry: snapshot.features[read.repo.slug]?.registry ?? .none,
+                                                           pullRequests: read.pullRequests, merged: read.merged,
+                                                           issues: openIssues[read.repo.slug.lowercased()] ?? [],
+                                                           startsMoves: read.repo.startsMoves,
+                                                           pressed: next.contains(Self.pick(repo: read.repo.slug, item: FeatureJob.item))) {
+                        pending.append((registry, clone, read.flow))
+                    }
                     // One supervisor at a time: the first repo with a flagged job takes this tick's.
                     if !pending.contains(where: { $0.candidate.key.move == Supervision.move }),
                        let supervise = Supervision.candidate(settings: config.supervisor, agents: config.agents, jobs: jobs.all(),
