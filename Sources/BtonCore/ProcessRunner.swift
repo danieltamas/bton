@@ -93,7 +93,7 @@ public enum Executables {
     public static let searchPath: String = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let inherited = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        let extra = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        let extra = ["\(home)/.local/bin", "\(home)/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
         return (inherited + extra.filter { !inherited.contains($0) }).joined(separator: ":")
     }()
 

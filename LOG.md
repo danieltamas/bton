@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.8.1 (2026-10-27)
+
+**A merge that needs `bun` no longer fails with "bun not found".** Bton looks for the programs a repo's commands and checks run in `~/.bun/bin` too, where bun installs itself, so a merge or check that starts with `bun` runs from the menu bar app the way it does in your terminal.
+
 ## 0.8.0 (2026-10-27)
 
 **Bton can take a teammate's move for you.** Settings > Repos has a new switch, "Take teammates' moves automatically" (it shows when "Start the flow's moves on every sync" is on). Each sync then does what Take it does for every move you could take, such as a review a teammate was assigned: it assigns the PR to you on GitHub and starts the move. It takes at most two PRs a sync and tries each PR once per owner and head, so it never fights a teammate who takes the PR back. A take is not your press: the flow's checks still run without `BTON_PRESSED`. Off by default.
