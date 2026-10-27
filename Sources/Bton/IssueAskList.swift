@@ -157,7 +157,8 @@ private struct ReadyIssueRow: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 4)
-                action(job)
+                // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
+                action(job).fixedSize().layoutPriority(2)
             }
         }
         .contextMenu { Button("Open on GitHub") { NSWorkspace.shared.open(issue.url) } }
@@ -242,7 +243,8 @@ private struct IssueAskRow: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 4)
-                action(job)
+                // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
+                action(job).fixedSize().layoutPriority(2)
             }
         }
         // Amber, hatched: an existing issue that waits for your reply, not a ready one or a new draft.
