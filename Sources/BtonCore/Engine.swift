@@ -62,6 +62,9 @@ public actor Engine {
     /// When each merged PR's leftover worktrees were last looked at: a tree someone was still in
     /// is tried again an hour later.
     private var cleaned: [String: Date] = [:]
+    /// The PR, owner and head an automatic Take it already tried: it never retries, or fights a
+    /// teammate who takes the PR back, until the owner or the head changes.
+    var autoTaken: Set<String> = []
 
     public init(home: BtonHome = BtonHome(), log: @escaping @Sendable (String) -> Void = { _ in }) throws {
         try self.init(home: home, github: GitHubClient(), log: log)
@@ -186,6 +189,9 @@ public actor Engine {
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
+                        if read.repo.takesMoves {
+                            await autoTake(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer)
+                        }
                         if let stale = flow.stale {
                             await postStaleNotices(read.pullRequests, stale: stale, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         }

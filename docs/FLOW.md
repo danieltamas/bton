@@ -109,7 +109,9 @@ A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
 shows the owner the row showed, Bton makes this Mac's login the PR's only assignee on GitHub and
 starts the move here. Every Mac then reads the move as this one's; a teammate's Bton that read the
 PR just before and is already starting the move may still run it first, and then this Mac's start
-finds the move done. It is not offered when the move
+finds the move done. A repo with **Take teammates' moves automatically** on (Settings > Repos, needs
+"Start the flow's moves"; `takeMoves` in the config) does this on its own each sync for every move Take it could take, at most two PRs a sync,
+once per PR, owner and head, and without `BTON_PRESSED`. It is not offered when the move
 would then be one the author can't clear, nor for an `author` or named move, which no assignment
 changes.
 

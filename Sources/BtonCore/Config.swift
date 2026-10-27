@@ -100,12 +100,16 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// the repo's PRs, and an agent starts there only from a schedule or a move the owner asked
     /// for (Run now, Merge, Fix conflicts, Retry). Nil is off.
     public var startMoves: Bool?
+    /// true, with `startMoves`: a sync takes a teammate's move that Take it could take (assigns the
+    /// PR to me on GitHub) once per PR, owner and head, then starts it. Nil is off.
+    public var takeMoves: Bool?
     /// A label on each PR while a Bton, on any Mac, holds its lease: teammates without Bton see
     /// which PRs an agent works on. Display only; nothing reads it back. Nil is off.
     public var workLabel: String?
 
     public var resolvesConflicts: Bool { resolveConflicts != false }
     public var startsMoves: Bool { startMoves == true }
+    public var takesMoves: Bool { startsMoves && takeMoves == true }
 
     public init(slug: String, path: String?, branch: String? = nil, environment: [String: String]? = nil) {
         self.slug = slug

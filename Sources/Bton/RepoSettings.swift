@@ -37,6 +37,11 @@ extension AppStore {
         try updateRepo(slug) { $0.startMoves = on ? true : nil }
     }
 
+    /// Whether a sync takes teammates' moves on its own (needs startMoves); nil is off.
+    func setTakeMoves(_ on: Bool, for slug: String) throws {
+        try updateRepo(slug) { $0.takeMoves = on ? true : nil }
+    }
+
     private func updateRepo(_ slug: String, _ change: (inout WatchedRepo) -> Void) throws {
         try update { config in
             for index in config.repos.indices where config.repos[index].slug == slug { change(&config.repos[index]) }

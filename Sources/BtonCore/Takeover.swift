@@ -18,7 +18,8 @@ public enum TakeError: Error, Equatable, LocalizedError {
 extension Engine {
     /// Take it: assigns the PR to me alone on GitHub, under its lease, so every Mac reads the move as
     /// mine, and puts it first in line. Checked against a fresh read of the owner the row showed.
-    public func take(repo: String, number: Int, from owner: String?) async throws -> Move {
+    /// `pressed`: a person asked for it; the sync's own take leaves the checks' `BTON_PRESSED` unset.
+    public func take(repo: String, number: Int, from owner: String?, pressed: Bool = true) async throws -> Move {
         let config = try BtonConfig.loadOrCreate(home: home)
         let branch = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
         // Read before the claim, so a stale row writes nothing, and again under the lease: another
@@ -51,7 +52,7 @@ extension Engine {
             throw error
         }
         await release()
-        runNext(repo: repo, item: item, pressed: true)
+        runNext(repo: repo, item: item, pressed: pressed)
         log("\(repo)#\(number): took \(taken.name) from \(owner ?? "nobody"), assigned \(me)")
         return taken
     }
@@ -68,5 +69,34 @@ extension Engine {
               let taken = FlowEngine.takeover(of: pr, flow: flow, me: read.viewer)
         else { throw TakeError.changed }
         return (read.viewer, pr, taken)
+    }
+}
+
+extension Engine {
+    /// At most this many PRs are taken per sync: a flow change must not reassign a whole queue at once.
+    static let autoTakeLimit = 2
+
+    /// The PRs whose move Take it could take, not yet tried at their owner and head.
+    static func autoTakeable(_ pullRequests: [PullRequest], flow: Flow, me: String, repo: String, tried: Set<String>) -> [PullRequest] {
+        pullRequests.filter { pr in
+            FlowEngine.takeover(of: pr, flow: flow, me: me) != nil && !tried.contains(autoTakeKey(pr, repo: repo))
+        }
+    }
+
+    static func autoTakeKey(_ pr: PullRequest, repo: String) -> String {
+        "\(pick(repo: repo, item: "pr-\(pr.number)"))@\(pr.move?.owner?.lowercased() ?? "")@\(pr.headSha)"
+    }
+
+    /// Takes the teammates' moves a repo with `takeMoves` leaves waiting; a refusal (changed, busy)
+    /// is logged and not retried on this owner and head.
+    func autoTake(_ pullRequests: [PullRequest], flow: Flow, repo: String, me: String) async {
+        for pr in Self.autoTakeable(pullRequests, flow: flow, me: me, repo: repo, tried: autoTaken).prefix(Self.autoTakeLimit) {
+            autoTaken.insert(Self.autoTakeKey(pr, repo: repo))
+            do {
+                _ = try await take(repo: repo, number: pr.number, from: pr.move?.owner, pressed: false)
+            } catch {
+                log("\(repo)#\(pr.number): automatic Take it stopped: \(error.localizedDescription)")
+            }
+        }
     }
 }

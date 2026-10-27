@@ -82,6 +82,9 @@ struct ReposPane: View {
                             RepoSwitch(symbol: "arrow.triangle.branch", title: "Fix conflicts on my PRs automatically",
                                        help: "An agent merges the base into the PR, resolves, tests and pushes. Off: the PR row's Fix conflicts does it.",
                                        isOn: repo.resolvesConflicts, problem: $problem) { try store.setResolveConflicts($0, for: repo.slug) }
+                            RepoSwitch(symbol: "hand.raised", title: "Take teammates' moves automatically",
+                                       help: "A sync assigns a PR to you on GitHub when its move is one Take it could take, then starts it. Once per PR and head. Off: the row's Take it does it.",
+                                       isOn: repo.takesMoves, problem: $problem) { try store.setTakeMoves($0, for: repo.slug) }
                         }
                     } else {
                         Text("No folder yet: nothing is started here until it has one.").font(.meta).foregroundStyle(Theme.unassigned)

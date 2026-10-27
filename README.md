@@ -52,7 +52,7 @@ any CLI you configure. A move of yours that an agent takes (a review, a fix) sho
 a play mark: press it and the agent starts in Bton, no trip to GitHub. Turn on "Start the flow's
 moves on every sync" for a repo and every move that is yours there starts by itself. A review the
 flow gives a teammate as the PR's assignee offers Take it: Bton assigns the PR to you on GitHub
-and starts the move here.
+and starts the move here. "Take teammates' moves automatically" does that on every sync.
 
 **A playbook built in.** Every agent Bton starts follows the same way of working a PR: read the
 diff once, targeted tests first, every finding with evidence, scoped re-reviews, short comments,
