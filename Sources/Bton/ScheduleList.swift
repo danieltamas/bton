@@ -114,7 +114,7 @@ struct ScheduleRow: View {
                     }
                 }
                 if let repo = entry.repo, let item = entry.item, last?.status != .running, store.isNext(repo: repo, item: item) {
-                    StartingLabel(repo: repo)
+                    StartingLabel(repo: repo, reason: store.waitingReason(repo: repo, item: item))
                 } else if let repo = entry.repo, let item = entry.item, last?.status != .running {
                     IconButton(symbol: "play.fill", help: "Run now, or as soon as \(repo) is free", tint: color, size: 26) {
                         Task { await store.runNext(repo: repo, item: item) }

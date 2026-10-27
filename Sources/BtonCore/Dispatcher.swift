@@ -55,6 +55,7 @@ actor Dispatcher {
             guard let lock = LocalLock(jobs.lockURL(job.id)) else { continue }
             locks[job.id] = lock
             guard let pid = job.pid else {
+                jobs.stopChecks(job.id)
                 await finish(job, status: .failed, detail: "Bton stopped before the job started its agent")
                 continue
             }

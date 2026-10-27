@@ -213,13 +213,15 @@ final class PulseView: NSView {
 /// next sync, and the row says so instead of keeping its button.
 struct StartingLabel: View {
     let repo: String
+    /// What the last sync found in its way, once it has looked.
+    var reason: String?
 
     var body: some View {
         HStack(spacing: 5) {
             PulseDot(color: Theme.mint, pulsing: true)
-            Text("starting").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint).lineLimit(1)
+            Text(reason == nil ? "starting" : "waiting").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint).lineLimit(1)
         }
-        .help("Starts at the next sync with a free agent slot in \(repo), once no other job holds it")
+        .help(reason.map { "Not started yet: \($0)" } ?? "Starts at the next sync with a free agent slot in \(repo), once no other job holds it")
     }
 }
 

@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.8.3 (2026-10-27)
+
+**A restart no longer leaves a merge's checks running, and a PR that can't start says why.** When Bton quit in the middle of a merge's checks (installing an update does that), the check and its test run kept going with nothing reading them, held the PR's worktree, and the row sat on "starting" with no way to tell why. A relaunched Bton now stops those leftover checks before it marks the job failed, and a move that has not started shows "waiting" with the reason on hover: another job holds the PR, no agent slot is free, the repo could not be read, or the move is not one Bton can start.
+
 ## 0.8.2 (2026-10-27)
 
 **Take it can't be pressed twice.** While a take is under way the button reads "Taking..." and is dimmed and unpressable, and it stays that way until the row shows the PR as yours, instead of coming back for a moment after the take.

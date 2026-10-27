@@ -99,7 +99,7 @@ private struct PullRequestRow: View {
                             }
                             // A start already asked for still shows while another agent works it.
                             if starting {
-                                StartingLabel(repo: pr.repo)
+                                StartingLabel(repo: pr.repo, reason: store.waitingReason(repo: pr.repo, item: "pr-\(pr.number)"))
                             } else if let buttonStart {
                                 RunNowButton(title: RunNowButton.title(for: buttonStart, failed: store.failedOnHead(pr, move: buttonStart) != nil),
                                              symbol: Theme.symbol(forMove: buttonStart),

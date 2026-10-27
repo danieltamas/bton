@@ -19,6 +19,8 @@ final class AppStore {
     private var refreshAgain = false
     /// Run-next picks waiting for their repo, `owner/name#item` with the repo lowercased.
     private(set) var next: [String] = []
+    /// Why a pick has not started at the last sync, by pick.
+    private(set) var waiting: [String: String] = [:]
     /// The PRs each schedule's agent works on, read from its session every few seconds.
     let work = ScheduleWork()
     let local = LocalSync()
@@ -405,6 +407,7 @@ final class AppStore {
         jobs.first { $0.status == .running && $0.key.repo == pr.repo && work.current[$0.id] == pr.number }
     }
 
+    func waitingReason(repo: String, item: String) -> String? { waiting["\(repo.lowercased())#\(item)"] }
     func isNext(repo: String, item: String) -> Bool { next.contains("\(repo.lowercased())#\(item)") }
 
     /// The row shows "starting" at the click, not after the sync that may already be running.
@@ -446,6 +449,7 @@ final class AppStore {
         prices = PriceList.load(home: home)
         jobs = snapshot.jobs.reversed()
         next = snapshot.next
+        waiting = snapshot.waiting
         problem = snapshot.problem
         loggedOut = snapshot.loggedOut
         // A failed read keeps the last good lists rather than blanking them: every list when the

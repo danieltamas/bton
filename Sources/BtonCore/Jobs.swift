@@ -241,6 +241,25 @@ public struct JobStore: Sendable {
         }
     }
 
+    /// The process group of the check a job's pre-agent phase runs now, one marker file: a check
+    /// is not the agent, so a Bton that quits mid-check leaves it running with no one to read it.
+    public func checkProcessGroups(_ id: UUID) -> [Int32] {
+        let prefix = "\(id.uuidString).check-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.filter { $0.hasPrefix(prefix) }.compactMap { Int32($0.dropFirst(prefix.count)) }
+    }
+
+    func checkGroupURL(_ id: UUID, group: Int32) -> URL { directory.appendingPathComponent("\(id.uuidString).check-\(group)") }
+
+    /// Kills the checks a dead Bton left running for the job, which holds its worktree and would
+    /// run the PR's tests again beside the next start. Only a group still led by its recorded pid.
+    public func stopChecks(_ id: UUID) {
+        for group in checkProcessGroups(id) {
+            if getpgid(group) == group { kill(-group, SIGKILL) }
+            try? FileManager.default.removeItem(at: checkGroupURL(id, group: group))
+        }
+    }
+
     /// Bton's MCP server file for the job's helpers.
     func helpersConfigURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).mcp.json") }
 

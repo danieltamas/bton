@@ -13,6 +13,8 @@ public actor Engine {
         public var at: Date?
         /// The owner's run-next picks still waiting, `owner/name#item`, first to start first.
         public var next: [String] = []
+        /// Why a pick in `next` has not started yet, by pick: what the last sync found.
+        public var waiting: [String: String] = [:]
         /// Repos GitHub couldn't read this tick, slugs lowercased: their last lists still stand.
         public var unread: Set<String> = []
         /// Each read repo's default branch on GitHub (main), by slug.
@@ -65,6 +67,8 @@ public actor Engine {
     /// The PR, owner and head an automatic Take it already tried: it never retries, or fights a
     /// teammate who takes the PR back, until the owner or the head changes.
     var autoTaken: Set<String> = []
+    /// Why each waiting pick did not start at the last sync.
+    private var waiting: [String: String] = [:]
 
     public init(home: BtonHome = BtonHome(), log: @escaping @Sendable (String) -> Void = { _ in }) throws {
         try self.init(home: home, github: GitHubClient(), log: log)
@@ -277,6 +281,13 @@ public actor Engine {
                 next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
+                let refusedPicks = Set(refused.map { Self.pick(repo: $0.repo, item: $0.item) })
+                waiting = Dictionary(next.filter { !started.contains($0) }.map { pick in
+                    (pick, unplanned.contains { pick.hasPrefix($0 + "#") } ? "its repo could not be read this sync"
+                        : refusedPicks.contains(pick) ? "another job or Mac holds the PR's lease, or its job could not be recorded"
+                        : runnable.contains(pick) ? "waiting for a free agent slot (\(config.maxAgents) at most) or its agent to log in"
+                        : "the PR's move is not one Bton can start now")
+                }) { first, _ in first }
                 // A press starts one move: a later move of the same PR the sync starts is not pressed.
                 pressedPicks = pressedPicks.subtracting(started).filter(next.contains)
                 // A request whose lease history says it already ran elsewhere would hold the PR's flow move
@@ -296,6 +307,7 @@ public actor Engine {
         var snapshot = read
         snapshot.jobs = jobs.all()
         snapshot.next = next
+        snapshot.waiting = waiting.filter { next.contains($0.key) }
         snapshot.openPullRequests = snapshot.openPullRequests.map { pr in
             var pr = pr
             pr.cost = Self.total(of: snapshot.jobs, repo: pr.repo, number: pr.number)

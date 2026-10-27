@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A flow's checks and a merge command: run with their output in the job's log, and the PR
 /// re-read that guards the command.
@@ -57,10 +58,17 @@ extension Dispatcher {
         let handle = try FileHandle.appending(to: jobs.logURL(id))
         defer { try? handle.close() }
         handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8))
+        let group = OSAllocatedUnfairLock<Int32?>(initialState: nil)
+        defer { group.withLock { $0 }.map { try? FileManager.default.removeItem(at: jobs.checkGroupURL(id, group: $0)) } }
         do {
             return try await runner.run(executable, Array(argv.dropFirst()), in: directory,
                                         environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath(for: executable)]),
-                                        timeout: timeout, output: { handle.write($0) }).status
+                                        timeout: timeout,
+                                        started: { [jobs] pid in
+                                            group.withLock { $0 = pid }
+                                            FileManager.default.createFile(atPath: jobs.checkGroupURL(id, group: pid).path, contents: nil)
+                                        },
+                                        output: { handle.write($0) }).status
         } catch ProcessRunner.Failure.timedOut {
             throw DispatchError.timedOut(argv.joined(separator: " "), minutes: Int(timeout.components.seconds / 60))
         }
