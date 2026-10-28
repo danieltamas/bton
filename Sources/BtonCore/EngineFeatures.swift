@@ -14,6 +14,9 @@ public struct FeatureReport: Sendable, Equatable {
     /// The latest `live` date across features; nil without a `release` section.
     public var lastRelease: Date?
     public var hasRelease: Bool
+    /// The registry job's PR the registry was read from, while the base has none and the PR is
+    /// open: the page shows what the job made before the team merges it.
+    public var previewPullRequest: Int?
     public var readAt: Date?
     /// Why the registry or its facts could not be read this time; the rest is from the last
     /// good read.
@@ -42,7 +45,7 @@ extension Engine {
 
     /// The repo's report for this tick: the registry from the branch PRs merge into, the facts
     /// when due, the standings always. Its own failure never marks the repo unread.
-    func readFeatures(repo: WatchedRepo, flow: Flow?, defaultBranch: String, merged: [MergedPullRequest],
+    func readFeatures(repo: WatchedRepo, flow: Flow?, defaultBranch: String, viewer: String, merged: [MergedPullRequest],
                       pullRequests: [PullRequest]) async -> FeatureReport {
         let key = repo.slug.lowercased()
         var state = featureStates[key] ?? FeatureState()
@@ -51,9 +54,16 @@ extension Engine {
         let to = flow?.release?.to ?? defaultBranch
         var report: FeatureReport
         do {
-            let data = try await github.file(repo: repo.slug, path: FeatureRegistry.relativePath, branch: repo.branch)
+            var data = try await github.file(repo: repo.slug, path: FeatureRegistry.relativePath, branch: repo.branch)
+            var preview: Int?
+            // The base has none yet and the job's PR is open: its branch's file, marked as such.
+            if data == nil, let pr = FeatureJob.openPullRequest(pullRequests, repo: repo.slug, me: viewer) {
+                data = try await github.file(repo: repo.slug, path: FeatureRegistry.relativePath, branch: pr.headRef)
+                preview = data == nil ? nil : pr.number
+            }
             let status = FeatureRegistry.load(data)
             report = FeatureReport(repo: repo.slug, registry: status, hasRelease: hasRelease)
+            report.previewPullRequest = preview
             if let registry = status.registry {
                 let hash = data?.hashValue ?? 0
                 if Self.factsDue(state, hash: hash, merged: merged, issues: openIssues[key] ?? [], now: .now) {
@@ -70,6 +80,7 @@ extension Engine {
                     if let problem = git.problem { throw FeatureGit.Failure(command: "", reason: problem) }
                 }
                 report = Self.report(repo: repo.slug, registry: registry, facts: state.facts, git: git, base: base, hasRelease: hasRelease)
+                report.previewPullRequest = preview
             }
             report.readAt = .now
             state.lastProblem = nil

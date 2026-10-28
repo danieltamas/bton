@@ -28,7 +28,7 @@ struct RepoPage: View {
                     scopes(report)
                 }
                 if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
-                content(report).releaseAction(slug: slug, report: report)
+                content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
             }
             .padding(.top, 2)
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -67,6 +67,9 @@ struct RepoPage: View {
                 }
                 if let line = report?.release.flatMap(FeaturePage.releaseLine) {
                     Text(line.text).font(.meta).foregroundStyle(line.amber ? Theme.unassigned : Theme.textSecondary).lineLimit(2)
+                }
+                if let number = report?.previewPullRequest {
+                    Text("From PR #\(number), not merged yet").font(.meta).foregroundStyle(Theme.unassigned).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
@@ -140,16 +143,18 @@ struct RepoPage: View {
 }
 
 extension RepoPage {
-    /// The code graph the job draws the areas from: its switch, right here, and what graphify is.
+    /// The code graph the job draws the areas from: its switch, right here, and what graphify is,
+    /// until the graph is built.
     @ViewBuilder fileprivate var graphRow: some View {
-        if let readiness = store.graphReadiness(slug) {
+        if let readiness = store.graphReadiness(slug), readiness != .ready {
             VStack(spacing: 6) {
                 RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
                            help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes.",
                            isOn: readiness != .off, problem: $problem) { try store.setCodeGraph($0, for: slug) }
-                Text(Self.graphNote(readiness))
-                    .font(.meta).foregroundStyle(readiness == .missingPython ? Theme.danger : Theme.textTertiary)
-                    .multilineTextAlignment(.center)
+                if let note = Self.graphNote(readiness) {
+                    Text(note).font(.meta).foregroundStyle(readiness == .missingPython ? Theme.danger : Theme.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
                 if readiness == .building { GraphBuildProgress(slug: slug) }
                 if let problem { ProblemText(text: problem) }
             }
@@ -158,12 +163,12 @@ extension RepoPage {
     }
 
     /// One line under the switch: what graphify does, and where the graph stands.
-    static func graphNote(_ readiness: CodeGraph.Readiness) -> String {
+    static func graphNote(_ readiness: CodeGraph.Readiness) -> String? {
         switch readiness {
         case .off: "graphify maps the code into modules and their links; the job needs it for the areas."
         case .missingPython: "graphify's Python not found: set it in Settings > Agents."
         case .building: "graphify is mapping the code; the job starts when the graph is built."
-        case .ready: "The graphify graph is built; Bton rebuilds it when the branch moves."
+        case .ready: nil
         }
     }
 
@@ -235,6 +240,25 @@ private struct GraphBuildProgress: View {
                     .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
             }
             .id(context.date)
+        }
+    }
+}
+
+extension View {
+    /// Over a registry read from the job's open PR: the way to that PR, where the release pill
+    /// would be (a release needs a merged registry, so the two never meet).
+    @ViewBuilder func registryPreviewAction(store: AppStore, slug: String, report: FeatureReport?) -> some View {
+        if report?.previewPullRequest != nil, let pr = store.registryPullRequest(slug) {
+            contentMargins(.bottom, 64, for: .scrollContent)
+                .overlay(alignment: .bottomTrailing) {
+                    PillButton(title: "Registry PR #\(pr.number) open", symbol: "arrow.up.right", prominent: false) {
+                        NSWorkspace.shared.open(pr.url)
+                    }
+                    .help("The registry is in \(pr.title): the page shows it before the merge")
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 4).padding(.trailing, 14).padding(.bottom, 12)
+                }
+        } else {
+            self
         }
     }
 }

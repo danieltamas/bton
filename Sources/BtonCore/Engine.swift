@@ -190,7 +190,7 @@ public actor Engine {
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
                     await readIssues(repo.slug)
                     snapshot.features[repo.slug] = await readFeatures(repo: repo, flow: status.flow, defaultBranch: read.defaultBranch,
-                                                                      merged: merged, pullRequests: pullRequests)
+                                                                      viewer: read.viewer, merged: merged, pullRequests: pullRequests)
                 } catch {
                     failures.append("\(repo.slug): \(error.localizedDescription)")
                     unread.insert(repo.slug.lowercased())
