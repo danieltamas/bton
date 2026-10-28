@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.13.1 (2026-10-28)
 
 **Agents are told about the code graph every time, told how, and the job log shows whether they used it.** A worktree whose `graphify-out` already pointed at the clone's own link (a team hook does that) counted as "linked elsewhere", so the agent got no word of the graph and a registry job refused to start; the link is now followed to its end. The playbook (v4) says to locate definitions and callers with `graphify-src "<question>"` before searching the tree, and the registry job gets the exact first command. When the job ends, Bton reads the agent's own transcript (Claude) or the codex sessions of the worktree and notes `graph queries: n` in the job log, or `unknown` when there is nothing to read, so a job that grepped instead is visible.
 
