@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 3
+    public static let version = 4
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -33,7 +33,10 @@ public enum PRPlaybook {
     CI once. If the dispatched head differs, stop as stale.
     2. Plan reads internally: fetch required PR metadata together, then the diff
     once, then only relevant definitions, callers, tests and trusted referenced
-    rules. Batch independent reads when supported, but use one plain command per
+    rules. When the instructions name a code graph (graphify-out), locate those
+    definitions and callers with graphify-src "<question>" first and search the
+    tree only for what it does not answer.
+    Batch independent reads when supported, but use one plain command per
     Bash call: no pipes, &&, semicolons, substitutions or cd. Recover truncated
     ranges explicitly. Keep a compact evidence map; reread only changed or missing
     evidence. Do not scan the whole repo or discussion without a concrete question.

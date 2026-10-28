@@ -67,6 +67,41 @@ struct CodeGraphStoreAcceptanceTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == elsewhere.path)
     }
 
+    @Test func linkKeepsTwoHopSymlinkToStore() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let other = f.root.appendingPathComponent("other/graphify-out")
+        try FileManager.default.createDirectory(at: other.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: other, withDestinationURL: f.store)
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: other)
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .alreadyLinked)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == other.path)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: other.path) == f.store.path)
+    }
+
+    @Test func linkKeepsRelativeSymlinkToStore() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let destination = "../home/graphs/synthetic__project"
+        try FileManager.default.createSymbolicLink(atPath: f.link.path, withDestinationPath: destination)
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .alreadyLinked)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == destination)
+    }
+
+    @Test func linkKeepsTwoHopSymlinkToDifferentDirectory() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let elsewhere = f.root.appendingPathComponent("elsewhere")
+        let other = f.root.appendingPathComponent("other-link")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: other, withDestinationURL: elsewhere)
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: other)
+        guard case .kept = try CodeGraph.link(into: f.checkout, store: f.store) else {
+            Issue.record("expected kept for a final target elsewhere"); return
+        }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == other.path)
+    }
+
     @Test func markerRoundTrips() throws {
         let f = try fixture()
         defer { try? FileManager.default.removeItem(at: f.root) }

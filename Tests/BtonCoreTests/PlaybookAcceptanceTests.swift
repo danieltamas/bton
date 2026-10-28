@@ -23,6 +23,13 @@ struct PlaybookAcceptanceTests {
         }
     }
 
+    @Test(arguments: ["custom-move", "review", "fix", "resolve", "decide", "schedule", "features"])
+    func everyMoveIncludesConcreteGraphQuery(move: String) {
+        let text = PRPlaybook.text(for: move)
+        #expect(text.contains("graphify-src \"<question>\""))
+        #expect(text.contains("graphify-out"))
+    }
+
     @Test func scheduleGetsQueueAndEveryMove() {
         let text = PRPlaybook.text(for: "schedule")
         #expect(text.hasPrefix(PRPlaybook.text(for: "custom-move") + "\n\n"))

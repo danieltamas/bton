@@ -189,6 +189,33 @@ public enum CodexSessions {
         return totals
     }
 
+    /// The shell commands those same sessions ran, one text per call: an `exec` call's script
+    /// (`cmd:"..."` fragments) or a `shell` call's arguments. nil when the window has no session
+    /// of the worktree, so an unreadable history is never a count of zero.
+    public static func commands(inWorktree worktree: String, from start: Date, to end: Date,
+                                sessionsRoot: URL = sessionsRoot) -> [String]? {
+        let root = URL(fileURLWithPath: worktree).standardizedFileURL.path
+        let owns = { (cwd: String) in
+            (cwd == root || cwd.hasPrefix(root + "/")) && !cwd.hasPrefix(root + "/.worktrees/")
+        }
+        var commands: [String]? = nil
+        for file in files(from: start, to: end, sessionsRoot: sessionsRoot) {
+            guard let meta = try? meta(of: file), let started = meta.started, started >= start, started <= end,
+                  owns(meta.cwd), let data = try? Data(contentsOf: file) else { continue }
+            var found: [String] = []
+            for line in data.split(separator: UInt8(ascii: "\n")) {
+                guard let payload = (try? JSONDecoder().decode(Line.self, from: Data(line)))?.payload else { continue }
+                switch (payload.type, payload.name) {
+                case ("custom_tool_call", "exec"): if let input = payload.input { found.append(input) }
+                case ("function_call", "shell"), ("function_call", "shell_command"): if let arguments = payload.arguments { found.append(arguments) }
+                default: continue
+                }
+            }
+            commands = (commands ?? []) + found
+        }
+        return commands
+    }
+
     private struct Line: Decodable {
         struct Payload: Decodable {
             struct Info: Decodable {
@@ -198,6 +225,7 @@ public enum CodexSessions {
                 let total_token_usage: Usage?
             }
             let type: String?, cwd: String?, timestamp: String?, model: String?, info: Info?
+            let name: String?, input: String?, arguments: String?
         }
         let type: String?, payload: Payload?
     }

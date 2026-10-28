@@ -124,8 +124,10 @@ public enum CodeGraph {
         if let type = try? files.attributesOfItem(atPath: path.path)[.type] as? FileAttributeType {
             switch type {
             case .typeSymbolicLink:
+                // Followed to the end: a team's own hook may link the worktree to the clone's
+                // graphify-out, which is itself a link to the store.
                 let target = try files.destinationOfSymbolicLink(atPath: path.path)
-                let same = URL(fileURLWithPath: target).standardizedFileURL.path == store.standardizedFileURL.path
+                let same = path.resolvingSymlinksInPath().standardizedFileURL.path == store.resolvingSymlinksInPath().standardizedFileURL.path
                 return same ? .alreadyLinked : .kept("\(linkName) links to \(target)")
             case .typeDirectory:
                 guard !isBuilt(store) else { return .kept("\(linkName) is a directory and the store already has a graph") }

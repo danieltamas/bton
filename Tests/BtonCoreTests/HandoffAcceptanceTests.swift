@@ -105,8 +105,8 @@ struct HandoffAcceptanceTests {
         #expect(PRPlaybook.text(for: move).contains("bton handoff"))
     }
 
-    @Test func playbookVersionIsThree() {
-        #expect(PRPlaybook.version == 3)
+    @Test func playbookVersionIsFour() {
+        #expect(PRPlaybook.version == 4)
     }
 
     @Test func emptyInboxHasNoIssue() throws {

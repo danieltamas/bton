@@ -220,6 +220,8 @@ struct FeatureJobAcceptanceTests {
                      "closes", "feature", "branch", "label", "files", "title", "Feature: <id>"] {
             #expect(prompt.contains(text))
         }
+        #expect(prompt.components(separatedBy: "\n").contains {
+            $0.lowercased().contains("code graph") && $0.contains("graphify-src \"") })
         let lower = prompt.lowercased()
         #expect(lower.contains("open") && lower.contains("closed") && lower.contains("merged"))
         #expect(lower.contains("updated") && lower.contains("since"))

@@ -448,6 +448,7 @@ actor Dispatcher {
         }
         job.endedAt = .now
         await refreshCost(&job)
+        if let count = await graphQueries(of: job) { jobs.note(job.id, "graph queries: \(count)") }
         let flags = Watchdog.flags(for: job, among: jobs.all())
         job.flags = flags.isEmpty ? nil : flags
         try? jobs.save(job)
@@ -472,6 +473,21 @@ actor Dispatcher {
         try? FileManager.default.removeItem(at: jobs.environmentURL(job.id))
         log("\(job.key): job \(job.id.uuidString) \(job.status.rawValue)\(job.detail.map { " (\($0))" } ?? "")")
         jobEnded?()
+    }
+
+    /// How often the agent asked the code graph, for a job whose worktree had one: Claude's own
+    /// transcript or the codex sessions of the worktree. "unknown" when neither can be read, so
+    /// a missing transcript never reads as an agent that searched the tree instead.
+    private func graphQueries(of job: Job) async -> String? {
+        guard let worktree = job.worktree,
+              FileManager.default.fileExists(atPath: URL(fileURLWithPath: worktree).appendingPathComponent(CodeGraph.linkName).path)
+        else { return nil }
+        let (id, start, end) = (job.id, job.startedAt, job.endedAt ?? .now)
+        let count = await Task.detached(priority: .utility) { () -> Int? in
+            if let file = ClaudeSessions.sessionFile(id: id), let count = GraphUse.queries(inClaudeSessionFile: file) { return count }
+            return GraphUse.queries(inCodexWorktree: worktree, from: start, to: end)
+        }.value
+        return count.map(String.init) ?? "unknown"
     }
 
     /// The agent's own session plus every codex run inside its worktree, so a Claude agent that
