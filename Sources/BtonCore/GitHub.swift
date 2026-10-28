@@ -231,12 +231,92 @@ public struct GitHubClient: Sendable {
             reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } } } }
             comments(last: 100) { nodes { author { login } authorAssociation body createdAt } }
             commits(last: 10) { nodes { commit { oid committedDate parents(first: 5) { nodes { oid } } } } }
+            headCommit: commits(last: 1) { nodes { commit { statusCheckRollup { \(rollupFields) } } } }
             files(first: 100) { totalCount nodes { path } }
           }
         }
       }
     }
     """
+
+    /// The checks of one commit, as both queries read them.
+    static let rollupFields = """
+    contexts(first: 50) { totalCount nodes { __typename ... on CheckRun { name status conclusion startedAt } ... on StatusContext { context state } } }
+    """
+
+    /// The checks on one commit, for the read right before a gated command.
+    public static let checksQuery = """
+    query($owner: String!, $name: String!, $oid: GitObjectID!) {
+      repository(owner: $owner, name: $name) {
+        object(oid: $oid) { ... on Commit { statusCheckRollup { \(rollupFields) } } }
+      }
+    }
+    """
+
+    /// The checks on `sha` now. Throws when GitHub does not know the commit or the read fails:
+    /// a gate never passes on a guess.
+    public func checks(repo: String, sha: String) async throws -> (checks: [CheckResult], truncated: Bool) {
+        let parts = repo.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { throw Failure.ghFailed(status: 1, stderr: "not an owner/name repo: \(repo)") }
+        return try Self.decodeChecks(try await gh(["api", "graphql", "-f", "query=\(Self.checksQuery)",
+                                                   "-F", "owner=\(parts[0])", "-F", "name=\(parts[1])", "-F", "oid=\(sha)"]))
+    }
+
+    public static func decodeChecks(_ data: Data) throws -> (checks: [CheckResult], truncated: Bool) {
+        struct Response: Decodable {
+            struct Payload: Decodable { let repository: Repository }
+            struct Repository: Decodable { let object: Object? }
+            struct Object: Decodable { let statusCheckRollup: Rollup? }
+            let data: Payload
+        }
+        guard let object = try decoder.decode(Response.self, from: data).data.repository.object else {
+            throw Failure.ghFailed(status: 1, stderr: "GitHub does not know the commit")
+        }
+        return reduce(object.statusCheckRollup)
+    }
+
+    /// GitHub's rollup of check runs and statuses on a commit.
+    struct Rollup: Decodable {
+        struct Contexts: Decodable { let totalCount: Int?; let nodes: [Context] }
+        struct Context: Decodable {
+            let name: String?, status: String?, conclusion: String?, startedAt: Date?
+            let context: String?, state: String?
+        }
+        let contexts: Contexts?
+    }
+
+    /// One result per name, the newest run of a name winning; nothing is read as green that
+    /// GitHub did not call SUCCESS.
+    static func reduce(_ rollup: Rollup?) -> (checks: [CheckResult], truncated: Bool) {
+        guard let contexts = rollup?.contexts else { return ([], false) }
+        var newest: [String: (started: Date?, state: CheckResult.State)] = [:]
+        var order: [String] = []
+        for node in contexts.nodes {
+            let name: String, state: CheckResult.State
+            if let runName = node.name {
+                name = runName
+                state = node.status != "COMPLETED" ? .pending : node.conclusion == "SUCCESS" ? .success : .failure
+            } else if let context = node.context {
+                name = context
+                state = node.state == "SUCCESS" ? .success : ["PENDING", "EXPECTED"].contains(node.state ?? "") ? .pending : .failure
+            } else { continue }
+            if let earlier = newest[name] {
+                // A run without a start is the one just created: it is the newest, wherever it
+                // sits in the list; between two dated runs the later start wins.
+                switch (node.startedAt, earlier.started) {
+                case (nil, _): newest[name] = (nil, state)
+                case (_, nil): break
+                case let (started?, before?) where started > before: newest[name] = (started, state)
+                default: break
+                }
+            } else {
+                order.append(name)
+                newest[name] = (node.startedAt, state)
+            }
+        }
+        let truncated = (contexts.totalCount ?? contexts.nodes.count) > contexts.nodes.count
+        return (order.map { CheckResult(name: $0, state: newest[$0]!.state) }, truncated)
+    }
 
     private struct OpenResponse: Decodable {
         struct Payload: Decodable { let viewer: Author; let repository: Repository }
@@ -250,7 +330,12 @@ public struct GitHubClient: Sendable {
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
             let reviewRequests: Nodes<ReviewRequest>?
             let commits: Nodes<CommitNode>?
+            let headCommit: Nodes<HeadCommit>?
             let files: Files?
+        }
+        struct HeadCommit: Decodable {
+            struct Commit: Decodable { let statusCheckRollup: Rollup? }
+            let commit: Commit
         }
         struct Files: Decodable { let totalCount: Int; let nodes: [Path] }
         /// A team's request decodes as a reviewer without a login.
@@ -317,6 +402,7 @@ public struct GitHubClient: Sendable {
             pr.changedFilesTruncated = row.files.map { $0.totalCount > $0.nodes.count } ?? true
             // Unanswered counts as a fork: a branch pair alone never names the release PR.
             pr.isCrossRepository = row.isCrossRepository ?? true
+            (pr.checks, pr.checksTruncated) = Self.reduce(row.headCommit?.nodes.first?.commit.statusCheckRollup)
             pr.conflicting = row.mergeable == "CONFLICTING"
             pr.mergeable = row.mergeable == "MERGEABLE"
             pr.btonMarkers = Set(row.comments.nodes.flatMap { BtonMarker.keys(in: $0.body) })

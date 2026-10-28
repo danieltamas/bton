@@ -68,6 +68,14 @@ public struct Flow: Decodable, Sendable {
                     return .invalid("tier.paths.\(tier): \(bad) is not a glob (no negation, no empty pattern)")
                 }
             }
+            for (index, rule) in flow.moves.enumerated() {
+                // Any other unknown predicate never holds and the flow stays valid: an older Bton
+                // must not refuse a flow for a predicate it does not know yet.
+                let prefix = FlowEngine.checksPredicate
+                if rule.when.contains(where: { ($0 == prefix || $0.hasPrefix(prefix + ":")) && FlowEngine.checkNames(String($0.dropFirst(prefix.count + 1))) == nil }) {
+                    return .invalid("moves[\(index)].when: \(prefix) needs at least one check name")
+                }
+            }
             for (move, rule) in flow.dispatch {
                 if rule.command != nil && (rule.agent != nil || rule.prompt != nil) {
                     return .invalid("dispatch.\(move): a move runs a command or an agent, not both")

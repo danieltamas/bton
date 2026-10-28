@@ -112,9 +112,13 @@ A killed or timed-out file never drops its DBs; the two trial runs above added s
 
 Acceptance tests for items 2-5: `Tests/BtonCoreTests/MergeFixesAcceptanceTests.swift`.
 
-1. **A "required checks green at this head" gate.** A `beforeMerge` kind (or a `when` condition) that
-   reads the head commit's check runs on GitHub instead of running a command. Fail closed on pending,
-   missing, failed, or an API error. This is what makes lexito item 1 possible.
+1. **Done (0.15.0): a "required checks green at this head" gate.** The predicate
+   `checks_green:<name,...>` (docs/FLOW.md "Predicates") reads the head commit's check runs from the
+   same GraphQL read as the PR, so the merge move is not due until they are green, and the command
+   re-reads them on the exact head right before it runs. Fail closed on pending, missing, failed,
+   truncated, a PR that edits a workflow, or an API error. Lexito's merge rule becomes
+   `["approved_current_head", "checks_green:gate"]` and its `beforeMerge` drops `check.sh --fast`.
+   Acceptance tests: `Tests/BtonCoreTests/ChecksGreenAcceptanceTests.swift`.
 2. **Done: no blind retry of a timed-out command move.** This is what cost #406 its extra 10 minutes:
    the supervisor answered "retry" with a note no one reads (a command move has no agent), and the same
    check timed out again. Now a command time-out is flagged `timedOut` like an agent's, a supervisor

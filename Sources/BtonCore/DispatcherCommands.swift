@@ -48,6 +48,41 @@ extension Dispatcher {
         return nil
     }
 
+    /// Why the command must not run, or nil when every check the move's rule named is green on
+    /// GitHub for `head` now. The tick's snapshot is minutes old by the time the checks above
+    /// have run; a re-run that failed since, or a check that was still pending, must not merge.
+    /// A failed read refuses too; a Stop during it is thrown.
+    func checksRefusal(_ required: [String], pr: PullRequest, head: String, job id: UUID) async throws -> String? {
+        guard !required.isEmpty else { return nil }
+        let repo = pr.repo
+        // The same guard as the predicate's, for the owner's Merge press too: a PR that edits a
+        // workflow ran its own check, and a file list cut short may hide such an edit.
+        if pr.changedFilesTruncated { return "checks not trusted: the PR changes more files than were read; nothing was run" }
+        if let workflow = pr.changedFiles.first(where: { $0.hasPrefix(".github/workflows/") }) {
+            return "checks not trusted: the PR edits \(workflow), which ran them; nothing was run"
+        }
+        let now: (checks: [CheckResult], truncated: Bool)
+        do {
+            now = try await github.checks(repo: repo, sha: head)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return "could not read checks on \(head.prefix(7)) before the command; nothing was run"
+        }
+        let states = Dictionary(now.checks.map { ($0.name, $0.state) }) { first, _ in first }
+        var notGreen = required.compactMap { name -> String? in
+            switch states[name] {
+            case .success: nil
+            case let .some(state): "\(name) \(state.rawValue)"
+            case nil: "\(name) missing"
+            }
+        }
+        if now.truncated { notGreen.append("more checks than were read") }
+        guard notGreen.isEmpty else { return "checks not green: \(notGreen.joined(separator: ", ")); nothing was run" }
+        jobs.note(id, "checks \(required.joined(separator: ", ")) green on \(head.prefix(7)) before the command")
+        return nil
+    }
+
     func runLogged(_ argv: [String], in directory: URL, job id: UUID, environment: [String: String],
                    timeout: Duration) async throws -> Int32 {
         guard let first = argv.first, let executable = Executables.resolve(first) else {

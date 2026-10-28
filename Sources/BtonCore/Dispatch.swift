@@ -50,6 +50,9 @@ public struct DispatchCandidate: Sendable {
     public var cooldown: TimeInterval?
     /// The run's own checks instead of the flow's (the release's); an empty list runs none.
     public var checks: [[String]]?
+    /// GitHub checks the move's rule waits on (`checks_green:`): read again on the exact head
+    /// right before the command, which runs only when every one is green.
+    public var requiredChecks: [String] = []
     /// The branch the trusted command worktree is made from instead of the flow's base (the
     /// release merges into `to`).
     public var commandBase: String?
@@ -79,7 +82,9 @@ public enum DispatchPlanner {
             guard let move = FlowEngine.move(for: pr, flow: flow),
                   FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me),
                   let rule = flow.dispatch[move.name] else { return nil }
-            return candidate(pr, move: move, rule: rule, repo: repo)
+            var made = candidate(pr, move: move, rule: rule, repo: repo)
+            made.requiredChecks = FlowEngine.requiredChecks(for: pr, flow: flow)
+            return made
         }
     }
 
@@ -90,7 +95,9 @@ public enum DispatchPlanner {
                         tier: pr.move?.tier ?? FlowEngine.tier(of: pr, rule: flow.tier), hasDispatch: true)
         guard let rule = flow.dispatch[move.name], pr.author.caseInsensitiveCompare(me) == .orderedSame,
               pr.mergeable, !pr.isDraft, FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
-        return candidate(pr, move: move, rule: rule, repo: repo)
+        var made = candidate(pr, move: move, rule: rule, repo: repo)
+        made.requiredChecks = FlowEngine.requiredChecks(ofMove: move.name, flow: flow)
+        return made
     }
 
     /// Bton's own resolve on a PR of mine that conflicts with its base, whatever the flow's move:

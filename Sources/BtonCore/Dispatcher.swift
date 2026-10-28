@@ -252,10 +252,15 @@ actor Dispatcher {
                 jobs.note(job.id, "command runs in \(trusted.path), \(base) as merged")
                 // Last, so only seconds separate the read from the command; the command pins `{head}`
                 // to close those.
-                if let pr = candidate.pr,
-                   let refusal = try await headRefusal(repo: candidate.key.repo, pr: pr.number, expected: candidate.key.head, job: job.id) {
-                    _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
-                    return await finish(job, status: .failed, detail: refusal)
+                if let pr = candidate.pr {
+                    var refusal = try await headRefusal(repo: candidate.key.repo, pr: pr.number, expected: candidate.key.head, job: job.id)
+                    if refusal == nil {
+                        refusal = try await checksRefusal(candidate.requiredChecks, pr: pr, head: candidate.key.head, job: job.id)
+                    }
+                    if let refusal {
+                        _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
+                        return await finish(job, status: .failed, detail: refusal)
+                    }
                 }
                 job.review = reviewTarget(for: candidate, flow: flow)
                 let out = jobs.outputURL(job.id).appendingPathExtension("post")

@@ -52,6 +52,11 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public var changedFilesTruncated = false
     /// The head lives in another repository (a fork): its branch names say nothing about this repo's.
     public var isCrossRepository = false
+    /// GitHub's checks on the head commit (check runs and commit statuses), one per name: a
+    /// re-run replaces the older run of the same name. Empty when the commit has none.
+    public var checks: [CheckResult] = []
+    /// GitHub listed more checks than were read: `checks_green` never holds on a guess.
+    public var checksTruncated = false
 
     public init(repo: String, number: Int, title: String, author: String, authorAssociation: String, url: URL,
                 headSha: String, headRef: String, baseRef: String, body: String, isDraft: Bool, labels: [String],
@@ -72,6 +77,22 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
         self.comments = comments
         self.updatedAt = updatedAt
         self.move = move
+    }
+}
+
+/// One of GitHub's checks on a commit, reduced to what a gate needs.
+public struct CheckResult: Hashable, Sendable {
+    public let name: String
+    public let state: State
+
+    /// `success` is a completed check run that concluded SUCCESS, or a SUCCESS status; `pending`
+    /// one still running (or an EXPECTED status); anything else, including neutral, skipped and
+    /// cancelled, is `failure`: a gate that reads SKIPPED as green would pass a check that never ran.
+    public enum State: String, Hashable, Sendable { case success, pending, failure }
+
+    public init(name: String, state: State) {
+        self.name = name
+        self.state = state
     }
 }
 

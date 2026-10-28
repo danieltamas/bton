@@ -140,6 +140,43 @@ public enum FlowEngine {
                     labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt, tierReason: verdict.reason)
     }
 
+    static let checksPredicate = "checks_green"
+
+    /// The names of a `checks_green:` predicate, comma-separated and trimmed; nil when any is
+    /// empty, so `checks_green:` gates nothing open.
+    static func checkNames(_ list: String) -> [String]? {
+        let names = list.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        return names.isEmpty || names.contains("") ? nil : names
+    }
+
+    /// The checks a rule's `checks_green:` predicates name, in order of first appearance.
+    static func requiredChecks(of rule: MoveRule) -> [String] {
+        var names: [String] = []
+        for predicate in rule.when where predicate.hasPrefix(checksPredicate + ":") {
+            for name in checkNames(String(predicate.dropFirst(checksPredicate.count + 1))) ?? [] where !names.contains(name) {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    /// The GitHub checks the PR's move waits on: the command re-reads them on the exact head right
+    /// before it runs. Empty when the producing rule has no `checks_green:` or no rule matches.
+    public static func requiredChecks(for pr: PullRequest, flow: Flow) -> [String] {
+        rule(for: pr, flow: flow).map(requiredChecks(of:)) ?? []
+    }
+
+    /// The checks every rule for `move` names: the owner's Merge press at any move is gated by
+    /// the flow's merge rules too.
+    public static func requiredChecks(ofMove move: String, flow: Flow) -> [String] {
+        var names: [String] = []
+        for rule in flow.moves where rule.move == move {
+            for name in requiredChecks(of: rule) where !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
     /// The rule's `label:` conditions that no other rule names: removing one ends this move and
     /// can't skip or start another.
     static func completionLabels(of rule: MoveRule, in flow: Flow) -> [String] {
@@ -246,6 +283,13 @@ public enum FlowEngine {
             case let ("changes_rounds_at_least", count?):
                 guard let latest, latest.verdict != .approve, let needed = Int(count) else { return false }
                 return rounds.filter { $0.verdict != .approve }.count >= needed
+            case let ("checks_green", names?):
+                // A `pull_request` workflow runs the PR's copy of the workflow file, so a PR that
+                // edits one is not vouched for by its own check; more checks than were read, or
+                // more files, is a guess, and a gate never passes on a guess.
+                guard let names = FlowEngine.checkNames(names), !pr.checksTruncated, !pr.changedFilesTruncated,
+                      !pr.changedFiles.contains(where: { $0.hasPrefix(".github/workflows/") }) else { return false }
+                return names.allSatisfy { name in pr.checks.contains { $0.name == name && $0.state == .success } }
             default:
                 // An unknown predicate never holds, so a typo in a flow never starts anything.
                 return false

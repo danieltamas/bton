@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A flow can let CI be the merge gate.** A move's `when` takes `checks_green:<name>[,<name>...]`: it holds when every named GitHub check (a check run, or a commit status) is green on the head commit, read in the same GitHub read as the PR. A merge rule `["approved_current_head", "checks_green:gate"]` lets `beforeMerge` drop the suite CI already ran on that head (on lexito about 4 minutes per merge, and the Mac's CPU while agents run beside it); until CI is green the merge is not due, and no job is made or comment posted. Right before the merge command Bton reads the checks again on the exact head and refuses when any is pending, failed, missing, or the read fails. Pending, cancelled, skipped and neutral are not green, nor is a head with more checks than were read, nor a PR that edits a file under `.github/workflows/`, since its own workflow ran the check. The owner's Merge press is gated the same way. Put a human move after the merge rule (`{ "move": "ci", "when": ["approved_current_head"], "who": "author" }`) so the row says what the PR waits for.
+
 ## 0.14.1 (2026-10-29)
 
 **A flow can switch to `who: reviewer` before every Mac has updated.** A Bton before 0.14.0 reads a `who` it does not know as a login and its moves stall. A move now takes `"owner"` beside `"who"`, same shape: this version reads `owner` when it is there, an older Bton reads `who` and ignores `owner`. Write `"who": "assignee", "owner": "reviewer"` today, and fold it into `who` once the team has updated; in between, older Macs assign the rotation's pick and newer ones request that pick's review, the same login unless someone set an assignee or a request by hand on that PR.
