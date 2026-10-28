@@ -45,6 +45,8 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public var changedFiles: [String] = []
     /// The PR changes more files than were read: its tier counts as the highest.
     public var changedFilesTruncated = false
+    /// The head lives in another repository (a fork): its branch names say nothing about this repo's.
+    public var isCrossRepository = false
 
     public init(repo: String, number: Int, title: String, author: String, authorAssociation: String, url: URL,
                 headSha: String, headRef: String, baseRef: String, body: String, isDraft: Bool, labels: [String],

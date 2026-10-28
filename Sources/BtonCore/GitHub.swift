@@ -213,7 +213,7 @@ public struct GitHubClient: Sendable {
         pullRequests(states: OPEN, first: 100, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
           pageInfo { hasNextPage endCursor }
           nodes {
-            number title url isDraft headRefOid headRefName baseRefName body updatedAt authorAssociation mergeable
+            number title url isDraft headRefOid headRefName baseRefName body updatedAt authorAssociation mergeable isCrossRepository
             author { login }
             labels(first: 100) { nodes { name } }
             assignees(first: 10) { nodes { login } }
@@ -234,6 +234,7 @@ public struct GitHubClient: Sendable {
         struct Row: Decodable {
             let number: Int, title: String, url: URL, isDraft: Bool, headRefOid: String, headRefName: String
             let baseRefName: String, body: String, updatedAt: Date, authorAssociation: String, mergeable: String?
+            let isCrossRepository: Bool?
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
             let commits: Nodes<CommitNode>?
             let files: Files?
@@ -296,6 +297,8 @@ public struct GitHubClient: Sendable {
             pr.changedFiles = row.files?.nodes.map(\.path) ?? []
             // No file list at all (a partial answer) counts as too many to read: it never hides a sensitive path.
             pr.changedFilesTruncated = row.files.map { $0.totalCount > $0.nodes.count } ?? true
+            // Unanswered counts as a fork: a branch pair alone never names the release PR.
+            pr.isCrossRepository = row.isCrossRepository ?? true
             pr.conflicting = row.mergeable == "CONFLICTING"
             pr.mergeable = row.mergeable == "MERGEABLE"
             pr.btonMarkers = Set(row.comments.nodes.flatMap { BtonMarker.keys(in: $0.body) })

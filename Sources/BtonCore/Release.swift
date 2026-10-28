@@ -80,8 +80,11 @@ public enum Release {
         flow.release.map { isRelease(pr, $0) } ?? false
     }
 
+    /// Only this repo's own branch, opened by someone trusted: a fork can name its branches
+    /// anything, and its PR would otherwise run the release checks and merge as the release.
     static func isRelease(_ pr: PullRequest, _ release: Flow.Release) -> Bool {
-        pr.headRef == release.from && pr.baseRef == release.to
+        pr.headRef == release.from && pr.baseRef == release.to && !pr.isCrossRepository
+            && FlowEngine.trustedAssociations.contains(pr.authorAssociation)
     }
 
     public static func standing(release: Flow.Release, report: FeatureReport?, pullRequests: [PullRequest], now: Date) -> ReleaseStanding {
