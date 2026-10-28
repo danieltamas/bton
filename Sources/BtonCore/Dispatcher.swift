@@ -222,6 +222,7 @@ actor Dispatcher {
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
             let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
+            if candidate.needsGraph, graphLine == nil { throw DispatchError.graphNotLinked }
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
                 : candidate.checks ?? (candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession)

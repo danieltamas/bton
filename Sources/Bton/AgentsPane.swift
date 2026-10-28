@@ -46,7 +46,7 @@ struct AgentsPane: View {
                 }
             }
             SettingsCard(title: "Code graphs",
-                         detail: "The Python that has graphify installed, for the repos that build a code graph. Empty looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy.") {
+                         detail: "graphify maps a repo's code into modules and their links. For a repo with \"Build a code graph for agents\" on (Repos), Bton rebuilds the graph after a sync when the branch moved, keeps it under ~/.bton/graphs and links it into every checkout an agent gets; the registry job draws its areas from it. The Python that has graphify installed: empty looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy.") {
                 GraphifyPythonField()
             }
             if store.agents.isEmpty && !adding {

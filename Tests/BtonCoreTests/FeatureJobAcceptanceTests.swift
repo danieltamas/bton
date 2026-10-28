@@ -244,7 +244,10 @@ struct FeatureJobEngineAcceptanceTests {
         do {
             var config = try JSONDecoder().decode(BtonConfig.self, from: Data(contentsOf: f.home.configURL))
             config.repos[0].work = "synthetic"
+            // The job needs the repo's code graph (2026-10-28): the switch on and a built store.
+            config.repos[0].codeGraph = true
             try config.save(to: f.home.configURL)
+            try RegistryGateFixture.buildGraph(repo: f.repo, home: f.home)
             return f
         } catch { f.remove(); throw error }
     }

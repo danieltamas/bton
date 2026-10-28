@@ -11,6 +11,7 @@ struct RepoPage: View {
     @State private var query = ""
     @State private var detail: FeaturePage.Row?
     @State private var branchesOpen = false
+    @State private var problem: String?
 
     var body: some View {
         let report = store.features[slug]
@@ -100,9 +101,13 @@ struct RepoPage: View {
                        detail: "The repo's registry shows after the next sync.")
         case .none?:
             VStack(spacing: 0) {
-                EmptyState(symbol: "square.grid.3x3", title: "No feature registry yet",
-                           detail: "The registry job builds .bton/features.json from the code graph, the issues and the merged PRs.")
-                    .frame(maxHeight: .infinity)
+                VStack(spacing: 14) {
+                    EmptyState(symbol: "square.grid.3x3", title: "No feature registry yet",
+                               detail: "The registry job builds .bton/features.json from the code graph, the issues and the merged PRs.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    graphRow
+                }
+                .frame(maxHeight: .infinity)
                 registryAction.padding(.bottom, 28)
             }
         case let .invalid(reason)?:
@@ -123,7 +128,35 @@ struct RepoPage: View {
 }
 
 extension RepoPage {
-    /// The empty state's action: the first registry job, its starting state, or the run in progress.
+    /// The code graph the job draws the areas from: its switch, right here, and what graphify is.
+    @ViewBuilder fileprivate var graphRow: some View {
+        if let readiness = store.graphReadiness(slug) {
+            VStack(spacing: 6) {
+                RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
+                           help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes.",
+                           isOn: readiness != .off, problem: $problem) { try store.setCodeGraph($0, for: slug) }
+                Text(Self.graphNote(readiness))
+                    .font(.meta).foregroundStyle(readiness == .missingPython ? Theme.danger : Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                if readiness == .building { GraphBuildProgress(slug: slug) }
+                if let problem { ProblemText(text: problem) }
+            }
+            .padding(.horizontal, 32)
+        }
+    }
+
+    /// One line under the switch: what graphify does, and where the graph stands.
+    static func graphNote(_ readiness: CodeGraph.Readiness) -> String {
+        switch readiness {
+        case .off: "graphify maps the code into modules and their links; the job needs it for the areas."
+        case .missingPython: "graphify's Python not found: set it in Settings > Agents."
+        case .building: "graphify is mapping the code; the job starts when the graph is built."
+        case .ready: "The graphify graph is built; Bton rebuilds it when the branch moves."
+        }
+    }
+
+    /// The empty state's action, in order: the run in progress, the last run's PR, the graph
+    /// the job waits for, a press not started yet, or the first registry job.
     @ViewBuilder fileprivate var registryAction: some View {
         if let job = store.jobs.first(where: { $0.status == .running && $0.key.move == FeatureJob.move
                                                 && $0.key.repo.caseInsensitiveCompare(slug) == .orderedSame }) {
@@ -132,6 +165,14 @@ extension RepoPage {
                 withAnimation(Motion.spring) { store.viewingRepo = nil; store.watchingJob = job.id }
             }
             .help("The registry job runs: see its session")
+        } else if let pr = store.registryPullRequest(slug) {
+            PillButton(title: "Registry PR #\(pr.number) open", symbol: "arrow.up.right", prominent: false) {
+                NSWorkspace.shared.open(pr.url)
+            }
+            .help("The registry is in \(pr.title): the page fills once it is merged")
+        } else if let readiness = store.graphReadiness(slug), readiness != .ready {
+            PillButton(title: "Build the registry", symbol: "sparkles", disabled: true) {}
+                .help("Needs the code graph: \(readiness.hold ?? "")")
         } else if store.isNext(repo: slug, item: FeatureJob.item) {
             StartingLabel(repo: slug, reason: store.waitingReason(repo: slug, item: FeatureJob.item))
         } else {
@@ -158,6 +199,30 @@ struct FeatureStatusChip: View {
         case .ready: Theme.color(forStage: "ready")
         case .spec: Theme.color(forStage: "spec")
         case .idea: Theme.neutral
+        }
+    }
+}
+
+/// The build's step and, while graphify reads the files, how far: read from its log every two seconds.
+private struct GraphBuildProgress: View {
+    @Environment(AppStore.self) private var store
+    let slug: String
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { context in
+            let progress = store.graphProgress(slug)
+            HStack(spacing: 8) {
+                if let fraction = progress?.fraction {
+                    ProgressView(value: fraction).tint(Theme.mint).frame(width: 160)
+                    Text("\(Int(fraction * 100))%").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.mint)
+                } else {
+                    ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 10, height: 10)
+                }
+                Text(progress?.step ?? "Waiting for the next sync to start the build")
+                    .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
+            }
+            .id(context.date)
         }
     }
 }

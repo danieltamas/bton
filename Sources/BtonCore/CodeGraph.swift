@@ -34,6 +34,77 @@ public enum CodeGraph {
         FileManager.default.fileExists(atPath: store.appendingPathComponent("graph.json").path)
     }
 
+    /// Whether a repo's graph is there for a job that needs it, and when not, why.
+    public enum Readiness: Equatable, Sendable {
+        /// The repo does not build one (the switch in Settings > Repos and on the repo's page).
+        case off
+        /// The switch is on and no Python with graphify was found.
+        case missingPython
+        /// The switch is on and the first build has not finished.
+        case building
+        case ready
+
+        /// Why a job that needs the graph waits; nil when it can run.
+        public var hold: String? {
+            switch self {
+            case .off: "the repo builds no code graph yet: turn it on in Settings > Repos or on the repo's page"
+            case .missingPython: CodeGraphBuilder.missingPython
+            case .building: "the code graph is being built"
+            case .ready: nil
+            }
+        }
+    }
+
+    /// graphify's output during a build, in the staging copy of the store, so the page can show
+    /// how far the build is; published with the graph as a record of the build.
+    static let buildLogName = "bton-build.log"
+
+    /// Where a build in progress stands, from its log so far.
+    public struct Progress: Equatable, Sendable {
+        public var step: String
+        /// Set while graphify reads the files, the one phase it counts.
+        public var fraction: Double?
+    }
+
+    /// nil when no build is in progress (no staging copy with a log).
+    public static func progress(in store: URL) -> Progress? {
+        let log = URL(fileURLWithPath: store.path + ".next", isDirectory: true).appendingPathComponent(buildLogName)
+        guard let text = try? String(contentsOf: log, encoding: .utf8) else { return nil }
+        return progress(from: text)
+    }
+
+    /// graphify's AST extraction prints `n/m uncached files`; after it, the grouping into
+    /// communities and the report take a while with no count.
+    static func progress(from text: String) -> Progress {
+        var last: (done: Int, total: Int)?
+        var grouping = false
+        // A count graphify rewrites in place arrives after a carriage return, not a newline.
+        for line in text.components(separatedBy: .newlines) {
+            if let range = line.range(of: "AST extraction: ") {
+                let counts = line[range.upperBound...].prefix { $0.isNumber || $0 == "/" }.split(separator: "/")
+                if counts.count == 2, let done = Int(counts[0]), let total = Int(counts[1]), total > 0 {
+                    last = (done, total)
+                    grouping = false
+                }
+            } else if last != nil, !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                grouping = true
+            }
+        }
+        guard let last else { return Progress(step: "Preparing the tree", fraction: nil) }
+        if grouping || last.done == last.total { return Progress(step: "Grouping the code into modules", fraction: nil) }
+        return Progress(step: "Reading \(last.done) of \(last.total) files", fraction: Double(last.done) / Double(last.total))
+    }
+
+    /// A graph in the store with its build marker counts, whether or not graphify's Python is
+    /// still found: the same pair a job's worktree gets linked. A graph moved in from a clone has
+    /// no marker until the first build here finishes.
+    public static func readiness(of repo: WatchedRepo, python: String?, home: BtonHome) -> Readiness {
+        guard repo.buildsGraph else { return .off }
+        let store = store(for: repo.slug, home: home)
+        if isBuilt(store), marker(in: store) != nil { return .ready }
+        return python == nil ? .missingPython : .building
+    }
+
     public enum LinkOutcome: Equatable, Sendable {
         case linked, alreadyLinked
         /// The checkout's own graph moved into the empty store, and the link took its place.

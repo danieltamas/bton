@@ -201,7 +201,8 @@ private struct BranchPicker: View {
 }
 
 /// One of a repo's on/off settings on this Mac, saved as soon as it is flipped.
-private struct RepoSwitch: View {
+/// A repo setting as a labelled switch, in Settings > Repos and on the repo's page.
+struct RepoSwitch: View {
     let symbol: String
     let title: String
     let help: String

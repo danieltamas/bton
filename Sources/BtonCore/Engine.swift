@@ -80,6 +80,9 @@ public actor Engine {
     var autoTaken: Set<String> = []
     /// Why each waiting pick did not start at the last sync.
     private var waiting: [String: String] = [:]
+    /// Run-next picks this tick could not plan yet, with why: they stay in line, unlike a pick
+    /// whose move no longer exists.
+    var deferred: [String: String] = [:]
     /// Each repo's registry facts between syncs, by lowercased slug.
     var featureStates: [String: FeatureState] = [:]
 
@@ -153,6 +156,7 @@ public actor Engine {
         var snapshot = Snapshot()
         // A pick made while this tick awaits GitHub is the next tick's to judge.
         let picksAtStart = Set(next)
+        deferred = [:]
         if dispatching, lastPrune.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true {
             lastPrune = .now
             let cleared = jobs.prune()
@@ -268,7 +272,7 @@ public actor Engine {
                                                          queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
-                    if let registry = await featureJob(read, agents: config.agents, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
+                    if let registry = await featureJob(read, agents: config.agents, graphifyPython: config.graphifyPython, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
                     // The release: opened here when due, merged through a job once its PR is open.
                     if let release = await planRelease(read) { pending.append((release, clone, read.flow)) }
                     // One supervisor at a time: the first repo with a flagged job takes this tick's.
@@ -295,7 +299,7 @@ public actor Engine {
                 // A move already run on its head can't start, so a pick waiting on it would wait forever.
                 let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
                 let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
-                    .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
+                    .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) }).union(deferred.keys)
                 var started: Set<String> = [], startedKeys: Set<JobKey> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
                 // A pick whose lease is held elsewhere frees its slot for the next candidate.
                 while true {
@@ -339,10 +343,10 @@ public actor Engine {
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
                 let refusedPicks = Set(refused.map { Self.pick(repo: $0.repo, item: $0.item) })
                 waiting = Dictionary(next.filter { !started.contains($0) }.map { pick in
-                    (pick, unplanned.contains { pick.hasPrefix($0 + "#") } ? "its repo could not be read this sync"
+                    (pick, deferred[pick] ?? (unplanned.contains { pick.hasPrefix($0 + "#") } ? "its repo could not be read this sync"
                         : refusedPicks.contains(pick) ? "another job or Mac holds the PR's lease, or its job could not be recorded"
                         : runnable.contains(pick) ? "waiting for a free agent slot (\(config.maxAgents) at most) or its agent to log in"
-                        : "the PR's move is not one Bton can start now")
+                        : "the PR's move is not one Bton can start now"))
                 }) { first, _ in first }
                 // A press starts one move: a later move of the same PR the sync starts is not pressed.
                 pressedPicks = pressedPicks.subtracting(started).filter(next.contains)

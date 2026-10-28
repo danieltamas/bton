@@ -79,9 +79,11 @@ public actor CodeGraphBuilder {
             return
         }
         let started = Date.now
+        let buildLog = try BuildLog(at: staging.appendingPathComponent(CodeGraph.buildLogName))
         do {
             let result = try await runner.run("/usr/bin/nice", ["-n", String(niceness), python, "-c", script], in: worktree,
-                                              environment: ["GIT_TERMINAL_PROMPT": "0"], timeout: buildTimeout)
+                                              environment: ["GIT_TERMINAL_PROMPT": "0"], timeout: buildTimeout,
+                                              output: { buildLog.append($0) })
             guard result.status == 0, CodeGraph.isBuilt(staging) else {
                 let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                 throw BuildFailure.exited(result.status, String(stderr.suffix(200)))
@@ -102,6 +104,23 @@ public actor CodeGraphBuilder {
 
     private enum BuildFailure: Error {
         case exited(Int32, String)
+    }
+
+    /// graphify's output as it comes, both pipes into one file the page reads for the progress.
+    private final class BuildLog: Sendable {
+        private let handle: FileHandle
+        private let lock = NSLock()
+
+        init(at url: URL) throws {
+            try Data().write(to: url)
+            handle = try FileHandle(forWritingTo: url)
+        }
+
+        func append(_ data: Data) {
+            lock.withLock { try? handle.write(contentsOf: data) }
+        }
+
+        deinit { try? handle.close() }
     }
 
     /// A fresh copy of the store beside it (a clone on APFS, so no slower for a large one), for

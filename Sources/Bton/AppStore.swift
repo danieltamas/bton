@@ -414,6 +414,20 @@ final class AppStore {
     /// Starts the repo's registry job before anything else: the page's Build the registry.
     func buildRegistry(_ slug: String) async { await runNext(repo: slug, item: FeatureJob.item) }
 
+    /// Whether the repo's code graph is there for the registry job; nil for a repo not watched.
+    func graphReadiness(_ slug: String) -> CodeGraph.Readiness? {
+        config.repos.first { $0.slug.caseInsensitiveCompare(slug) == .orderedSame }
+            .map { CodeGraph.readiness(of: $0, python: CodeGraph.python(configured: graphifyPython), home: home) }
+    }
+
+    /// How far the repo's graph build is; nil when none runs.
+    func graphProgress(_ slug: String) -> CodeGraph.Progress? { CodeGraph.progress(in: CodeGraph.store(for: slug, home: home)) }
+
+    /// The registry job's PR while it is open: the page shows it instead of the job's button.
+    func registryPullRequest(_ slug: String) -> PullRequest? {
+        me.flatMap { FeatureJob.openPullRequest(openPullRequests, repo: slug, me: $0) }
+    }
+
     /// Starts the PR's move now, again if it failed on this head: the row's Merge and Fix conflicts.
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
     /// The move's run on this head that failed and may run again, if one did.

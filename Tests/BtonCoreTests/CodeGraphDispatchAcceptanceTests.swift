@@ -70,7 +70,7 @@ struct CodeGraphDispatchAcceptanceTests {
     }
 }
 
-private struct GraphDispatchFixture {
+struct GraphDispatchFixture {
     let graph: GraphFixture
     let dispatcher: Dispatcher
     let jobs: JobStore
@@ -135,12 +135,13 @@ private struct GraphDispatchFixture {
         } catch { graph.remove(); throw error }
     }
 
-    func run() async throws -> Job {
+    func run(needsGraph: Bool = false) async throws -> Job {
         var candidate = DispatchCandidate(target: .pullRequest(pr),
             move: Move(name: "fix", owner: "owner", ownerFromRotation: false, tier: "feature", hasDispatch: true),
             key: JobKey(repo: pr.repo, item: "pr-7", move: "fix", head: pr.headSha),
             agent: agent, prompt: "Synthetic task", command: nil, postComment: false, timeout: .seconds(30))
         candidate.skipsChecks = true
+        candidate.needsGraph = needsGraph
         let executable = graph.root.appendingPathComponent(agent).path
         let argv = agent == "codex" ? [executable, "exec", "--", "{prompt}"] : [executable, "-p", "{prompt}"]
         let outcome = await dispatcher.dispatch(candidate, clone: graph.clone, flow: nil,

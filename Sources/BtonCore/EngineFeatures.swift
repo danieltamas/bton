@@ -113,14 +113,21 @@ extension Engine {
 }
 
 extension Engine {
-    /// The registry job when due. An automatic run also asks the item's lease when the last run
-    /// started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
+    /// The registry job when due and the repo's code graph is built; a press made before that
+    /// waits in line with the reason. An automatic run also asks the item's lease when the last
+    /// run started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
     /// means no automatic run this tick.
     func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
                                      pullRequests: [PullRequest], merged: [MergedPullRequest]),
-                            agents: [String: AgentTemplate], leases: LeaseStore) async -> DispatchCandidate? {
+                            agents: [String: AgentTemplate], graphifyPython: String?, leases: LeaseStore) async -> DispatchCandidate? {
         let slug = read.repo.slug
-        let pressed = next.contains(Self.pick(repo: slug, item: FeatureJob.item))
+        let pick = Self.pick(repo: slug, item: FeatureJob.item)
+        let pressed = next.contains(pick)
+        // The areas come from the graph: without one, the job would draw them from the tree's layout.
+        if let hold = CodeGraph.readiness(of: read.repo, python: CodeGraph.python(configured: graphifyPython), home: home).hold {
+            if pressed { deferred[pick] = hold }
+            return nil
+        }
         let make = { (teamLast: Date?) -> DispatchCandidate? in
             FeatureJob.candidate(jobs: self.jobs.all(), repo: slug, flow: read.flow,
                                  defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,

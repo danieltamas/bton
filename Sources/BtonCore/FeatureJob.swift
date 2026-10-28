@@ -22,9 +22,7 @@ public enum FeatureJob {
                              merged: [MergedPullRequest], issues: [OpenIssue], startsMoves: Bool, pressed: Bool, now: Date,
                              teamLast: Date? = nil) -> Bool {
         let mine = jobs.filter { $0.key.move == move && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame }
-        guard !mine.contains(where: { $0.status == .running }),
-              !pullRequests.contains(where: { $0.repo.caseInsensitiveCompare(repo) == .orderedSame
-                  && $0.headRef.hasPrefix(branchPrefix) && $0.author.caseInsensitiveCompare(me) == .orderedSame })
+        guard !mine.contains(where: { $0.status == .running }), openPullRequest(pullRequests, repo: repo, me: me) == nil
         else { return false }
         if pressed { return true }
         guard startsMoves else { return false }
@@ -63,10 +61,17 @@ public enum FeatureJob {
                                      prompt: text, command: nil, postComment: false, timeout: timeout, model: work?.model)
         made.effort = work?.effort
         made.skipsChecks = true
+        made.needsGraph = true
         made.pressed = pressed
         made.cooldown = pressed ? nil : floor
         made.attachments = attachments
         return made
+    }
+
+    /// The last run's PR while it is open: no run beside it, and the repo's page shows it.
+    public static func openPullRequest(_ pullRequests: [PullRequest], repo: String, me: String) -> PullRequest? {
+        pullRequests.first { $0.repo.caseInsensitiveCompare(repo) == .orderedSame
+            && $0.headRef.hasPrefix(branchPrefix) && $0.author.caseInsensitiveCompare(me) == .orderedSame }
     }
 
     /// One run per minute at most, like a schedule's.

@@ -30,6 +30,9 @@ public struct DispatchCandidate: Sendable {
     /// The flow's `checks` do not run first: a rule's `"checks": false`, and every resolve, whose
     /// PR conflicts with its base and would fail a merge check.
     public var skipsChecks = false
+    /// The job cannot do its work without the repo's code graph linked into its worktree: a link
+    /// that fails fails the job, where any other job goes on without the graph.
+    public var needsGraph = false
     /// A supervise job's flagged job.
     public var supervises: UUID?
     /// A supervisor's note was added to the prompt.
