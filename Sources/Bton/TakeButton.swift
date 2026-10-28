@@ -1,7 +1,8 @@
 import BtonCore
 import SwiftUI
 
-/// Take it: a teammate's `assignee` move becomes mine, in one press.
+/// Take it: a teammate's `assignee` or `reviewer` move becomes mine, in one press. A review owned
+/// through GitHub's review requests reads "Review here": nothing is assigned.
 struct TakeButton: View {
     @Environment(AppStore.self) private var store
     let pr: PullRequest
@@ -9,8 +10,14 @@ struct TakeButton: View {
 
     var body: some View {
         let taking = store.taking.contains(pr.id)
-        RunNowButton(title: taking ? "Taking..." : "Take it", symbol: "hand.raised", color: Theme.color(forMove: move.name),
-                     help: "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here", disabled: taking) {
+        let asReviewer = store.flows[pr.repo]?.flow.map { FlowEngine.ownerKind(for: pr, flow: $0) == "reviewer" } ?? false
+        let review = asReviewer && move.name == "review"
+        RunNowButton(title: taking ? (review ? "Starting..." : "Taking...") : (review ? "Review here" : "Take it"),
+                     symbol: review ? "eye" : "hand.raised", color: Theme.color(forMove: move.name),
+                     help: asReviewer
+                         ? "Ask GitHub for your review on #\(pr.number) and run its \(move.name) here; the assignee stays"
+                         : "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here",
+                     disabled: taking) {
             Task { await store.take(pr, from: move.owner) }
         }
     }

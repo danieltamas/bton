@@ -19,6 +19,9 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public let isDraft: Bool
     public var labels: [String]
     public var assignees: [String]
+    /// The users GitHub shows as requested reviewers, in GitHub's order (teams are left out).
+    /// A move with `who: reviewer` is owned through this field, never through `assignees`.
+    public var requestedReviewers: [String] = []
     /// Oldest first, without Bton's own comments.
     public let comments: [PullRequestComment]
     public let updatedAt: Date

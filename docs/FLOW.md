@@ -121,14 +121,25 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
   length. Every Mac computes the same pick. The author's Bton assigns that login on GitHub, once
   per PR; an assignee a person sets is never replaced. With no `reviewers` (or none left after
   removing the author) the owner is "unassigned" and the move is never dispatched.
+- `reviewer`: the PR's first requested reviewer (GitHub's "Reviewers" field; team requests are
+  ignored), with the same rotation when nobody is requested. The author's Bton requests the pick's
+  review on GitHub, once per PR; a request a person made is never replaced, and the assignee field
+  is never touched. GitHub ends a user's request when they submit a review, and Bton files a GitHub
+  review with every review comment, so after each round the request is gone and the move returns
+  to the rotation's pick: the same login when the pick reviewed, the rotation's rather than the
+  taker's after a Take it. A person who wants the next round too requests their own review again
+  on GitHub. Use `reviewer` where the team reads "assignee" as "owns the PR" rather than "reviews
+  it".
 - any other string: that login.
 
 A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
 
-**Take it.** A dispatchable move whose `who` for the PR's tier is `assignee`, owned by someone else
-(or by nobody), can be taken from its row: under the PR's lease, and only if a fresh read still
-shows the owner the row showed, Bton makes this Mac's login the PR's only assignee on GitHub and
-starts the move here. Every Mac then reads the move as this one's; a teammate's Bton that read the
+**Take it.** A dispatchable move whose `who` for the PR's tier is `assignee` or `reviewer`, owned
+by someone else (or by nobody), can be taken from its row: under the PR's lease, and only if a
+fresh read still shows the owner the row showed, Bton makes this Mac's login the PR's only assignee
+(`assignee`) or only requested reviewer (`reviewer`, where the row's button reads "Review here";
+never offered to the PR's author, whose review GitHub refuses to request) on GitHub and starts the
+move here. Every Mac then reads the move as this one's; a teammate's Bton that read the
 PR just before and is already starting the move may still run it first, and then this Mac's start
 finds the move done. A repo with **Take teammates' moves automatically** on (Settings > Repos, needs
 "Start the flow's moves"; `takeMoves` in the config) does this on its own each sync for every move Take it could take, at most two PRs a sync,
@@ -137,8 +148,8 @@ would then be one the author can't clear, nor for an `author` or named move, whi
 changes.
 
 A move whose `when` has `no_review_or_response_newer`, on a tier where every `reviews` entry has
-`"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` and the
-assignee is the author (they assigned themselves), Bton shows it as needing another reviewer and never dispatches it: the
+`"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` or `reviewer` and the
+owner is the author (they assigned themselves, or requested their own review), Bton shows it as needing another reviewer and never dispatches it: the
 agent's review would be posted as the author and ignored.
 
 ## Dispatch

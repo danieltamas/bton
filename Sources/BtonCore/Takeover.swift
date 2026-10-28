@@ -16,8 +16,9 @@ public enum TakeError: Error, Equatable, LocalizedError {
 }
 
 extension Engine {
-    /// Take it: assigns the PR to me alone on GitHub, under its lease, so every Mac reads the move as
-    /// mine, and puts it first in line. Checked against a fresh read of the owner the row showed.
+    /// Take it: makes me the PR's only assignee (an `assignee` move) or only requested reviewer (a
+    /// `reviewer` move) on GitHub, under its lease, so every Mac reads the move as mine, and puts it
+    /// first in line. Checked against a fresh read of the owner the row showed.
     /// `pressed`: a person asked for it; the sync's own take leaves the checks' `BTON_PRESSED` unset.
     public func take(repo: String, number: Int, from owner: String?, pressed: Bool = true) async throws -> Move {
         let config = try BtonConfig.loadOrCreate(home: home)
@@ -40,35 +41,42 @@ extension Engine {
             }
         }
         let taken: Move
+        let wrote: String
         do {
             let fresh = try await takeable(repo: repo, number: number, from: owner, branch: branch)
             // A claim pushed, or reads made, while the Mac slept can leave the lease expired by now:
             // it must outlast the assign too.
             guard held.isLive(at: .now + 60) else { throw TakeError.busy }
-            try await github.assign(me, replacing: fresh.pr.assignees, repo: repo, number: number)
+            if fresh.kind == "reviewer" {
+                try await github.requestReview(me, replacing: fresh.pr.requestedReviewers, repo: repo, number: number)
+            } else {
+                try await github.assign(me, replacing: fresh.pr.assignees, repo: repo, number: number)
+            }
             taken = fresh.move
+            wrote = fresh.kind == "reviewer" ? "requested review from" : "assigned"
         } catch {
             await release()
             throw error
         }
         await release()
         runNext(repo: repo, item: item, pressed: pressed)
-        log("\(repo)#\(number): took \(taken.name) from \(owner ?? "nobody"), assigned \(me)")
+        log("\(repo)#\(number): took \(taken.name) from \(owner ?? "nobody"), \(wrote) \(me)")
         return taken
     }
 
-    /// The open PR, its move once taken and my login, while the PR's move still has the owner the
-    /// row showed and is one I can take.
+    /// The open PR, its move once taken, the field that owns it and my login, while the PR's move
+    /// still has the owner the row showed and is one I can take.
     private func takeable(repo: String, number: Int, from owner: String?,
-                          branch: String?) async throws -> (me: String, pr: PullRequest, move: Move) {
+                          branch: String?) async throws -> (me: String, pr: PullRequest, move: Move, kind: String) {
         let flow = Flow.load(try await github.flowFile(repo: repo, branch: branch)).flow
         let read = try await github.openPullRequests(repo: repo)
         guard let flow, let pr = read.pullRequests.first(where: { $0.number == number }),
               let current = FlowEngine.move(for: pr, flow: flow),
               current.owner?.lowercased() == owner?.lowercased(),
-              let taken = FlowEngine.takeover(of: pr, flow: flow, me: read.viewer)
+              let taken = FlowEngine.takeover(of: pr, flow: flow, me: read.viewer),
+              let kind = FlowEngine.ownerKind(for: pr, flow: flow)
         else { throw TakeError.changed }
-        return (read.viewer, pr, taken)
+        return (read.viewer, pr, taken, kind)
     }
 }
 

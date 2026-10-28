@@ -80,8 +80,8 @@ where your flow says a person decides.
   <tr>
     <td width="50%" valign="top">
       <b>Take a teammate's move</b><br>
-      A review the flow gave a teammate offers Take it: Bton assigns the PR to you on GitHub and
-      starts the move here. "Take teammates' moves automatically" does that on every sync.
+      A review the flow gave a teammate offers Take it (or Review here, when the flow owns reviews
+      through GitHub's Reviewers field): Bton puts you on the PR on GitHub and starts the move here. "Take teammates' moves automatically" does that on every sync.
     </td>
     <td width="50%" valign="top">
       <b>A playbook built in</b><br>

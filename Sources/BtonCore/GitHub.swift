@@ -178,6 +178,17 @@ public struct GitHubClient: Sendable {
                          + (removed.isEmpty ? [] : ["--remove-assignee", removed.joined(separator: ",")]))
     }
 
+    public func addReviewer(_ login: String, repo: String, number: Int) async throws {
+        _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-reviewer", login])
+    }
+
+    /// Makes `login` the PR's only requested reviewer, in one edit; assignees are not touched.
+    public func requestReview(_ login: String, replacing others: [String], repo: String, number: Int) async throws {
+        let removed = others.filter { $0.caseInsensitiveCompare(login) != .orderedSame }
+        _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-reviewer", login]
+                         + (removed.isEmpty ? [] : ["--remove-reviewer", removed.joined(separator: ",")]))
+    }
+
     /// Creates the label once when the repo lacks it (the add fails), then adds it again.
     public func addLabel(_ label: String, repo: String, number: Int) async throws {
         let add = ["pr", "edit", String(number), "--repo", repo, "--add-label", label]
@@ -217,6 +228,7 @@ public struct GitHubClient: Sendable {
             author { login }
             labels(first: 100) { nodes { name } }
             assignees(first: 10) { nodes { login } }
+            reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } } } }
             comments(last: 100) { nodes { author { login } authorAssociation body createdAt } }
             commits(last: 10) { nodes { commit { oid committedDate parents(first: 5) { nodes { oid } } } } }
             files(first: 100) { totalCount nodes { path } }
@@ -236,10 +248,14 @@ public struct GitHubClient: Sendable {
             let baseRefName: String, body: String, createdAt: Date?, updatedAt: Date, authorAssociation: String, mergeable: String?
             let isCrossRepository: Bool?
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
+            let reviewRequests: Nodes<ReviewRequest>?
             let commits: Nodes<CommitNode>?
             let files: Files?
         }
         struct Files: Decodable { let totalCount: Int; let nodes: [Path] }
+        /// A team's request decodes as a reviewer without a login.
+        struct ReviewRequest: Decodable { let requestedReviewer: TeamOrUser? }
+        struct TeamOrUser: Decodable { let login: String? }
         struct Path: Decodable { let path: String }
         struct CommitNode: Decodable {
             struct Commit: Decodable { let oid: String?; let committedDate: Date; let parents: Nodes<Oid>? }
@@ -293,6 +309,7 @@ public struct GitHubClient: Sendable {
                             .sorted { $0.createdAt < $1.createdAt },
                         updatedAt: row.updatedAt)
             pr.createdAt = row.createdAt
+            pr.requestedReviewers = row.reviewRequests?.nodes.compactMap(\.requestedReviewer?.login) ?? []
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
             pr.mergeOnlyAncestors = Self.mergeOnlyAncestors(of: row.headRefOid, in: row.commits?.nodes.map(\.commit) ?? [])
             pr.changedFiles = row.files?.nodes.map(\.path) ?? []

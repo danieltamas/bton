@@ -229,7 +229,7 @@ public actor Engine {
                     let dispatcher = try await dispatcher(me: read.viewer, repos: config.repos)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
                     if let flow = read.flow {
-                        await assignRotation(read.pullRequests, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
+                        await assignRotation(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         if read.repo.takesMoves {
                             await autoTake(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer)
                         }
@@ -545,8 +545,9 @@ public actor Engine {
         return made
     }
 
-    /// The author's Bton assigns the rotation's pick, under the PR's lease, once.
-    private func assignRotation(_ pullRequests: [PullRequest], repo: String, me: String, dispatcher: Dispatcher) async {
+    /// The author's Bton writes the rotation's pick to GitHub, under the PR's lease, once: as the
+    /// assignee for an `assignee` move, as the requested reviewer for a `reviewer` move.
+    private func assignRotation(_ pullRequests: [PullRequest], flow: Flow, repo: String, me: String, dispatcher: Dispatcher) async {
         for pr in pullRequests {
             guard let move = pr.move, move.ownerFromRotation, let owner = move.owner,
                   pr.author.caseInsensitiveCompare(me) == .orderedSame, let item = LeaseItem("pr-\(pr.number)"),
@@ -555,12 +556,18 @@ public actor Engine {
                 assigned.remove("\(repo)#\(pr.number)")
                 continue
             }
+            let asReviewer = FlowEngine.ownerKind(for: pr, flow: flow) == "reviewer"
             do {
-                try await github.addAssignee(owner, repo: repo, number: pr.number)
-                log("\(repo)#\(pr.number): assigned \(owner) (rotation)")
+                if asReviewer {
+                    try await github.addReviewer(owner, repo: repo, number: pr.number)
+                    log("\(repo)#\(pr.number): requested review from \(owner) (rotation)")
+                } else {
+                    try await github.addAssignee(owner, repo: repo, number: pr.number)
+                    log("\(repo)#\(pr.number): assigned \(owner) (rotation)")
+                }
             } catch {
                 assigned.remove("\(repo)#\(pr.number)")
-                log("\(repo)#\(pr.number): could not assign \(owner): \(error.localizedDescription)")
+                log("\(repo)#\(pr.number): could not \(asReviewer ? "request a review from" : "assign") \(owner): \(error.localizedDescription)")
             }
             try? await dispatcher.leases.release(lease)
         }

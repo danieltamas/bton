@@ -132,7 +132,7 @@ public enum FlowEngine {
         // The rotation never picks the author for `assignee`; an author who assigned themselves
         // a review their tier won't count from them is flagged instead.
         let counting = flow.reviews[tier] ?? []
-        let ownerWroteIt = rule.who.value(for: tier) == "assignee" && rule.when.contains("no_review_or_response_newer")
+        let ownerWroteIt = rule.who.value(for: tier).map(takableKinds.contains) ?? false && rule.when.contains("no_review_or_response_newer")
             && !counting.isEmpty && counting.allSatisfy(\.notByAuthor)
             && owner?.caseInsensitiveCompare(pr.author) == .orderedSame
         return Move(name: rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier,
@@ -152,30 +152,49 @@ public enum FlowEngine {
             && !Release.isRelease(pr, flow: flow) && trustedAssociations.contains(pr.authorAssociation)
     }
 
-    /// Take it: the PR's move once the PR is assigned to me alone, when that makes it mine to start.
-    /// Only an `assignee` move moves this way; an `author` or named one stays with its person.
+    /// The `who` kinds a GitHub field owns, which Take it can move to me: `assignee` through the
+    /// PR's assignees, `reviewer` through its requested reviewers.
+    static let takableKinds: Set<String> = ["assignee", "reviewer"]
+
+    /// The producing rule's `who` for the PR's tier: `author`, `assignee`, `reviewer` or a login.
+    public static func ownerKind(for pr: PullRequest, flow: Flow) -> String? {
+        rule(for: pr, flow: flow)?.who.value(for: tier(of: pr, rule: flow.tier))
+    }
+
+    /// Take it: the PR's move once its owning field names me alone, when that makes it mine to
+    /// start. Only an `assignee` or `reviewer` move moves this way; an `author` or named one stays
+    /// with its person.
     public static func takeover(of pr: PullRequest, flow: Flow, me: String) -> Move? {
         guard let current = move(for: pr, flow: flow), current.hasDispatch, !current.isMine(me),
-              rule(for: pr, flow: flow)?.who.value(for: current.tier) == "assignee" else { return nil }
+              let kind = ownerKind(for: pr, flow: flow), takableKinds.contains(kind) else { return nil }
+        // GitHub refuses a review request to the PR's author: no dead button.
+        if kind == "reviewer", pr.author.caseInsensitiveCompare(me) == .orderedSame { return nil }
         var taken = pr
-        taken.assignees = [me]
+        if kind == "reviewer" { taken.requestedReviewers = [me] } else { taken.assignees = [me] }
         guard let after = move(for: taken, flow: flow), after.name == current.name, after.isMine(me),
               isDispatchable(after, pr: taken, flow: flow, me: me) else { return nil }
         return after
     }
 
-    /// `author`, `assignee` (with the rotation when nobody is assigned), or a literal login.
+    /// `author`, `assignee` (the first assignee), `reviewer` (the first requested reviewer), each
+    /// of the last two with the rotation when the field is empty, or a literal login.
     static func resolve(_ who: String?, pr: PullRequest, flow: Flow) -> (owner: String?, fromRotation: Bool) {
         switch who {
         case nil: return (nil, false)
         case "author": return (pr.author, false)
-        case "assignee":
-            if let assignee = pr.assignees.first { return (assignee, false) }
-            let pool = (flow.reviewers ?? []).filter { $0.caseInsensitiveCompare(pr.author) != .orderedSame }
-            guard !pool.isEmpty else { return (nil, false) }
-            return (pool[pr.number % pool.count], true)
+        case "assignee": return pr.assignees.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
+        case "reviewer": return pr.requestedReviewers.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
         case let login?: return (login, false)
         }
+    }
+
+    /// `reviewers` without the author, indexed by the PR number: the same pick on every Mac. A
+    /// submitted GitHub review (Bton files one with each review comment) ends that user's request,
+    /// so a `reviewer` move comes back here for its next round.
+    private static func rotation(for pr: PullRequest, flow: Flow) -> (owner: String?, fromRotation: Bool) {
+        let pool = (flow.reviewers ?? []).filter { $0.caseInsensitiveCompare(pr.author) != .orderedSame }
+        guard !pool.isEmpty else { return (nil, false) }
+        return (pool[pr.number % pool.count], true)
     }
 
     static func firstLine(of body: String) -> String {
