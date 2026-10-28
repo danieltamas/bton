@@ -58,6 +58,20 @@ public enum Helpers {
             """
     }
 
+    /// What a job hears when its flow names helpers it cannot be offered: a codex agent gets no
+    /// ask server, and a Claude agent gets none when no helper's program is here. Said as an
+    /// identity, not an absence: a task that says "consult codex" is otherwise read as blocked by
+    /// the codex agent that could do the check itself.
+    public static func unavailable(agent: String, helpers: [String]) -> String {
+        let named = helpers.joined(separator: ", ")
+        let own = helpers.contains(agent)
+            ? " A step that says to consult \(agent) is satisfied by your own work: you are the \(agent) agent."
+            : ""
+        return """
+            No \(tool) tool exists in this session: you are the \(agent) agent, and the helper \(named)             could not be offered here.\(own) Do every check such a step asks for yourself, in this session,             and say in your result that no separate helper was available. That is not a blocker.
+            """
+    }
+
     /// A helper answers and never changes the tree the asking agent works in, whatever its
     /// template says: Claude in plan mode without its editing tools, codex in its read-only
     /// sandbox. Another program runs as its owner wrote it.

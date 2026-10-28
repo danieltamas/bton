@@ -9,7 +9,8 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton watch [--for <seconds>]   tick every pollSeconds: dispatch this Mac's moves
        bton jobs                      this BTON_HOME's jobs as JSON lines
        bton prs                       one read without dispatching: open PRs and merged totals
-       bton handoff <owner/name> <issue> --to <login> <text>   comment @login on an issue, once
+       bton handoff <owner/name> [<issue>] --to <login> <text>   comment @login on an issue, once;
+                                      no issue: the repo's open issue labelled bton:inbox
        bton prices refresh            fetch token prices now
        bton ask-server --job <uuid> --cwd <dir> --helper <agent>...   a job's MCP ask tool (Bton starts it)
 exit: 0 done, 1 held by someone else or lost, 2 usage, 3 error (not held)
@@ -188,10 +189,13 @@ do {
             print(String(decoding: try encoder.encode(job), as: UTF8.self))
         }
     case "handoff":
-        guard arguments.count == 6, BtonConfig.isRepoSlug(arguments[1]), let issue = Int(arguments[2]), issue > 0,
-              arguments[3] == "--to" else { fail(usage) }
+        // The issue is optional: `--to` sits where it would be when there is none.
+        let issue: Int? = arguments.count == 6 ? Int(arguments[2]) : nil
+        guard [5, 6].contains(arguments.count), BtonConfig.isRepoSlug(arguments[1]),
+              arguments.count == 5 || (issue ?? 0) > 0, arguments[arguments.count - 3] == "--to" else { fail(usage) }
         do {
-            let posted = try await GitHubClient().handOff(to: arguments[4], text: arguments[5], repo: arguments[1], issue: issue)
+            let posted = try await GitHubClient().handOff(to: arguments[arguments.count - 2], text: arguments[arguments.count - 1],
+                                                          repo: arguments[1], issue: issue)
             print(posted ? "posted" : "already posted")
         } catch let problem as Handoff.Problem {
             fail(problem.localizedDescription)

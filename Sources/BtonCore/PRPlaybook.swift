@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 2
+    public static let version = 3
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -46,9 +46,12 @@ public enum PRPlaybook {
     distinguish PR defects, existing failures, environment faults and suspected
     flakes. Retry once only with a reason; a passing retry does not erase failure.
     Never weaken tests or claim unrun checks passed.
-    5. Ask a configured helper only when required or a specific uncertainty warrants
-    it, through mcp__bton__ask. Supply SHAs, scope and existing evidence; verify its
-    claims. No recursive delegation or duplicate exploration.
+    5. Only when this session exposes mcp__bton__ask, ask a configured helper, and
+    only when required or a specific uncertainty warrants it. Supply SHAs, scope and
+    existing evidence; verify its claims. No recursive delegation or duplicate
+    exploration. Without the tool, a step that says to consult a helper is yours to
+    do in this session: do that check yourself and say no separate helper was
+    available. A helper that is not exposed is not missing evidence and never blocks.
     6. Before publishing or pushing, recheck live head/base and ownership. A head
     changed by anyone but this job's own verified push stops this job; a changed
     base requires affected checks to be refreshed.
@@ -62,9 +65,11 @@ public enum PRPlaybook {
     on an issue, do not leave it for the owner to relay; run one plain command,
     bton handoff <repo> <issue> --to <login> "<what is needed, the options, your
     recommendation, a link to the evidence>"
-    The text names no one but the teammate and holds no HTML comment. It posts as the
-    owner, once; "already posted" is success. Never use it for a PR or for anything a
-    flow, label or check already carries.
+    Without an issue to put it on, leave out the issue number: it goes to the repo's
+    inbox issue, and the command says so when the repo has none. The text names no
+    one but the teammate and holds no HTML comment. It posts as the owner, once;
+    "already posted" is success. Never use it for a PR or for anything a flow, label
+    or check already carries.
     Output only the required result: findings, changes, checks and material limits.
     No narration, praise, repeated context or speculative improvements.
     """

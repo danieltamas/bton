@@ -105,8 +105,31 @@ struct HandoffAcceptanceTests {
         #expect(PRPlaybook.text(for: move).contains("bton handoff"))
     }
 
-    @Test func playbookVersionIsTwo() {
-        #expect(PRPlaybook.version == 2)
+    @Test func playbookVersionIsThree() {
+        #expect(PRPlaybook.version == 3)
+    }
+
+    @Test func emptyInboxHasNoIssue() throws {
+        #expect(try Handoff.inboxIssue(in: Data("[]".utf8)) == nil)
+    }
+
+    @Test func inboxChoosesLowestIssueNumber() throws {
+        let data = Data(#"[{"number":12},{"number":7},{"number":19}]"#.utf8)
+        #expect(try Handoff.inboxIssue(in: data) == 7)
+    }
+
+    @Test func inboxRejectsNonJSON() {
+        #expect(throws: (any Error).self) {
+            try Handoff.inboxIssue(in: Data("garbage".utf8))
+        }
+    }
+
+    @Test func missingInboxExplainsHowToCreateIt() throws {
+        #expect(Handoff.inboxLabel == "bton:inbox")
+        let message = try #require(Handoff.Problem.noInbox(repo: "team/project").errorDescription)
+        #expect(message.contains("team/project"))
+        #expect(message.contains("bton:inbox"))
+        #expect(message.contains("gh issue create"))
     }
 
     private func issue(comments: [IssueComment]) -> OpenIssue {

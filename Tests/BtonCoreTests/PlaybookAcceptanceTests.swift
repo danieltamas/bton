@@ -4,6 +4,12 @@ import Testing
 
 @Suite(ProcessBound())
 struct PlaybookAcceptanceTests {
+    @Test func unavailableHelperNeverBlocksTheCore() {
+        let core = PRPlaybook.text(for: "custom-move")
+        #expect(core.contains("never blocks"))
+        #expect(!core.contains("Ask a configured helper only when required"))
+    }
+
     @Test(arguments: ["review", "fix", "resolve", "decide"])
     func moveGetsCoreAndOnlyItsSection(move: String) {
         let core = PRPlaybook.text(for: "custom-move")

@@ -4,12 +4,18 @@ import Foundation
 /// teammate's @mention is what their Bton already shows as an ask, and the marker only tags it.
 public enum Handoff {
     public static let maxTextLength = 4000
+    /// The label of a repo's inbox issue: where a handoff goes when no issue is its subject. The
+    /// team makes it (one open issue with the label, pinned), never an agent.
+    public static let inboxLabel = "bton:inbox"
 
     public enum Problem: LocalizedError, Equatable {
-        case badLogin, emptyText, tooLong, markup, otherMention(String)
+        case badLogin, emptyText, tooLong, markup, otherMention(String), noInbox(repo: String)
 
         public var errorDescription: String? {
             switch self {
+            case let .noInbox(repo):
+                "\(repo) has no open issue labelled \(Handoff.inboxLabel): name the issue, or have the team create one " +
+                    "(gh issue create --repo \(repo) --title \"Bton inbox\" --label \(Handoff.inboxLabel), then pin it)"
             case .badLogin: "not a GitHub login"
             case .emptyText: "nothing to say"
             case .tooLong: "longer than \(Handoff.maxTextLength) characters: link the plan instead of pasting it"
@@ -43,6 +49,13 @@ public enum Handoff {
         return "@\(login)\n\n\(text)\n\n\(marker(to: login))"
     }
 
+    /// The inbox issue among a repo's open issues with the label: the lowest number when the team
+    /// left more than one open, so every sender picks the same; nil when there is none.
+    public static func inboxIssue(in data: Data) throws -> Int? {
+        struct Row: Decodable { let number: Int }
+        return try JSONDecoder().decode([Row].self, from: data).map(\.number).min()
+    }
+
     /// Whether a comment ends with the marker addressed to `login`: where `body` puts it, so a
     /// marker quoted or fenced mid-comment does not tag the comment.
     public static func isHandoff(_ body: String, to login: String) -> Bool {
@@ -52,10 +65,11 @@ public enum Handoff {
 
 extension GitHubClient {
     /// Posts a handoff on an issue as the running user, once: a comment of theirs with the same
-    /// body already there is the answer. Returns whether it posted.
+    /// body already there is the answer. With no issue, the repo's inbox issue. Returns whether it posted.
     @discardableResult
-    public func handOff(to login: String, text: String, repo: String, issue: Int) async throws -> Bool {
+    public func handOff(to login: String, text: String, repo: String, issue: Int?) async throws -> Bool {
         let body = try Handoff.body(to: login, text: text)
+        let issue = if let issue { issue } else { try await inboxIssue(repo: repo) }
         let me = try await viewer()
         struct Thread: Decodable {
             struct Author: Decodable { let login: String }
@@ -73,5 +87,12 @@ extension GitHubClient {
         defer { try? FileManager.default.removeItem(at: file) }
         try await commentOnIssue(repo: repo, number: issue, bodyFile: file)
         return true
+    }
+
+    func inboxIssue(repo: String) async throws -> Int {
+        let data = try await gh(["issue", "list", "--repo", repo, "--label", Handoff.inboxLabel, "--state", "open",
+                                 "--json", "number", "--limit", "10"])
+        guard let number = try Handoff.inboxIssue(in: data) else { throw Handoff.Problem.noInbox(repo: repo) }
+        return number
     }
 }

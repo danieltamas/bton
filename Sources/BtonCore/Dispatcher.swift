@@ -274,7 +274,16 @@ actor Dispatcher {
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
             if isClaude, let graphLine { instructions = [instructions, graphLine].compactMap { $0 }.joined(separator: "\n\n") }
             let helpers = isClaude ? try offerHelpers(candidate.helpers, agents: agents, to: job.id, in: worktree) : nil
-            if let helpers { instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n") }
+            var playbook = candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move)
+            if let helpers {
+                instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n")
+            } else if !candidate.helpers.isEmpty {
+                // Named helpers that cannot be offered: the agent hears it, since its task may say to ask one.
+                let note = Helpers.unavailable(agent: agent, helpers: candidate.helpers)
+                if isClaude { instructions = [instructions, note].compactMap { $0 }.joined(separator: "\n\n") }
+                else { playbook = [playbook, note].compactMap { $0 }.joined(separator: "\n\n") }
+                jobs.note(job.id, "no ask tool for \(agent): told to do the helper's checks itself")
+            }
             var scratch: String?
             if isClaude {
                 // Made anew and private: a path already there, a link above all, fails the job.
@@ -286,7 +295,7 @@ actor Dispatcher {
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model, effort: candidate.effort,
                                                      helpersConfig: helpers?.config, scratch: scratch,
-                                                     playbook: candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move),
+                                                     playbook: playbook,
                                                      denying: candidate.denied),
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,

@@ -4,6 +4,10 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
+**A codex reviewer no longer blocks on the ask tool it never had.** Bton offers the `ask` helper tool to Claude agents only, but the playbook told every agent to consult through it, and lexito's decide prompt says to ask codex: a review or decision run by codex (Settings > Agents, reviewer codex) blocked every head on "consultation unavailable". The playbook (now v3) asks a helper only where the session exposes the tool and says a helper that is not exposed never blocks, and a job whose flow names helpers it cannot be offered is told so, by identity: "you are the codex agent; a step that says to consult codex is satisfied by your own work". The job log notes it.
+
+**`bton handoff` without an issue.** `bton handoff <owner/name> --to <login> "text"` posts on the repo's inbox issue, the open issue labelled `bton:inbox` (the lowest number when there are several). A repo without one gets a message naming the label and the create command; nothing is created unattended. The playbook's handoff rule says so.
+
 **Settings > More apps.** The other open source tools from the same maker, in two groups: in the menu bar (MacMax, RMJ) and in the terminal (Axon, Run.dev, Cloak). Each card shows the app's own icon, platform, pitch, one line, Website and GitHub links, and its install command with a copy button; whether an app has a release is asked of GitHub when the pane opens (no login needed) and kept across launches, so an app that ships after this Bton was built shows its version and install line, and one that has not says so instead of a command.
 
 **A schedule with "only on change" no longer re-arms itself.** The gate read each PR's updatedAt, and GitHub bumps that for a label too: a run's own lease claim and release flip the work label on every PR it looks at, so every run made the next one due (430 runs on one schedule). The gate now reads what a run should see: a PR opened, a commit on its head, a comment, a merge, or a head that moved since the last run saw the queue.
