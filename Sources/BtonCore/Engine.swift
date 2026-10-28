@@ -260,7 +260,7 @@ public actor Engine {
                     // Schedules need no flow: they are this Mac's own, like its agents. They start from
                     // the branch PRs merge into, which the owner picks per repo.
                     let runNow = Set(config.schedules.compactMap(\.item).filter { next.contains(Self.pick(repo: read.repo.slug, item: $0)) })
-                    let changedAt = (read.pullRequests.map(\.updatedAt) + read.merged.map(\.mergedAt)).max()
+                    let changedAt = DispatchPlanner.queueChangedAt(read.pullRequests, merged: read.merged)
                     pending += DispatchPlanner.scheduled(config.schedules, jobs: jobs.all(), repo: read.repo.slug,
                                                          defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
                                                          runNow: runNow, changedAt: changedAt)

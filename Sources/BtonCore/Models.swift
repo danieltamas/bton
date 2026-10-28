@@ -22,6 +22,8 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// Oldest first, without Bton's own comments.
     public let comments: [PullRequestComment]
     public let updatedAt: Date
+    /// When the PR was opened; nil where the read did not carry it.
+    public var createdAt: Date?
     /// When the head commit was made; nil when GitHub did not say.
     public var headCommittedAt: Date?
     /// The keys of Bton's own marker comments on the PR (`stale-ping fix@<head>`), which are

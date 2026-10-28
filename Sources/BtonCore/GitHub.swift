@@ -213,7 +213,7 @@ public struct GitHubClient: Sendable {
         pullRequests(states: OPEN, first: 100, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
           pageInfo { hasNextPage endCursor }
           nodes {
-            number title url isDraft headRefOid headRefName baseRefName body updatedAt authorAssociation mergeable isCrossRepository
+            number title url isDraft headRefOid headRefName baseRefName body createdAt updatedAt authorAssociation mergeable isCrossRepository
             author { login }
             labels(first: 100) { nodes { name } }
             assignees(first: 10) { nodes { login } }
@@ -233,7 +233,7 @@ public struct GitHubClient: Sendable {
         struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
         struct Row: Decodable {
             let number: Int, title: String, url: URL, isDraft: Bool, headRefOid: String, headRefName: String
-            let baseRefName: String, body: String, updatedAt: Date, authorAssociation: String, mergeable: String?
+            let baseRefName: String, body: String, createdAt: Date?, updatedAt: Date, authorAssociation: String, mergeable: String?
             let isCrossRepository: Bool?
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
             let commits: Nodes<CommitNode>?
@@ -292,6 +292,7 @@ public struct GitHubClient: Sendable {
                                                        body: $0.body, createdAt: $0.createdAt) }
                             .sorted { $0.createdAt < $1.createdAt },
                         updatedAt: row.updatedAt)
+            pr.createdAt = row.createdAt
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
             pr.mergeOnlyAncestors = Self.mergeOnlyAncestors(of: row.headRefOid, in: row.commits?.nodes.map(\.commit) ?? [])
             pr.changedFiles = row.files?.nodes.map(\.path) ?? []

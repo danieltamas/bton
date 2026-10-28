@@ -167,8 +167,8 @@ public enum DispatchPlanner {
     /// item, so a restart neither repeats nor forgets one. The key's head is the minute, which
     /// keeps every run a key of its own.
     /// `runNow` holds the items the owner asked to run now: due whatever their interval, and even
-    /// while switched off. `changedAt` is when the repo's PRs last changed (opened, updated,
-    /// merged); an `onlyOnChange` entry is due only if that is after its last successful run
+    /// while switched off. `changedAt` is when the repo's queue last changed (`queueChangedAt`);
+    /// an `onlyOnChange` entry is due only if that is after its last successful run
     /// started. So nothing that happens during a run is missed, a failed run is tried again, and
     /// a run that changed something is followed by one more, which finds nothing new to do.
     public static func scheduled(_ schedules: [ScheduleEntry], jobs: [Job], repo: String, defaultBranch: String,
@@ -298,6 +298,16 @@ public enum DispatchPlanner {
     }
 
     static let scheduleMove = "schedule"
+
+    /// When the queue last changed in a way a schedule should see: a PR opened, a commit on its
+    /// head, a comment, a merge. Never a PR's `updatedAt`: GitHub bumps that for a label flip too,
+    /// and a run's own `bton lease claim` and release add and remove the work label on every PR it
+    /// looks at, so reading `updatedAt` made each run re-arm the next (430 runs, $287 by 2026-10-28).
+    /// A label change alone (turn:dani by hand) waits for the next comment, push or timed run.
+    public static func queueChangedAt(_ pullRequests: [PullRequest], merged: [MergedPullRequest]) -> Date? {
+        let fromOpen = pullRequests.flatMap { [$0.createdAt, $0.headCommittedAt, $0.comments.last?.createdAt].compactMap { $0 } }
+        return (fromOpen + merged.map(\.mergedAt)).max()
+    }
 
     /// Each repo's first candidate, then each one's second, and so on, repos in the order they
     /// first appear.
