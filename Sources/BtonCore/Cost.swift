@@ -207,7 +207,8 @@ public enum CodexSessions {
                 guard let payload = (try? JSONDecoder().decode(Line.self, from: Data(line)))?.payload else { continue }
                 switch (payload.type, payload.name) {
                 case ("custom_tool_call", "exec"): if let input = payload.input { found.append(input) }
-                case ("function_call", "shell"), ("function_call", "shell_command"): if let arguments = payload.arguments { found.append(arguments) }
+                case ("function_call", "shell"), ("function_call", "shell_command"), ("function_call", "exec_command"):
+                    if let arguments = payload.arguments { found.append(arguments) }
                 default: continue
                 }
             }
