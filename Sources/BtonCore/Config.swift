@@ -22,6 +22,15 @@ public struct BtonConfig: Codable, Sendable {
     /// The Python that has graphify installed, for the repos that build a code graph. Nil looks
     /// in the two places the venv is usually made (`CodeGraph.python`).
     public var graphifyPython: String? = nil
+    /// Code graphs at all. Off: no repo builds, links or mentions one, whatever its own switch
+    /// says. Absent in an older config file: on.
+    @DefaultTrue public var codeGraphs = true
+    /// What a job is told about its graph, with `{graph}`, `{base}` and `{commit}`; nil is
+    /// `CodeGraph.defaultInstruction`.
+    public var graphInstruction: String? = nil
+
+    /// Whether Bton keeps and uses the repo's code graph: this switch and the repo's both on.
+    public func buildsGraph(_ repo: WatchedRepo) -> Bool { codeGraphs && repo.buildsGraph }
 
     /// Where the skeleton kept its config; read once, moved to `$BTON_HOME`.
     public static let legacyURL = FileManager.default.homeDirectoryForCurrentUser
@@ -224,5 +233,28 @@ public struct AgentTemplate: Codable, Hashable, Sendable {
         }
         if !argv.contains(where: { $0.contains("{prompt}") }) { return "Pass {prompt} as one of the arguments." }
         return nil
+    }
+}
+
+/// A Bool an older config file may lack: absent reads as true.
+@propertyWrapper
+public struct DefaultTrue: Codable, Hashable, Sendable {
+    public var wrappedValue: Bool
+
+    public init(wrappedValue: Bool = true) { self.wrappedValue = wrappedValue }
+
+    public init(from decoder: Decoder) throws {
+        wrappedValue = try decoder.singleValueContainer().decode(Bool.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(wrappedValue)
+    }
+}
+
+extension KeyedDecodingContainer {
+    public func decode(_ type: DefaultTrue.Type, forKey key: Key) throws -> DefaultTrue {
+        try decodeIfPresent(DefaultTrue.self, forKey: key) ?? DefaultTrue()
     }
 }

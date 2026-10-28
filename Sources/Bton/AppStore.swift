@@ -79,6 +79,8 @@ final class AppStore {
     var voiceSettings: VoiceSettings? { config.voice }
     var draftModel: String { config.draftModel ?? BtonConfig.defaultDraftModel }
     var graphifyPython: String? { config.graphifyPython }
+    var codeGraphs: Bool { config.codeGraphs }
+    var graphInstruction: String? { config.graphInstruction }
     var pollSeconds: Int { config.pollSeconds }
     /// The poll interval as the footer and the repo page word it: "2m" or "45s".
     var pollEvery: String { Duration.seconds(pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)) }
@@ -423,7 +425,7 @@ final class AppStore {
     /// Whether the repo's code graph is there for the registry job; nil for a repo not watched.
     func graphReadiness(_ slug: String) -> CodeGraph.Readiness? {
         config.repos.first { $0.slug.caseInsensitiveCompare(slug) == .orderedSame }
-            .map { CodeGraph.readiness(of: $0, python: CodeGraph.python(configured: graphifyPython), home: home) }
+            .map { CodeGraph.readiness(of: $0, python: CodeGraph.python(configured: graphifyPython), home: home, enabled: codeGraphs) }
     }
 
     /// How far the repo's graph build is; nil when none runs.

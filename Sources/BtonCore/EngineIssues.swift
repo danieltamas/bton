@@ -81,12 +81,12 @@ extension Engine {
     /// issues were not read this tick waits for a read, so the agent never works from a stale list.
     func composeCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
                            merged: [MergedPullRequest],
-                           clone: URL, model: String) -> [DispatchCandidate] {
+                           clone: URL, codeGraph: Bool, model: String) -> [DispatchCandidate] {
         guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
         let ran = Set(all.map(\.key))
-        let codeMap = NewIssues.codeMap(inClone: clone)
+        let codeMap = codeGraph ? NewIssues.codeMap(inClone: clone) : nil
         var made: [DispatchCandidate] = []
         composeRequests.removeAll { request in
             guard request.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }

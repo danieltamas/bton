@@ -216,7 +216,7 @@ public actor Engine {
             }
             snapshot.loggedOut = heldAgents().sorted()
             // Started here, before dispatch, and never awaited: a build runs beside the agents.
-            for read in reads where read.repo.buildsGraph {
+            for read in reads where config.buildsGraph(read.repo) {
                 await graphs.refresh(repo: read.repo, branch: read.repo.branch ?? read.defaultBranch,
                                      python: CodeGraph.python(configured: config.graphifyPython), ghPath: github.ghPath)
             }
@@ -233,7 +233,7 @@ public actor Engine {
                 do {
                     let first = pending.count
                     await clearMerged(read.merged, clone: clone)
-                    let dispatcher = try await dispatcher(me: read.viewer, repos: config.repos)
+                    let dispatcher = try await dispatcher(me: read.viewer, config: config)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
@@ -283,7 +283,7 @@ public actor Engine {
                                                          queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
-                    if let registry = await featureJob(read, agents: config.agents, graphifyPython: config.graphifyPython, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
+                    if let registry = await featureJob(read, config: config, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
                     // The release: opened here when due, merged through a job once its PR is open.
                     if let release = await planRelease(read) { pending.append((release, clone, read.flow)) }
                     // One supervisor at a time: the first repo with a flagged job takes this tick's.
@@ -299,7 +299,8 @@ public actor Engine {
                                                model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
                     pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                  me: read.viewer, agents: config.agents, merged: read.merged,
-                                                 clone: clone, model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
+                                                 clone: clone, codeGraph: config.buildsGraph(read.repo),
+                                                 model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
                     // Every agent job of this repo starts with what the registry knows about its work.
                     for index in first..<pending.count {
                         pending[index].candidate = Self.withFeatureContext(pending[index].candidate, report: snapshot.features[read.repo.slug])
@@ -331,7 +332,7 @@ public actor Engine {
                     let selected = DispatchPlanner.select(open, jobs: jobs.all(), maxAgents: config.maxAgents,
                                                           agents: config.agents, first: next)
                     guard !selected.isEmpty else { break }
-                    let dispatcher = try await dispatcher(me: me, repos: config.repos)
+                    let dispatcher = try await dispatcher(me: me, config: config)
                     for chosen in selected {
                         guard let entry = pending.first(where: { $0.candidate.key == chosen.key }) else { continue }
                         if let agent = chosen.agent, heldAgents().contains(agent) {
@@ -537,16 +538,16 @@ public actor Engine {
     private static func labelKey(_ repo: String, _ number: Int) -> String { "\(repo)#\(number)" }
     private func lastRead(_ repo: String, _ number: Int) -> Date { labelReadAt[Self.labelKey(repo, number)] ?? .distantPast }
 
-    func dispatcher(me: String, repos: [WatchedRepo]) async throws -> Dispatcher {
+    func dispatcher(me: String, config: BtonConfig) async throws -> Dispatcher {
         if let dispatcher {
-            await dispatcher.useRepos(repos)
+            await dispatcher.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction)
             return dispatcher
         }
         let leases = try LeaseStore(home: home, holder: me, github: github)
         let made = Dispatcher(github: github, leases: leases, jobs: jobs, log: log)
         if let jobEnded { await made.onJobEnded(jobEnded) }
         // Before adopting: a job that ended while Bton was down posts its review at once.
-        await made.useRepos(repos)
+        await made.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction)
         await made.adopt()
         dispatcher = made
         return made

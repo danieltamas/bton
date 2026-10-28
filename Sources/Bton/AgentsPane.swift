@@ -46,8 +46,8 @@ struct AgentsPane: View {
                 }
             }
             SettingsCard(title: "Code graphs",
-                         detail: "graphify maps a repo's code into modules and their links. For a repo with \"Build a code graph for agents\" on (Repos), Bton rebuilds the graph after a sync when the branch moved, keeps it under ~/.bton/graphs and links it into every checkout an agent gets; the registry job draws its areas from it. The Python that has graphify installed: empty looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy.") {
-                GraphifyPythonField()
+                         detail: "graphify maps a repo's code into modules and their links. For a repo with \"Build a code graph for agents\" on (Repos), Bton rebuilds the graph after a sync when the branch moved, keeps it under ~/.bton/graphs and links it into every checkout an agent gets; the registry job draws its areas from it.") {
+                CodeGraphsSettings()
             }
             if store.agents.isEmpty && !adding {
                 EmptyState(symbol: "cpu", title: "No agents", detail: "Without one, Bton starts nothing on this Mac.")
@@ -137,30 +137,3 @@ private struct AgentCard: View {
     }
 }
 
-/// The graphify Python path, saved when the field is left or Return is pressed.
-private struct GraphifyPythonField: View {
-    @Environment(AppStore.self) private var store
-    @State private var text = ""
-    @State private var problem: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                GlassField(placeholder: "~/.venvs/graphifyy-arm64/bin/python", text: $text, monospaced: true)
-                    .onSubmit(save)
-                if CodeGraph.python(configured: store.graphifyPython) == nil {
-                    Chip(text: "not found", symbol: "exclamationmark.triangle", color: Theme.danger)
-                } else {
-                    Chip(text: "found", symbol: "checkmark", color: Theme.success)
-                }
-            }
-            if let problem { ProblemText(text: problem) }
-        }
-        .onAppear { text = store.graphifyPython ?? "" }
-        .onDisappear(perform: save)
-    }
-
-    private func save() {
-        do { try store.setGraphifyPython(text); problem = nil } catch { problem = error.localizedDescription }
-    }
-}

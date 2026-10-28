@@ -86,7 +86,10 @@ struct ReposPane: View {
                             RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
                                        help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes, so agents query it before searching.",
                                        isOn: repo.buildsGraph, problem: $problem) { try store.setCodeGraph($0, for: repo.slug) }
-                            if repo.buildsGraph, CodeGraph.python(configured: store.graphifyPython) == nil {
+                            if repo.buildsGraph, !store.codeGraphs {
+                                Chip(text: "graphify is off", symbol: "exclamationmark.triangle", color: Theme.neutral)
+                                    .help("Use graphify is off in Settings > Agents: nothing is built or linked for any repo")
+                            } else if repo.buildsGraph, CodeGraph.python(configured: store.graphifyPython) == nil {
                                 Chip(text: "graphify's Python not found", symbol: "exclamationmark.triangle", color: Theme.danger)
                                     .help("Bton looks in ~/.venvs/graphifyy-arm64 and ~/.local/pipx/venvs/graphifyy; set another path in Settings > Agents")
                             }

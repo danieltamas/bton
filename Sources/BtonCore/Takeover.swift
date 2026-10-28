@@ -27,7 +27,7 @@ extension Engine {
         // Mac may take or start the move while the claim is pushed.
         let me = try await takeable(repo: repo, number: number, from: owner, branch: branch).me
         let item = "pr-\(number)"
-        let leases = try await dispatcher(me: me, repos: config.repos).leases
+        let leases = try await dispatcher(me: me, config: config).leases
         guard let lease = LeaseItem(item), case let .claimed(held)? = try? await leases.claim(lease, in: repo)
         else { throw TakeError.busy }
         // Once more on a failure; a lease left held only delays this Mac's own start until it expires.

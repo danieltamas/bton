@@ -133,12 +133,14 @@ extension Engine {
     /// means no automatic run this tick.
     func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
                                      pullRequests: [PullRequest], merged: [MergedPullRequest]),
-                            agents: [String: AgentTemplate], graphifyPython: String?, leases: LeaseStore) async -> DispatchCandidate? {
+                            config: BtonConfig, leases: LeaseStore) async -> DispatchCandidate? {
+        let agents = config.agents
         let slug = read.repo.slug
         let pick = Self.pick(repo: slug, item: FeatureJob.item)
         let pressed = next.contains(pick)
         // The areas come from the graph: without one, the job would draw them from the tree's layout.
-        if let hold = CodeGraph.readiness(of: read.repo, python: CodeGraph.python(configured: graphifyPython), home: home).hold {
+        if let hold = CodeGraph.readiness(of: read.repo, python: CodeGraph.python(configured: config.graphifyPython), home: home,
+                                          enabled: config.codeGraphs).hold {
             if pressed { deferred[pick] = hold }
             return nil
         }

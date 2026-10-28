@@ -33,15 +33,21 @@ actor Dispatcher {
     private(set) var workLabels: [String: String] = [:]
     /// The code graph store of each repo that builds one, by lowercased slug.
     private(set) var graphStores: [String: URL] = [:]
+    /// Settings > Agents' line about the graph; nil is the default.
+    private(set) var graphInstruction: String?
     /// Called after every job ends, so the next one starts without waiting for the next tick.
     private var jobEnded: (@Sendable () -> Void)?
 
     func onJobEnded(_ handler: @escaping @Sendable () -> Void) { jobEnded = handler }
 
-    func useRepos(_ repos: [WatchedRepo]) {
+    /// `graphs` off: no job gets a graph, whatever the repos say.
+    func useRepos(_ repos: [WatchedRepo], graphs: Bool = true, graphInstruction: String? = nil) {
         environments = Dictionary(repos.map { ($0.slug.lowercased(), $0.environment ?? [:]) }) { first, _ in first }
         workLabels = Dictionary(repos.compactMap { repo in repo.workLabel.map { (repo.slug.lowercased(), $0) } }) { first, _ in first }
-        graphStores = Dictionary(repos.filter(\.buildsGraph).map { ($0.slug.lowercased(), CodeGraph.store(for: $0.slug, home: home)) }) { first, _ in first }
+        graphStores = graphs
+            ? Dictionary(repos.filter(\.buildsGraph).map { ($0.slug.lowercased(), CodeGraph.store(for: $0.slug, home: home)) }) { first, _ in first }
+            : [:]
+        self.graphInstruction = graphInstruction
     }
 
     /// `home` is where the repos' graph stores live; the job store's home unless given.
@@ -192,7 +198,7 @@ actor Dispatcher {
             jobs.note(job, "\(CodeGraph.linkName) kept: \(error.localizedDescription)")
             return nil
         }
-        return CodeGraph.instructionLine(base: base, marker: marker)
+        return CodeGraph.instructionLine(base: base, marker: marker, template: graphInstruction)
     }
 
     /// Worktree, checks, then the command, or the agent's spawn: `watch` takes the agent from there.

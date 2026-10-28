@@ -10,7 +10,55 @@ public enum CodeGraph {
     static let markerName = "bton-build.json"
 
     /// Where the venv is usually made, in the order tried when no path is set.
-    static let pythonCandidates = [".venvs/graphifyy-arm64/bin/python", ".local/pipx/venvs/graphifyy/bin/python"]
+    static let pythonCandidates = [installVenv + "/bin/python", ".local/pipx/venvs/graphifyy/bin/python"]
+    /// Where Install graphify (Settings > Agents) makes its venv: the first place looked in.
+    public static let installVenv = ".venvs/graphifyy-arm64"
+
+    /// graphify's package on PyPI.
+    public static let installPackage = "graphifyy"
+    /// Where uv usually is; it brings its own CPython of the Mac's architecture, so it comes first.
+    public static let uvCandidates = [".local/bin/uv", "/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
+    /// Where a Python that graphify can run on (3.10 or newer) is usually found. Apple's
+    /// /usr/bin/python3 is 3.9 on macOS 14 and 15, so it is last and passes only when newer.
+    public static let installPythonCandidates = ["/opt/homebrew/bin/python3", "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
+                                                 "/usr/local/bin/python3", "/usr/bin/python3"]
+    /// Run with `-c`: prints "True arm64" for a Python that is new enough, on the machine it runs native on.
+    public static let installPythonProbe = "import sys, platform; print(sys.version_info >= (3, 10), platform.machine())"
+
+    /// Whether a probe's output says the Python will do: new enough, and the Mac's own
+    /// architecture (a Rosetta brew's x86_64 python builds a venv that cannot run graphify's wheels).
+    public static func installPythonFits(_ probe: String, machine: String) -> Bool {
+        probe.split(whereSeparator: \.isWhitespace).map(String.init) == ["True", machine]
+    }
+
+    /// The uv and the Pythons to try, under `home`, in order; the installer runs the probe on each Python.
+    public static func installTools(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> (uv: [String], pythons: [String]) {
+        let files = FileManager.default
+        let uv = uvCandidates.map { $0.hasPrefix("/") ? $0 : home.appendingPathComponent($0).path }.filter(files.isExecutableFile)
+        return (uv, installPythonCandidates.filter(files.isExecutableFile))
+    }
+
+    /// Install graphify with uv: a venv with a CPython 3.12 uv fetches for this Mac, then the
+    /// package into it. Run in order, each must exit 0.
+    public static func installSteps(home: URL = FileManager.default.homeDirectoryForCurrentUser, uv: String) -> [[String]] {
+        let venv = home.appendingPathComponent(installVenv).path
+        return [[uv, "venv", "--python", "3.12", venv], [uv, "pip", "install", "--python", venv + "/bin/python", installPackage]]
+    }
+
+    /// Install graphify with a Python that passed the probe: its venv, then the package.
+    public static func installSteps(home: URL = FileManager.default.homeDirectoryForCurrentUser, python: String) -> [[String]] {
+        let venv = home.appendingPathComponent(installVenv).path
+        return [[python, "-m", "venv", venv], [venv + "/bin/python", "-m", "pip", "install", installPackage]]
+    }
+
+    /// This Mac's architecture as Python's `platform.machine()` prints it (arm64, x86_64).
+    public static var machine: String {
+        var system = utsname()
+        uname(&system)
+        return withUnsafePointer(to: &system.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(_SYS_NAMELEN)) { String(cString: $0) }
+        }
+    }
 
     /// The Python to run graphify with: the configured one when it is executable, else the first
     /// usual venv under `home` that is. Nil: nothing builds, and Settings says so.
@@ -47,7 +95,7 @@ public enum CodeGraph {
         /// Why a job that needs the graph waits; nil when it can run.
         public var hold: String? {
             switch self {
-            case .off: "the repo builds no code graph yet: turn it on in Settings > Repos or on the repo's page"
+            case .off: "the repo builds no code graph yet: Use graphify in Settings > Agents and the repo's switch (Settings > Repos or its page) must both be on"
             case .missingPython: CodeGraphBuilder.missingPython
             case .building: "the code graph is being built"
             case .ready: nil
@@ -98,8 +146,8 @@ public enum CodeGraph {
     /// A graph in the store with its build marker counts, whether or not graphify's Python is
     /// still found: the same pair a job's worktree gets linked. A graph moved in from a clone has
     /// no marker until the first build here finishes.
-    public static func readiness(of repo: WatchedRepo, python: String?, home: BtonHome) -> Readiness {
-        guard repo.buildsGraph else { return .off }
+    public static func readiness(of repo: WatchedRepo, python: String?, home: BtonHome, enabled: Bool = true) -> Readiness {
+        guard enabled, repo.buildsGraph else { return .off }
         let store = store(for: repo.slug, home: home)
         if isBuilt(store), marker(in: store) != nil { return .ready }
         return python == nil ? .missingPython : .building
@@ -172,9 +220,54 @@ public enum CodeGraph {
         try encoder.encode(marker).write(to: store.appendingPathComponent(markerName), options: .atomic)
     }
 
-    /// The line a Claude job gets with its team instructions: the graph is the base's, not the branch's.
-    public static func instructionLine(base: String, marker: Marker) -> String {
-        "Code graph: \(linkName)/ in this checkout is graphify's graph of \(base) at \(marker.commit.prefix(8)); "
-            + "this branch's own changes may not be in it. Run graphify-src \"<question>\" before searching the tree."
+    /// The line a job gets with its team instructions unless Settings > Agents says otherwise:
+    /// `{graph}` is `linkName`, `{base}` the branch the graph is of (not the job's branch),
+    /// `{commit}` its first 8 characters.
+    public static let defaultInstruction = "Code graph: {graph}/ in this checkout is graphify's graph of {base} at {commit}; "
+        + "this branch's own changes may not be in it. Run graphify-src \"<question>\" before searching the tree."
+
+    /// `template` with its placeholders filled; empty or blank means the default.
+    public static func instructionLine(base: String, marker: Marker, template: String? = nil) -> String {
+        let text = template?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (text.isEmpty ? defaultInstruction : text)
+            .replacingOccurrences(of: "{graph}", with: linkName)
+            .replacingOccurrences(of: "{base}", with: base)
+            .replacingOccurrences(of: "{commit}", with: String(marker.commit.prefix(8)))
+    }
+
+    /// A graph kept under `<home>/graphs`, for Settings: what it costs on disk and what it is of.
+    public struct StoredGraph: Equatable, Sendable {
+        public let slug: String
+        public let url: URL
+        public let bytes: Int64
+        public let marker: Marker?
+    }
+
+    /// Every graph under `<home>/graphs`, by slug; the directory `owner__repo` reads back as `owner/repo`.
+    public static func storedGraphs(home: BtonHome) -> [StoredGraph] {
+        let files = FileManager.default
+        let graphs = home.url.appendingPathComponent("graphs", isDirectory: true)
+        guard let names = try? files.contentsOfDirectory(atPath: graphs.path) else { return [] }
+        // A build's staging copy (`<store>.next`) is not a graph yet and must not be touched.
+        return names.filter { !$0.hasSuffix(".next") }.compactMap { name -> StoredGraph? in
+            let url = graphs.appendingPathComponent(name, isDirectory: false)
+            var isDirectory: ObjCBool = false
+            guard files.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+            let slug = name.range(of: "__").map { name.replacingCharacters(in: $0, with: "/") } ?? name
+            return StoredGraph(slug: slug, url: url, bytes: size(of: url), marker: marker(in: url))
+        }
+        .sorted { $0.slug < $1.slug }
+    }
+
+    /// The bytes of every regular file under the directory, symlinks not followed; 0 when it is missing.
+    public static func size(of directory: URL) -> Int64 {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey]
+        guard let walk = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: Array(keys)) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in walk {
+            guard let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
     }
 }
