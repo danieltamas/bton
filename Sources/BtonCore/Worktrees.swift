@@ -40,6 +40,16 @@ enum Worktrees {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The tree of the commit a prepared worktree is at: the code a check run in it sees. The PR
+    /// head is checked out as is, the base is not merged in, so this is the head's own tree. Nil
+    /// when git cannot say.
+    static func tree(of worktree: URL, ghPath: String, runner: ProcessRunner) async -> String? {
+        let tree = try? await git(["rev-parse", "HEAD^{tree}"], in: worktree, ghPath: ghPath, runner: runner)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tree, tree.count == 40, tree.allSatisfy(\.isHexDigit) else { return nil }
+        return tree
+    }
+
     /// The commit a prepared tree is at: what a run in it sees, whatever the remote ref says by then.
     static func head(of worktree: URL, ghPath: String, runner: ProcessRunner) async throws -> String {
         try await git(["rev-parse", "HEAD"], in: worktree, ghPath: ghPath, runner: runner)

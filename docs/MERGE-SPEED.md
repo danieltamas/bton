@@ -128,6 +128,13 @@ Acceptance tests for items 2-5: `Tests/BtonCoreTests/MergeFixesAcceptanceTests.s
    against and the argv list. A later job for the same key (same head) over the same base tip with the
    same checks skips them and logs "not run again" with the earlier job's id. Another head, a moved base
    or a changed flow runs everything again. The head re-read before the merge command still happens.
+   **Extended (0.15.0): one receipt per check, keyed by the head tree.** The receipt now records the
+   tree of the commit the checks ran on (`HEAD^{tree}` in their worktree; the base is not merged in),
+   a fingerprint of the repo environment and whether a person pressed, and is saved after every check
+   that passes. Any job in the repo (another move on the same head, another PR whose head has the same
+   tree) covers a check whose argv it passed on the same tree over the same base tip with the same
+   environment; a check that fails leaves the ones before it covered. `checks.fresh` names argv that
+   always run (`TreeReceiptsAcceptanceTests`).
 4. **Done: orphan base worktree removed.** After the merge command, `.worktrees/bton-base-<item>` is
    removed when git no longer lists it (as well as when it is clean); it is kept only when git still
    lists it and it has changes. A fresh base tree also replaces such an orphan instead of failing. Never

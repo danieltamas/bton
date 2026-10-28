@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// What one dispatch is for. A key that has a job, whatever its status, is never dispatched again:
@@ -62,7 +63,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var steer: String?
     /// The work label this job put on its PR, so it comes off as added even if Settings changed it.
     public var workLabel: String?
-    /// Every check passed, against this base: a later run of the key over the same base skips them.
+    /// The checks that passed so far, with the tree and base tip they saw: a later job in the repo
+    /// on the same tree, base tip and environment skips them, one by one.
     public var checked: PassedChecks?
     /// A schedule run's view of the queue when it started (`DispatchPlanner.queueHeads`).
     public var queueHeads: [String]?
@@ -98,19 +100,38 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
-/// The checks a job ran and passed, and the base tip they ran against: a check may read the base
-/// (`git merge-tree`, `git diff base...HEAD`), so a moved base runs them again.
+/// The checks a job ran and passed, keyed by the code they saw: the tree of the head commit the
+/// check worktree is at, over the base tip of the time, so the same tree under another move or
+/// another head (an empty commit, a squash) reuses them, and a different tree, or a moved base a
+/// check may read, runs them again.
 public struct PassedChecks: Hashable, Codable, Sendable {
+    /// The base tip they ran against: part of the key, since a check may read the base.
     public let base: String
+    /// The checks that passed, in the order they ran; a later one that failed is not here.
     public let checks: [[String]]
     /// They ran with `BTON_PRESSED=1`, which a check may pass on: never reused for the other kind
     /// of start. Nil in jobs saved before it, which no run reuses.
     public let pressed: Bool?
+    /// The tree of the commit the checks ran on (`HEAD^{tree}` in their worktree); nil when the
+    /// read failed, or in a receipt from before it, which only the same job key over the same
+    /// base reuses.
+    public let tree: String?
+    /// `fingerprint` of the repo environment the checks ran with; never the values themselves.
+    public let environment: String?
 
-    public init(base: String, checks: [[String]], pressed: Bool = false) {
+    public init(base: String, checks: [[String]], pressed: Bool = false, tree: String? = nil, environment: String? = nil) {
         self.base = base
         self.checks = checks
         self.pressed = pressed
+        self.tree = tree
+        self.environment = environment
+    }
+
+    /// sha256 of the environment as `k=v` lines, keys sorted: the same on every Mac with the same
+    /// Settings, and a changed value runs the checks again.
+    public static func fingerprint(_ environment: [String: String]) -> String {
+        let text = environment.keys.sorted().map { "\($0)=\(environment[$0]!)" }.joined(separator: "\n")
+        return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 

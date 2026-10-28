@@ -187,6 +187,9 @@ public struct DispatchRule: Decodable, Sendable {
 public struct Checks: Decodable, Sendable {
     public let beforeSession: [[String]]
     public let beforeMerge: [[String]]
+    /// Checks never covered by an earlier run's receipt: one that reads a service or the clock is
+    /// not a function of the tree.
+    public let fresh: [[String]]?
 }
 
 public struct Intake: Decodable, Sendable {

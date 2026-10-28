@@ -235,7 +235,7 @@ actor Dispatcher {
             // Not in the saved environment: a posted "1" must not be redacted.
             let runEnvironment = candidate.pressed ? environment.merging(["BTON_PRESSED": "1"]) { $1 } : environment
             if let checks, !checks.isEmpty,
-               let failure = try await runChecks(checks, job: &job, in: worktree, clone: clone, base: candidate.commandBase ?? base,
+               let failure = try await runChecks(checks, fresh: flow?.checks?.fresh ?? [], job: &job, in: worktree, clone: clone, base: candidate.commandBase ?? base,
                                                  environment: runEnvironment, timeout: candidate.timeout) {
                 await postFailure(candidate, text: failure)
                 return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")

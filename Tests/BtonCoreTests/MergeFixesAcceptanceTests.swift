@@ -120,8 +120,10 @@ struct MergeFixesAcceptanceTests {
         #expect(try await f.finished(id).checked?.checks == checks)
     }
 
+    /// A check that fails or times out leaves the receipts of the ones that passed before it (one
+    /// receipt per check, keyed by the head tree and base tip); no check at all leaves no receipt.
     @Test(arguments: ["none", "failure", "timeout", "command timeout"])
-    func incompleteChecksNeverRecordPassedChecks(kind: String) async throws {
+    func incompleteChecksRecordOnlyThePassedOnes(kind: String) async throws {
         let f = try await MergeFixFixture.make()
         defer { f.remove() }
         let checks = ["none", "command timeout"].contains(kind) ? [] : [["/bin/sh", "-c", "echo first-passed"],
@@ -129,7 +131,7 @@ struct MergeFixesAcceptanceTests {
         let id = try await f.start(checks: checks, timeout: kind.contains("timeout") ? .seconds(1) : .seconds(60),
             command: ["/bin/sh", "-c", kind == "command timeout" ? "sleep 5; touch \"$STARTED\"" : "touch \"$STARTED\""])
         let job = try await f.finished(id)
-        #expect(job.checked == nil)
+        #expect(job.checked?.checks == (checks.isEmpty ? nil : [checks[0]]))
         #expect(job.status == (kind == "none" ? .succeeded : .failed))
         #expect(FileManager.default.fileExists(atPath: f.started.path) == (kind == "none"))
         if kind.contains("timeout") { #expect(job.flags?.contains(.timedOut) == true) }

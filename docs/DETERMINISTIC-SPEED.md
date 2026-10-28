@@ -12,7 +12,7 @@ no blind retry of a timed-out command.
 
 ## Ordered by saving per unit of risk
 
-1. **Read the head's check runs on GitHub as a merge gate instead of running the suite again.**
+1. **Done (0.15.0, `checks_green`). Read the head's check runs on GitHub as a merge gate instead of running the suite again.**
    The PR query fetches no check status (`GitHub.swift`, the `pr` GraphQL fields) and
    `MERGE-SPEED.md` lists this gate as the open Bton item. A `beforeMerge` kind `checks:<name,...>`
    that passes only when every named check is green on the exact head SHA, and waits on pending,
@@ -21,7 +21,7 @@ no blind retry of a timed-out command.
    trusting a check that ran on a different SHA or from a fork's workflow; name the checks, pin the
    SHA, fail closed.
 
-2. **Key check receipts by the merged tree, not by the job.** A receipt is reused only when the
+2. **Done (0.15.0, keyed by the head tree the checks ran on plus the base tip, since the base is not merged into the check worktree). Key check receipts by the tree, not by the job.** A receipt is reused only when the
    whole job key matches, move included (`DispatcherCommands.swift`, `Jobs.swift`), so review, fix and
    merge each run the same suite on the same code. `MERGE-SPEED.md` records one head whose suite ran
    three times. Key a receipt by `git merge-tree --write-tree <base> <head>` (the OID of the tree

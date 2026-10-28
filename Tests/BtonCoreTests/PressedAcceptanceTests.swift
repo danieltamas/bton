@@ -73,6 +73,12 @@ struct PressedAcceptanceTests {
         for name in ["check-1", "check-2", "release"] {
             try FileManager.default.removeItem(at: f.file(name))
         }
+        // pr-8 is at the same head, base and environment as pr-7, so pr-7's receipts would cover
+        // its checks and the files this observation reads would never be written again.
+        for var earlier in try f.store.all() where earlier.checked != nil {
+            earlier.checked = nil
+            try f.store.save(earlier)
+        }
         try await f.observe(engine, expected: "absent", item: "pr-8")
     }
 

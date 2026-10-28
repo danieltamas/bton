@@ -4,26 +4,45 @@ import os
 /// A flow's checks and a merge command: run with their output in the job's log, and the PR
 /// re-read that guards the command.
 extension Dispatcher {
-    /// Why the checks failed, or nil when every one passed, now or in an earlier run of the key
-    /// over the same base tip: a team's suite can take 20 minutes, and a merge that failed after
-    /// it passed must not pay them again. Each gets the move's own time limit: a team's suite can take
-    /// longer than any fixed limit, and the flow's `timeoutMinutes` is where the team says how long
-    /// a move may take.
-    func runChecks(_ checks: [[String]], job: inout Job, in worktree: URL, clone: URL, base: String,
+    /// Why the checks failed, or nil when every one passed, now or in an earlier run on the same
+    /// code: a team's suite can take 20 minutes, and review, fix and merge on one head, or a
+    /// merge that failed after it passed, must not pay them again. The code is the tree of the
+    /// commit the worktree is at (the base is not merged in), over the base tip a check may read,
+    /// with the environment and the kind of start; each check that passes is a receipt of its
+    /// own, so a later one failing keeps the earlier ones. A check in
+    /// `fresh` always runs. Each gets the move's own time limit: a team's suite can take longer
+    /// than any fixed limit, and the flow's `timeoutMinutes` is where the team says how long a
+    /// move may take.
+    func runChecks(_ checks: [[String]], fresh: [[String]] = [], job: inout Job, in worktree: URL, clone: URL, base: String,
                    environment: [String: String], timeout: Duration) async throws -> String? {
         let tip = try await Worktrees.tip(of: base, clone: clone, ghPath: github.ghPath, runner: runner)
-        let passed = PassedChecks(base: tip, checks: checks, pressed: environment["BTON_PRESSED"] == "1")
-        if let earlier = jobs.all().first(where: { $0.id != job.id && $0.key == job.key && $0.checked == passed }) {
-            jobs.note(job.id, "checks passed on \(job.key.head.prefix(7)) over \(base) \(tip.prefix(7)) in job \(earlier.id.uuidString); not run again")
-        } else {
-            for check in checks {
+        let tree = await Worktrees.tree(of: worktree, ghPath: github.ghPath, runner: runner)
+        let pressed = environment["BTON_PRESSED"] == "1"
+        let fingerprint = PassedChecks.fingerprint(environment.filter { $0.key != "BTON_PRESSED" })
+        let others = jobs.all().filter { $0.id != job.id && $0.key.repo == job.key.repo && $0.checked?.pressed == pressed }
+        func receipt(covering check: [String]) -> Job? {
+            guard !fresh.contains(check) else { return nil }
+            return others.first { other in
+                guard let checked = other.checked, checked.checks.contains(check) else { return false }
+                if let tree, checked.tree == tree { return checked.base == tip && checked.environment == fingerprint }
+                // A receipt from before trees: the same job over the same base tip, as it was.
+                return checked.tree == nil && other.key == job.key && checked.base == tip && checked.checks == checks
+            }
+        }
+        var passed: [[String]] = []
+        for check in checks {
+            if let earlier = receipt(covering: check) {
+                let on = "\(tree.map { "tree \($0.prefix(7))" } ?? job.key.head.prefix(7).description) over \(base) \(tip.prefix(7))"
+                jobs.note(job.id, "check `\(check.joined(separator: " "))` passed on \(on) in job \(earlier.id.uuidString); not run again")
+            } else {
                 let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: timeout)
                 guard status == 0 else { return "`\(check.joined(separator: " "))` exited \(status)" }
             }
+            passed.append(check)
+            job.checked = PassedChecks(base: tip, checks: passed, pressed: pressed, tree: tree, environment: fingerprint)
+            // Unsaved, the next run only checks again.
+            try? jobs.save(job)
         }
-        job.checked = passed
-        // Unsaved, the next run only checks again.
-        try? jobs.save(job)
         return nil
     }
 
