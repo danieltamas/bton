@@ -25,10 +25,29 @@ struct SearchField: View {
                 .help("Clear the search")
             }
         }
-        .padding(.horizontal, 11).padding(.vertical, 7)
-        .background(Theme.canvas.opacity(0.7), in: Capsule())
-        .overlay(Capsule().strokeBorder(focused ? Theme.mint.opacity(0.6) : Theme.hairline, lineWidth: focused ? 1 : 0.5))
+        .fieldCapsule(active: focused)
         .animation(Motion.snappy, value: focused)
         .padding(.horizontal, 14)
     }
+}
+
+/// The one capsule every field on a search row wears: the search box, the repo filter and the
+/// status dropdown, at the same height with the same stroke, so a row of them reads as one line.
+struct FieldCapsule: ViewModifier {
+    static let height: CGFloat = 30
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 11)
+            .frame(height: Self.height)
+            .background(Theme.canvas.opacity(0.7), in: Capsule())
+            .overlay(Capsule().strokeBorder(active ? Theme.mint.opacity(0.6) : Theme.hairline, lineWidth: active ? 1 : 0.5))
+            .contentShape(Capsule())
+    }
+}
+
+extension View {
+    /// Mint stroke while `active` (focused, or holding a choice).
+    func fieldCapsule(active: Bool) -> some View { modifier(FieldCapsule(active: active)) }
 }

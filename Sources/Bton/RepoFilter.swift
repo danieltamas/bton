@@ -18,10 +18,7 @@ struct RepoFilter: View {
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .semibold))
             }
             .foregroundStyle(selection == nil ? Theme.textTertiary : Theme.mint)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Theme.canvas.opacity(0.7), in: Capsule())
-            .overlay(Capsule().strokeBorder(selection == nil ? Theme.hairline : Theme.mint.opacity(0.6), lineWidth: selection == nil ? 0.5 : 1))
-            .contentShape(Capsule())
+            .fieldCapsule(active: selection != nil)
         }
         .buttonStyle(PressStyle())
         .pointingHandCursor()
