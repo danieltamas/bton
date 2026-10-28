@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.13.0 (2026-10-28)
 
 **Retired features, and the repo page slides in from the right.** A feature the registry closed has the status retired: it is out of the tree and the area counts until you choose the new "retired" chip or a search names it, then it shows dimmed, and its detail ends the timeline with the retirement date. The repo page used to come in from the left, against every other page; it now slides in from the right, the features list slides left under a feature's detail, and back runs the other way.
 
