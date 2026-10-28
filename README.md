@@ -141,7 +141,7 @@ where your flow says a person decides.
       <b>Every feature and where it is</b><br>
       A repo's page, from the footer's branch line: each feature of <code>.bton/features.json</code>
       as live, in develop, building, ready, spec or idea, with its timeline and PRs, what develop
-      holds that main lacks, and when the last release was. An agent keeps the registry: nightly
+      holds that main lacks, and when the last release was. With a <code>release</code> section in the flow, Bton also opens the release PR when it is due and merges it after the release checks, on your press or on its own. An agent keeps the registry: nightly
       and after changes it links new issues and PRs to features and opens the PR.
     </td>
   </tr>
