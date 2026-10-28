@@ -135,6 +135,19 @@ struct FeatureContextTests {
         #expect(!map.text.contains("cut here"))
     }
 
+    @Test func cutKeepsWholeLinesWithinTheLimit() {
+        let line = String(repeating: "ă", count: 37) + "\n"
+        for count in [321, 322, 323, 324, 325, 340, 400] {
+            let text = String(repeating: line, count: count)
+            let cut = FeatureContext.cut(text)
+            #expect(cut.utf8.count <= FeatureContext.limit, Comment(rawValue: String(count)))
+            #expect(cut.hasSuffix("for the rest.\n"))
+            #expect(cut.contains("\n...cut here"), "the cut lands on a line end, never inside a character")
+        }
+        let short = String(repeating: "a", count: FeatureContext.limit)
+        #expect(FeatureContext.cut(short) == short)
+    }
+
     @Test func noRegistryNoContext() throws {
         let none = FeatureReport(repo: Self.repo, registry: .none, hasRelease: false)
         #expect(FeatureContext.make(for: .issue(Self.plan(issue: 402)), report: none) == nil)

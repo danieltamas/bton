@@ -84,10 +84,10 @@ public enum FeatureContext {
     /// The text within `limit`, cut at a line end and saying so, so the agent knows to read the registry itself.
     static func cut(_ text: String) -> String {
         guard text.utf8.count > limit else { return text }
-        let room = text.utf8.prefix(limit - 80)
-        let kept = String(decoding: room, as: UTF8.self)
+        let footer = "...cut here: the registry holds more than this file; read `\(FeatureRegistry.relativePath)` for the rest.\n"
+        let kept = String(decoding: text.utf8.prefix(limit - footer.utf8.count), as: UTF8.self)
         let end = kept.lastIndex(of: "\n").map { kept.index(after: $0) } ?? kept.endIndex
-        return String(kept[..<end]) + "...cut here: the registry holds more than this file; read `\(FeatureRegistry.relativePath)` for the rest.\n"
+        return String(kept[..<end]) + footer
     }
 
     /// One feature as the agent reads it: what it is, where it lives, what built it.
