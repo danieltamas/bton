@@ -11,10 +11,10 @@ private enum ScheduleQueueChangeFixture {
     static let laterStart = now.addingTimeInterval(-900)
 
     static func pr(number: Int = 1, updatedAt: Date = now, createdAt: Date? = old,
-                   headCommittedAt: Date? = old, comments: [PullRequestComment] = []) -> PullRequest {
+                   headCommittedAt: Date? = old, headSha: String = "abc123", comments: [PullRequestComment] = []) -> PullRequest {
         var pr = PullRequest(repo: repo, number: number, title: "Synthetic widget", author: "octo",
                              authorAssociation: "OWNER", url: URL(string: "https://example.com/pr/\(number)")!,
-                             headSha: "abc123", headRef: "feature", baseRef: "main", body: "",
+                             headSha: headSha, headRef: "feature", baseRef: "main", body: "",
                              isDraft: false, labels: [], assignees: [], comments: comments, updatedAt: updatedAt)
         pr.createdAt = createdAt
         pr.headCommittedAt = headCommittedAt
@@ -25,17 +25,19 @@ private enum ScheduleQueueChangeFixture {
         PullRequestComment(author: "octo", body: "Please check the widget.", createdAt: date)
     }
 
-    static func job(startedAt: Date) -> Job {
-        Job(id: UUID(), key: JobKey(repo: repo, item: "schedule-7", move: "schedule", head: "old-minute"),
+    static func job(startedAt: Date, queueHeads: [String]? = nil) -> Job {
+        var job = Job(id: UUID(), key: JobKey(repo: repo, item: "schedule-7", move: "schedule", head: "old-minute"),
             agent: "codex", startedAt: startedAt, endedAt: startedAt.addingTimeInterval(60), status: .succeeded)
+        job.queueHeads = queueHeads
+        return job
     }
 
-    static func candidates(changedAt: Date?, jobs: [Job]) -> [DispatchCandidate] {
+    static func candidates(changedAt: Date?, jobs: [Job], queueHeads: [String] = []) -> [DispatchCandidate] {
         var entry = ScheduleEntry(name: "Daily check", everyMinutes: 10, enabled: true,
                                   repo: repo, agent: "codex", prompt: "Inspect the synthetic widget.", number: 7)
         entry.onlyOnChange = true
         return DispatchPlanner.scheduled([entry], jobs: jobs, repo: repo, defaultBranch: "main",
-                                         me: "octo", now: now, changedAt: changedAt)
+                                         me: "octo", now: now, changedAt: changedAt, queueHeads: queueHeads)
     }
 }
 
@@ -112,5 +114,89 @@ struct ScheduleQueueChangeAcceptanceTests {
         let prs = [F.pr(number: 1, createdAt: F.laterStart), F.pr(number: 2, headCommittedAt: F.change)]
         #expect(DispatchPlanner.queueChangedAt(prs, merged: [merged]) == F.laterStart)
         #expect(DispatchPlanner.queueChangedAt(Array(prs.reversed()), merged: [merged]) == F.laterStart)
+    }
+
+    @Test func movedHeadWithOldDatesRearmsAndCarriesCurrentHeads() throws {
+        let prs = [F.pr(headSha: "new-sha")]
+        let heads = DispatchPlanner.queueHeads(prs)
+        let changedAt = DispatchPlanner.queueChangedAt(prs, merged: [])
+        #expect(changedAt == F.old)
+        let jobs = [F.job(startedAt: F.firstStart, queueHeads: ["1@old-sha"])]
+        let candidates = F.candidates(changedAt: changedAt, jobs: jobs, queueHeads: heads)
+        #expect(candidates.count == 1)
+        let candidate = try #require(candidates.first)
+        #expect(heads == ["1@new-sha"])
+        #expect(candidate.queueHeads == heads)
+    }
+
+    @Test func unchangedHeadsAndDatesDoNotRearm() {
+        let prs = [F.pr()]
+        let heads = DispatchPlanner.queueHeads(prs)
+        let jobs = [F.job(startedAt: F.firstStart, queueHeads: heads)]
+        #expect(F.candidates(changedAt: DispatchPlanner.queueChangedAt(prs, merged: []),
+                             jobs: jobs, queueHeads: heads).isEmpty)
+    }
+
+    @Test func legacyJobWithoutHeadsUsesDatesAlone() {
+        let legacy = F.job(startedAt: F.firstStart)
+        #expect(legacy.queueHeads == nil)
+        let heads = DispatchPlanner.queueHeads([F.pr()])
+        #expect(F.candidates(changedAt: F.old, jobs: [legacy], queueHeads: heads).isEmpty)
+        let changedAt = DispatchPlanner.queueChangedAt([F.pr(comments: [F.comment(at: F.change)])], merged: [])
+        #expect(changedAt == F.change)
+        #expect(F.candidates(changedAt: changedAt, jobs: [legacy], queueHeads: heads).count == 1)
+    }
+
+    @Test func closedUnmergedPullRequestRearmsWithOldDates() {
+        let remaining = [F.pr(number: 1)]
+        let heads = DispatchPlanner.queueHeads(remaining)
+        let jobs = [F.job(startedAt: F.firstStart, queueHeads: ["1@abc123", "2@abc123"])]
+        let changedAt = DispatchPlanner.queueChangedAt(remaining, merged: [])
+        #expect(changedAt == F.old)
+        #expect(F.candidates(changedAt: changedAt, jobs: jobs, queueHeads: heads).count == 1)
+    }
+
+    @Test func queueHeadsAreSortedRegardlessOfInputOrder() {
+        let prs = [F.pr(number: 2, headSha: "two"), F.pr(number: 10, headSha: "ten"), F.pr(headSha: "one")]
+        #expect(DispatchPlanner.queueHeads(prs) == ["10@ten", "1@one", "2@two"])
+        #expect(DispatchPlanner.queueHeads(Array(prs.reversed())) == ["10@ten", "1@one", "2@two"])
+        #expect(DispatchPlanner.queueHeads([]).isEmpty)
+    }
+
+    @Test func decodedCreationAndFilteredCommentsFeedQueueChangeGate() throws {
+        func decode(created: Bool) throws -> PullRequest {
+            func stamp(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+            var node: [String: Any] = [
+                "number": 1, "title": "Synthetic widget", "url": "https://example.com/pr/1",
+                "isDraft": false, "headRefOid": "abc123", "headRefName": "feature", "baseRefName": "main",
+                "body": "", "updatedAt": stamp(F.now), "authorAssociation": "OWNER",
+                "author": ["login": "octo"], "labels": ["nodes": []], "assignees": ["nodes": []],
+                "comments": ["nodes": [
+                    ["author": ["login": "octo"], "body": "Please check.", "createdAt": stamp(F.old)],
+                    ["author": ["login": "octo"], "body": "Internal " + BtonMarker.prefix,
+                     "createdAt": stamp(F.now)]
+                ]]
+            ]
+            if created { node["createdAt"] = stamp(F.change) }
+            let data = try JSONSerialization.data(withJSONObject: ["data": [
+                "viewer": ["login": "octo"], "repository": ["defaultBranchRef": ["name": "main"],
+                "pullRequests": ["nodes": [node]]]]])
+            return try #require(GitHubClient.decodeOpenPullRequests(data, repo: F.repo).pullRequests.first)
+        }
+        let present = try decode(created: true), absent = try decode(created: false)
+        #expect(present.createdAt == F.change)
+        #expect(absent.createdAt == nil)
+        for pr in [present, absent] {
+            #expect(pr.comments.count == 1)
+            #expect(pr.comments.first?.body == "Please check.")
+            #expect(pr.comments.first?.createdAt == F.old)
+        }
+        let recent = DispatchPlanner.queueChangedAt([present], merged: [])
+        let fallback = DispatchPlanner.queueChangedAt([absent], merged: [])
+        #expect(recent == F.change)
+        #expect(fallback == F.old)
+        let jobs = [F.job(startedAt: F.firstStart)]
+        #expect(F.candidates(changedAt: recent, jobs: jobs).count == 1)
+        #expect(F.candidates(changedAt: fallback, jobs: jobs).isEmpty)
     }
 }
