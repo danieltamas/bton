@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.14.1 (2026-10-29)
 
 **A flow can switch to `who: reviewer` before every Mac has updated.** A Bton before 0.14.0 reads a `who` it does not know as a login and its moves stall. A move now takes `"owner"` beside `"who"`, same shape: this version reads `owner` when it is there, an older Bton reads `who` and ignores `owner`. Write `"who": "assignee", "owner": "reviewer"` today, and fold it into `who` once the team has updated; in between, older Macs assign the rotation's pick and newer ones request that pick's review, the same login unless someone set an assignee or a request by hand on that PR.
 
