@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## 0.14.0 (2026-10-28)
+
+**Review ownership can live in GitHub's Reviewers field.** A flow move's `who` takes a new value, `reviewer`: the move belongs to the PR's first requested reviewer, with the same rotation as `assignee` when nobody is requested, and the author's Bton requests the pick's review instead of assigning them. Take it on such a review reads "Review here" and makes you the PR's only requested reviewer; the assignee field is never touched, and the PR's author is not offered it (GitHub refuses that request). Bton files a GitHub review with each review comment, which ends the request, so after a round the move goes back to the rotation's pick; a person who wants the next round too requests their own review again on GitHub. For a team that reads "assignee" as "owns the PR", switch the review and merge moves from `assignee` to `reviewer` in `.bton/flow.json` once every Mac runs this version: an older Bton reads `reviewer` as a login named reviewer and stalls. PRs already assigned keep working under `assignee`.
+
 ## 0.13.1 (2026-10-28)
 
 **Agents are told about the code graph every time, told how, and the job log shows whether they used it.** A worktree whose `graphify-out` already pointed at the clone's own link (a team hook does that) counted as "linked elsewhere", so the agent got no word of the graph and a registry job refused to start; the link is now followed to its end. The playbook (v4) says to locate definitions and callers with `graphify-src "<question>"` before searching the tree, and the registry job gets the exact first command. When the job ends, Bton reads the agent's own transcript (Claude) or the codex sessions of the worktree and notes `graph queries: n` in the job log, or `unknown` when there is nothing to read, so a job that grepped instead is visible.
