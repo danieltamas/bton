@@ -1,0 +1,16 @@
+#!/bin/bash
+# Refuses to move main while another live agent holds a release claim (a repo-sync claim whose
+# task starts with "release"). A fast-forward merge makes no commit, so this is the only hook
+# that sees it. Activated once per clone: git config core.hooksPath scripts/hooks
+[ "${1-}" = prepared ] || exit 0
+moves_main=0
+while read -r old new ref; do
+  [ "$ref" = refs/heads/main ] && [ "$old" != "$new" ] && moves_main=1
+done
+[ "$moves_main" = 1 ] || exit 0
+command -v repo-sync >/dev/null 2>&1 || exit 0
+holder=$(repo-sync peers 2>/dev/null | awk -F'\t' 'tolower($7) ~ /^release/ {print $1 " (" $4 "): " $7}')
+[ -z "$holder" ] && exit 0
+echo "hooks: main is held by a release in progress; merge or commit on main after it finishes:" >&2
+echo "  $holder" >&2
+exit 1

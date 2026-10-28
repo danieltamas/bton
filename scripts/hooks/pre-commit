@@ -1,0 +1,30 @@
+#!/bin/bash
+# Two checks before any commit in this repo. Activated once per clone:
+#   git config core.hooksPath scripts/hooks
+#
+# 1. LOG.md: new work is written under one "## Unreleased" heading at the top; only the release
+#    turns that heading into "## x.y.z (date)". Two sessions writing their own headings is how a
+#    release gate broke on 2026-10-28.
+if git diff --cached --name-only | grep -qx LOG.md; then
+  staged=$(git show :LOG.md)
+  count=$(printf '%s\n' "$staged" | grep -c '^## Unreleased')
+  first=$(printf '%s\n' "$staged" | grep -m1 '^## ')
+  if [ "$count" -gt 1 ]; then
+    echo "LOG.md: more than one '## Unreleased' section; merge them into one" >&2
+    exit 1
+  fi
+  if [ "$count" = 1 ] && [ "$first" != "## Unreleased" ]; then
+    echo "LOG.md: '## Unreleased' must be the first section" >&2
+    exit 1
+  fi
+fi
+# 2. Paths another live agent claims in this checkout are not yours to commit.
+if command -v repo-sync >/dev/null 2>&1; then
+  files=$(git diff --cached --name-only)
+  if [ -n "$files" ] && ! repo-sync check $files >/dev/null 2>&1; then
+    echo "another live agent claims staged paths (repo-sync peers --here); commit only your own hunks" >&2
+    repo-sync check $files >&2
+    exit 1
+  fi
+fi
+exit 0

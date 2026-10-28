@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## 0.14.0 (2026-10-28)
+## Unreleased
 
 **The repo page's status filter is a dropdown beside the search box.** The row of status chips is gone: the search box and a status selector share one line, so the feature list starts a row higher. The selector lists every status with its count, shows the chosen one in mint, and clears from the cross beside it.
 
