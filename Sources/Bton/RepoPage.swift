@@ -17,7 +17,7 @@ struct RepoPage: View {
         let report = store.features[slug]
         if let detail {
             FeatureDetail(slug: slug, row: detail) { withAnimation(Motion.spring) { self.detail = nil } }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
         } else {
             VStack(spacing: 8) {
                 header(report)
@@ -31,7 +31,7 @@ struct RepoPage: View {
                 content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
             }
             .padding(.top, 2)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
+            .transition(.pushed)
         }
     }
 

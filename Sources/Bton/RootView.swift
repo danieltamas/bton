@@ -356,26 +356,26 @@ struct RootView: View {
         let showRepo = store.repos.count > 1
         if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
         } else if let session = store.composing {
             NewIssueView(session: session) { closeNewIssue(session) }
                 .id(session.id)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
         } else if let issue = store.triaging {
             TriageView(issue: issue) { withAnimation(Motion.spring) { store.triaging = nil } }
                 .id(issue.id)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
         } else if let slug = store.viewingRepo {
             RepoPage(slug: slug) { withAnimation(Motion.spring) { store.viewingRepo = nil } }
                 .id(slug)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
         } else if let id = store.watchingJob, let job = store.jobs.first(where: { $0.id == id }) {
             SessionView(job: job, title: jobTitle(job, schedules: store.schedules)) {
                 withAnimation(Motion.spring) { store.watchingJob = nil }
             }
-            .transition(.move(edge: .trailing).combined(with: .opacity))
+            .transition(.push)
         } else {
-            tabContent(showRepo: showRepo)
+            tabContent(showRepo: showRepo).transition(.pushed)
         }
     }
 

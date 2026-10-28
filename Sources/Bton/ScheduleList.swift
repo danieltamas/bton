@@ -22,9 +22,9 @@ struct ScheduleList: View {
                     .padding(.bottom, 12)
                 }
                 .scrollIndicators(.never)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .transition(.push)
             } else {
-                list.transition(.move(edge: .leading).combined(with: .opacity))
+                list.transition(.pushed)
             }
         }
         .animation(Motion.spring, value: editing?.id)

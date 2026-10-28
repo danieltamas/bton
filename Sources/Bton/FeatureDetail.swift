@@ -58,10 +58,16 @@ struct FeatureDetail: View {
                     if !row.standing.changes.isEmpty {
                         section("Changes") {
                             ForEach(row.standing.changes, id: \.self) { number in
-                                HStack(spacing: 8) {
+                                let fact = store.features[slug]?.facts.pullRequests[number]
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     NumberLink(slug: slug, number: number)
-                                    Text(store.merged.first { $0.repo.lowercased() == slug.lowercased() && $0.number == number }?.title ?? "merged")
-                                        .foregroundStyle(Theme.textSecondary).lineLimit(1)
+                                    Text(fact.map { $0.title.isEmpty ? "merged" : $0.title } ?? "merged")
+                                        .foregroundStyle(Theme.textSecondary).lineLimit(2)
+                                    Spacer(minLength: 0)
+                                    if let at = fact?.mergedAt {
+                                        Text(at.formatted(.dateTime.day().month(.abbreviated).year())).foregroundStyle(Theme.textTertiary)
+                                            .lineLimit(1).fixedSize()
+                                    }
                                 }
                                 .font(.meta)
                             }

@@ -17,6 +17,8 @@ public struct FeatureReport: Sendable, Equatable {
     /// The registry job's PR the registry was read from, while the base has none and the PR is
     /// open: the page shows what the job made before the team merges it.
     public var previewPullRequest: Int?
+    /// What GitHub said about the linked issues and PRs: the detail's titles and dates.
+    public var facts = FeatureFacts()
     public var readAt: Date?
     /// Why the registry or its facts could not be read this time; the rest is from the last
     /// good read.
@@ -81,6 +83,7 @@ extension Engine {
                 }
                 report = Self.report(repo: repo.slug, registry: registry, facts: state.facts, git: git, base: base, hasRelease: hasRelease)
                 report.previewPullRequest = preview
+                report.facts = state.facts
             }
             report.readAt = .now
             state.lastProblem = nil

@@ -254,6 +254,17 @@ struct StartingLabel: View {
     }
 }
 
+extension AnyTransition {
+    /// A view one level deeper: in from the right, back out to the right.
+    static var push: AnyTransition {
+        AnyTransition.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .trailing)).combined(with: .opacity)
+    }
+    /// The view a deeper one covers: out to the left as the deeper one comes, back in from the left.
+    static var pushed: AnyTransition {
+        AnyTransition.asymmetric(insertion: .move(edge: .leading), removal: .move(edge: .leading)).combined(with: .opacity)
+    }
+}
+
 /// Follows its window's occlusion: a menu bar panel's views stay alive after it closes.
 struct WindowVisibility: NSViewRepresentable {
     @Binding var visible: Bool
