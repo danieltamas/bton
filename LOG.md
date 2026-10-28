@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.12.0 (2026-10-28)
 
 **Agents start from the feature registry.** Every agent job of a repo with a registry (a PR move, a taken issue, the supervisor; claude and codex alike) gets `feature-context.md` beside its session: the feature the registry links the work to, or the features and areas whose paths the PR touches, with area, paths, the merged PRs that built it (titles and dates), its open issues, and the map of areas, so the agent reads one page before searching the tree. When the registry links the work to one feature and the job edits the PR, the agent is asked to put `Feature: <id>` in the PR body, and the registry job takes that line as hard evidence (`why: feature`) instead of guessing from titles. Only that id, a checked slug, reaches the prompt; the rest of the registry travels as data. A codex job now gets the code graph line and the path of its data files in its task, which only Claude got before, so both agents query the graph instead of searching the tree.
 
