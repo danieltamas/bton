@@ -104,9 +104,9 @@ struct IssueAskAcceptanceTests {
     @Test func decodeSpecShapedGraphQLPayload() throws {
         let issue = IssueAskFixture.issue(comments: [IssueAskFixture.comment(),
             IssueAskFixture.comment("22", author: nil, association: nil, body: "Deleted account", second: 2, url: nil)])
-        let decoded = try GitHubClient.decodeOpenIssues(IssueAskFixture.payload([issue]), repo: issue.repo)
+        let decoded = try GitHubClient.decodeOpenIssues(IssueAskFixture.payload([issue]), repo: issue.repo).issues
         #expect(decoded == [issue])
-        #expect(try GitHubClient.decodeOpenIssues(IssueAskFixture.payload([]), repo: issue.repo).isEmpty)
+        #expect(try GitHubClient.decodeOpenIssues(IssueAskFixture.payload([]), repo: issue.repo).issues.isEmpty)
         #expect(throws: (any Error).self) {
             try GitHubClient.decodeOpenIssues(Data("not json".utf8), repo: issue.repo)
         }

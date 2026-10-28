@@ -34,6 +34,10 @@ final class AppStore {
     /// Questions put to me on open issues, newest first.
     private(set) var issueAsks: [IssueAsk] = []
     private(set) var triage: [TriageIssue] = []
+    /// Repos (slugs lowercased) with open issues beyond the pages read: the Triage list's Load more.
+    private(set) var issuesMore: Set<String> = []
+    /// What GitHub's search found for the lists' search text, beyond the synced issues. Display only.
+    var searchHits: [OpenIssue] = []
     /// Open issues at stage:ready, taken or free.
     private(set) var ready: [ReadyIssue] = []
     /// The issue open in the triage tab.
@@ -529,6 +533,7 @@ final class AppStore {
         issueAsks = snapshot.issueAsks
         // A repo that could not be read keeps its issues, like its PRs.
         triage = snapshot.triage + triage.filter { unread($0.repo) }
+        issuesMore = snapshot.issuesMore
         features = features.filter { unread($0.key) }.merging(snapshot.features) { _, read in read }
         // The engine keeps an unread repo's last issues in its own list, so the carried ones are not added twice.
         let readNow = Set(snapshot.ready.map(\.id))

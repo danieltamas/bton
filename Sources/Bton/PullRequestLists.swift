@@ -270,8 +270,9 @@ struct MergedList: View {
 // MARK: shared row parts
 
 extension RowStack where Header == EmptyView {
-    init(items: [Item], @ViewBuilder row: @escaping (Item) -> Row) {
-        self.init(items: items, row: row, header: { EmptyView() })
+    init(items: [Item], more: (title: String, action: () async -> Void)? = nil, footer: AnyView? = nil,
+         @ViewBuilder row: @escaping (Item) -> Row) {
+        self.init(items: items, more: more, footer: footer, row: row, header: { EmptyView() })
     }
 }
 
@@ -282,11 +283,20 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
     let items: [Item]
     let row: (Item) -> Row
     let header: () -> Header
+    /// Once every local item is shown: a pill with this title that fetches more (Load more from
+    /// GitHub). Nil when the list is complete.
+    var more: (title: String, action: () async -> Void)?
+    /// Under the rows and their pills: the search hits GitHub added.
+    var footer: AnyView?
     @Environment(\.stillImage) private var stillImage
     @State private var shown = Self.page
+    @State private var loading = false
 
-    init(items: [Item], @ViewBuilder row: @escaping (Item) -> Row, @ViewBuilder header: @escaping () -> Header) {
+    init(items: [Item], more: (title: String, action: () async -> Void)? = nil, footer: AnyView? = nil,
+         @ViewBuilder row: @escaping (Item) -> Row, @ViewBuilder header: @escaping () -> Header) {
         self.items = items
+        self.more = more
+        self.footer = footer
         self.row = row
         self.header = header
     }
@@ -316,7 +326,20 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
                 withAnimation(Motion.spring) { shown += Self.page }
             }
             .padding(.top, 4)
+        } else if let more {
+            PillButton(title: loading ? "Loading..." : more.title, symbol: "arrow.down.circle", prominent: false) {
+                guard !loading else { return }
+                loading = true
+                Task {
+                    await more.action()
+                    // The fetched rows show at once, wherever the sort puts them.
+                    withAnimation(Motion.spring) { shown = max(shown, items.count) + Self.page * 2 }
+                    loading = false
+                }
+            }
+            .padding(.top, 4)
         }
+        if let footer { footer }
     }
 }
 

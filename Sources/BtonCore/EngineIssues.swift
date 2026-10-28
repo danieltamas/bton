@@ -1,14 +1,35 @@
 import Foundation
 
 extension Engine {
-    /// A repo's open issues; a failure keeps the last read and never stops the repo's PR work.
+    /// Load more never asks for more pages than this (500 issues).
+    public static let issuePageCap = 10
+
+    /// A repo's open issues, as many pages as Load more asked for; a failure keeps the last read
+    /// whole and never stops the repo's PR work.
     func readIssues(_ repo: String) async {
-        do {
-            openIssues[repo.lowercased()] = try await github.openIssues(repo: repo)
-            issuesReadThisTick.insert(repo.lowercased())
-        } catch {
-            log("\(repo): issues not read: \(error.localizedDescription)")
+        let slug = repo.lowercased()
+        var issues: [OpenIssue] = [], after: String?
+        for page in 1...max(1, issuePages[slug] ?? 1) {
+            do {
+                let read = try await github.openIssues(repo: repo, after: after)
+                issues += read.issues
+                after = read.nextPage
+            } catch {
+                log("\(repo): issues page \(page) not read: \(error.localizedDescription)")
+                return
+            }
+            if after == nil { break }
         }
+        var seen = Set<Int>()
+        openIssues[slug] = issues.filter { seen.insert($0.number).inserted }
+        issuesReadThisTick.insert(slug)
+        if after == nil { issuesMore.remove(slug) } else { issuesMore.insert(slug) }
+    }
+
+    /// Load more: the next sync reads one page more of the repo's issues, and keeps doing so.
+    public func loadMoreIssues(repo: String) {
+        let slug = repo.lowercased()
+        issuePages[slug] = min(Self.issuePageCap, (issuePages[slug] ?? 1) + 1)
     }
 
     func issueAsks(in repos: [WatchedRepo], me: String?) -> [IssueAsk] {

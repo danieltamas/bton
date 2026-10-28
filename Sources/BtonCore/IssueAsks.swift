@@ -34,6 +34,18 @@ public struct OpenIssue: Hashable, Sendable {
     }
 }
 
+/// One page of a repo's open issues, with the cursor of the next.
+public struct OpenIssues: Sendable {
+    public let issues: [OpenIssue]
+    /// The cursor after the last issue read of the main connection; nil on the last page.
+    public var nextPage: String?
+
+    public init(issues: [OpenIssue], nextPage: String? = nil) {
+        self.issues = issues
+        self.nextPage = nextPage
+    }
+}
+
 public struct IssueComment: Hashable, Sendable {
     /// GitHub's databaseId, as text.
     public let id: String
@@ -187,31 +199,40 @@ public enum IssueAsks {
 }
 
 extension GitHubClient {
-    /// One GraphQL query per repo per tick: the 50 open issues updated last, each with its latest
-    /// 20 comments, and apart from them the open issues at `stage:ready` or `stage:in-progress`,
-    /// which a quiet repo's oldest ready issue would otherwise fall out of.
-    public func openIssues(repo: String) async throws -> [OpenIssue] {
+    /// One GraphQL query per page: 50 open issues updated last, each with its latest 20 comments,
+    /// and on the first page apart from them the open issues at `stage:ready` or
+    /// `stage:in-progress`, which a quiet repo's oldest ready issue would otherwise fall out of.
+    /// `after` is the previous page's `nextPage`.
+    public func openIssues(repo: String, after: String? = nil) async throws -> OpenIssues {
         let parts = repo.split(separator: "/").map(String.init)
-        guard parts.count == 2 else { return [] }
-        return try Self.decodeOpenIssues(try await gh(["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
-                                                       "-f", "query=\(Self.openIssuesQuery)"]), repo: repo)
+        guard parts.count == 2 else { return OpenIssues(issues: []) }
+        // -f for the strings (a repo named "123" stays text); -F for the Boolean.
+        var arguments = ["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
+                         "-F", "firstPage=\(after == nil)", "-f", "query=\(Self.openIssuesQuery)"]
+        if let after { arguments += ["-f", "after=\(after)"] }
+        return try Self.decodeOpenIssues(try await gh(arguments), repo: repo)
     }
 
-    static let openIssuesQuery = """
-    fragment Fields on IssueConnection {
-      nodes {
+    /// The fields every issue read carries, on a connection or a single issue.
+    static let issueFields = """
         number title url createdAt body authorAssociation
         author { login }
         labels(first: 30) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
+    """
+
+    static let openIssuesQuery = """
+    fragment Fields on IssueConnection {
+      nodes {
+    \(issueFields)
       }
     }
-    query($owner: String!, $name: String!) {
+    query($owner: String!, $name: String!, $after: String, $firstPage: Boolean!) {
       repository(owner: $owner, name: $name) {
-        issues(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
-        ready: issues(states: OPEN, labels: ["stage:ready"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
-        inProgress: issues(states: OPEN, labels: ["stage:in-progress"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { ...Fields }
+        issues(states: OPEN, first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) { pageInfo { hasNextPage endCursor } ...Fields }
+        ready: issues(states: OPEN, labels: ["stage:ready"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) @include(if: $firstPage) { ...Fields }
+        inProgress: issues(states: OPEN, labels: ["stage:in-progress"], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) @include(if: $firstPage) { ...Fields }
       }
     }
     """
@@ -220,10 +241,14 @@ extension GitHubClient {
         struct Author: Decodable { let login: String }
         struct Nodes<Node: Decodable>: Decodable { let nodes: [Node] }
         struct Payload: Decodable { let repository: Repository }
-        struct Repository: Decodable { let issues: Nodes<Row>, ready: Nodes<Row>?, inProgress: Nodes<Row>? }
+        struct Repository: Decodable { let issues: Page, ready: Nodes<Row>?, inProgress: Nodes<Row>? }
+        struct Page: Decodable { let pageInfo: PageInfo?; let nodes: [Row] }
+        struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
         struct Row: Decodable {
             let number: Int, title: String, url: URL, createdAt: Date, body: String, authorAssociation: String
             let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?, assignees: Nodes<Author>?
+            /// Only the lookup by number asks for it: the other connections are open by query.
+            let state: String?
         }
         struct Label: Decodable { let name: String }
         struct Comment: Decodable {
@@ -232,22 +257,95 @@ extension GitHubClient {
         let data: Payload
     }
 
-    public static func decodeOpenIssues(_ data: Data, repo: String) throws -> [OpenIssue] {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let repository = try decoder.decode(IssuesResponse.self, from: data).data.repository
+    public static func decodeOpenIssues(_ data: Data, repo: String) throws -> OpenIssues {
+        let repository = try Self.issueDecoder.decode(IssuesResponse.self, from: data).data.repository
         var seen = Set<Int>()
         let rows = (repository.issues.nodes + (repository.ready?.nodes ?? []) + (repository.inProgress?.nodes ?? []))
             .filter { seen.insert($0.number).inserted }
-        return rows.map { row in
-            OpenIssue(repo: repo, number: row.number, title: row.title, url: row.url, createdAt: row.createdAt,
-                      author: row.author?.login, authorAssociation: row.authorAssociation, body: row.body,
-                      comments: row.comments.nodes.map {
-                          IssueComment(id: $0.databaseId.map(String.init) ?? "", author: $0.author?.login,
-                                       authorAssociation: $0.authorAssociation, body: $0.body,
-                                       createdAt: $0.createdAt, url: $0.url)
-                      }.sorted { $0.createdAt < $1.createdAt },
-                      labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [])
+        let page = repository.issues.pageInfo
+        return OpenIssues(issues: rows.map { issue(from: $0, repo: repo) },
+                          nextPage: page?.hasNextPage == true ? page?.endCursor : nil)
+    }
+
+    static var issueDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private static func issue(from row: IssuesResponse.Row, repo: String) -> OpenIssue {
+        OpenIssue(repo: repo, number: row.number, title: row.title, url: row.url, createdAt: row.createdAt,
+                  author: row.author?.login, authorAssociation: row.authorAssociation, body: row.body,
+                  comments: row.comments.nodes.map {
+                      IssueComment(id: $0.databaseId.map(String.init) ?? "", author: $0.author?.login,
+                                   authorAssociation: $0.authorAssociation, body: $0.body,
+                                   createdAt: $0.createdAt, url: $0.url)
+                  }.sorted { $0.createdAt < $1.createdAt },
+                  labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [])
+    }
+
+    // MARK: search
+
+    /// The open issues of the repo GitHub's search finds for the text, or the one issue a number
+    /// names. Display only: nothing here reaches a dispatch.
+    public func searchIssues(repo: String, text: String) async throws -> [OpenIssue] {
+        let parts = repo.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { return [] }
+        if let number = IssueSearch.number(in: text) {
+            let data = try await gh(["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
+                                     "-F", "number=\(number)", "-f", "query=\(Self.issueByNumberQuery)"])
+            return try Self.decodeIssue(data, repo: repo).map { [$0] } ?? []
         }
+        let data = try await gh(["api", "graphql", "-f", "q=\(IssueSearch.query(repo: repo, text: text))",
+                                 "-f", "query=\(Self.issueSearchQuery)"])
+        return try Self.decodeIssueSearch(data, repo: repo)
+    }
+
+    static let issueSearchQuery = """
+    query($q: String!) {
+      search(type: ISSUE, query: $q, first: 50) {
+        nodes { ... on Issue {
+    \(issueFields)
+        } }
+      }
+    }
+    """
+
+    static let issueByNumberQuery = """
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        issue(number: $number) {
+          state
+    \(issueFields)
+        }
+      }
+    }
+    """
+
+    private struct SearchResponse: Decodable {
+        struct Payload: Decodable { let search: Nodes }
+        /// A pull request in the answer comes as `{}` (no issue fields): it decodes as nil.
+        struct Nodes: Decodable { let nodes: [Node] }
+        struct Node: Decodable {
+            let row: IssuesResponse.Row?
+            init(from decoder: Decoder) throws { row = try? IssuesResponse.Row(from: decoder) }
+        }
+        let data: Payload
+    }
+
+    private struct IssueResponse: Decodable {
+        struct Payload: Decodable { let repository: Repository }
+        struct Repository: Decodable { let issue: IssuesResponse.Row? }
+        let data: Payload
+    }
+
+    public static func decodeIssueSearch(_ data: Data, repo: String) throws -> [OpenIssue] {
+        try Self.issueDecoder.decode(SearchResponse.self, from: data).data.search.nodes
+            .compactMap(\.row).map { issue(from: $0, repo: repo) }
+    }
+
+    public static func decodeIssue(_ data: Data, repo: String) throws -> OpenIssue? {
+        guard let row = try Self.issueDecoder.decode(IssueResponse.self, from: data).data.repository.issue, row.state != "CLOSED" else { return nil }
+        return issue(from: row, repo: repo)
     }
 }

@@ -187,7 +187,7 @@ enum IntakeAcceptanceFixture {
                 repository["inProgress"] = ["nodes": [node(51), node(52)]]
             }
             let data = try JSONSerialization.data(withJSONObject: ["data": ["repository": repository]])
-            let issues = try GitHubClient.decodeOpenIssues(data, repo: F.repo)
+            let issues = try GitHubClient.decodeOpenIssues(data, repo: F.repo).issues
             #expect(issues.count == (aliases ? 52 : 50))
             #expect(Set(issues.map(\.number)) == Set(1...(aliases ? 52 : 50)))
             #expect(issues.allSatisfy { $0.assignees == ["me"] })

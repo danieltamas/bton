@@ -311,4 +311,5 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   exceed `caps` by the number of Macs. `claim` should be a single command: a multi-command claim
   that fails half-way leaves the issue neither ready nor mine. The read is the 50 newest open issues
   plus the 50 newest at each of `stage:ready` and `stage:in-progress`; more ready issues than that
-  and the oldest are not seen. Retry (the owner's press) does not wait for the caps.
+  and the oldest are not seen. Load more in the Triage tab makes the read one page (50) longer, up
+  to 10 pages, and the search in the issue tabs asks GitHub across all open issues, display only. Retry (the owner's press) does not wait for the caps.

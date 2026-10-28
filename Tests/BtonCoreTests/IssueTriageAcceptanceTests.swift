@@ -63,7 +63,7 @@ import Testing
         "createdAt":"2026-10-01T00:00:00Z","body":"","authorAssociation":"MEMBER","author":{"login":"a"},
         "labels":{"nodes":[{"name":"priority:high"}]},"comments":{"nodes":[]}}]}}}}
         """
-        let issues = try GitHubClient.decodeOpenIssues(Data(json.utf8), repo: "o/r")
+        let issues = try GitHubClient.decodeOpenIssues(Data(json.utf8), repo: "o/r").issues
         #expect(issues.first?.labels == ["priority:high"])
     }
 }

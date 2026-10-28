@@ -79,6 +79,8 @@ struct IssueAskList: View {
     let showRepo: Bool
     let jobs: [Job]
     let schedules: [ScheduleEntry]
+    /// What GitHub's search found that the synced list does not hold: display only.
+    var hits: [OpenIssue] = []
 
     /// An issue with a question for me is one card, the question: its stage card would repeat it, and both
     /// would read the same starting draft. Highest number first.
@@ -90,11 +92,11 @@ struct IssueAskList: View {
 
     var body: some View {
         let drafting = jobs.filter { $0.status == .running && $0.isIssueDraft }
-        if asks.isEmpty && ready.isEmpty && drafting.isEmpty {
+        if asks.isEmpty && ready.isEmpty && drafting.isEmpty && hits.isEmpty {
             EmptyState(symbol: "questionmark.bubble", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to do here",
                        detail: "A question for you on an open issue, or an issue at stage:ready, shows here.")
         } else {
-            RowStack(items: entries) { entry in
+            RowStack(items: entries, footer: SearchHitsSection.footer(hits, showRepo: showRepo)) { entry in
                 switch entry {
                 case let .ask(ask): IssueAskRow(ask: ask, showRepo: showRepo)
                 case let .ready(issue): ReadyIssueRow(issue: issue, showRepo: showRepo)

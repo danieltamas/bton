@@ -309,13 +309,17 @@ struct RootView: View {
         // A job matches its PRs' titles and authors too.
         let known = Dictionary(store.openPullRequests.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }
             + store.merged.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }) { first, _ in first }
+        let asks = store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) }
+        let ready = store.ready.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title] + $0.assignees) }
+        let triage = store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) }
         return Listed(
             pullRequests: store.openPullRequests.filter {
                 keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.author])
             },
-            asks: store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) },
-            ready: store.ready.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title] + $0.assignees) },
-            triage: store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) },
+            asks: asks, ready: ready, triage: triage,
+            // A hit is dropped only when the list shows it already: one GitHub found by its body stays.
+            hits: SearchHits.split(store.searchHits.filter { keep($0.repo) },
+                                   triage: Set(triage.map(\.id)), issues: Set(ready.map(\.id) + asks.map { "\($0.repo)#\($0.number)" })),
             jobs: store.jobs.filter { job in
                 guard job.key.move != NewIssues.move else { return false }
                 let item = job.key.item
@@ -391,6 +395,11 @@ struct RootView: View {
                     if store.repos.count > 1 { RepoFilter(repos: filterRepos, selection: $repo) }
                 }
                 .padding(.bottom, 8)
+                // The issue tabs search GitHub as well as the synced issues.
+                .task(id: "\(tab == .issues || tab == .triage ? query : "")|\(shown ?? "")") {
+                    await store.searchIssues(tab == .issues || tab == .triage ? query : "",
+                                             repos: shown.map { [$0] } ?? store.repos.map(\.slug))
+                }
             }
             if tab != .schedule, !search.isEmpty, lists.count(for: tab) == 0 {
                 noMatch(search, lists: lists)
@@ -398,8 +407,10 @@ struct RootView: View {
                 switch tab {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
                                                     jobs: lists.repoJobs, schedules: store.schedules)
-                case .issues: IssueAskList(asks: lists.asks, ready: lists.ready, showRepo: showRepo, jobs: lists.repoJobs, schedules: store.schedules)
-                case .triage: TriageList(issues: lists.triage, showRepo: showRepo, newIssue: { startNewIssue(shown) })
+                case .issues: IssueAskList(asks: lists.asks, ready: lists.ready, showRepo: showRepo, jobs: lists.repoJobs,
+                                           schedules: store.schedules, hits: lists.hits.issues)
+                case .triage: TriageList(issues: lists.triage, showRepo: showRepo, repos: shown.map { [$0] } ?? store.repos.map(\.slug),
+                                         hits: lists.hits.triage, newIssue: { startNewIssue(shown) })
                 case .jobs: JobList(items: lists.jobs, schedules: store.schedules)
                 case .schedule: ScheduleList(open: openSettings)
                 case .merged: MergedList(items: lists.merged, showRepo: showRepo)
@@ -423,6 +434,8 @@ struct RootView: View {
         let asks: [IssueAsk]
         let ready: [ReadyIssue]
         let triage: [TriageIssue]
+        /// GitHub's search hits the synced lists do not hold, per issue tab.
+        let hits: SearchHits
         let jobs: [Job]
         let merged: [MergedPullRequest]
         /// The repo's jobs whatever the search: the PR list's strip shows every running agent.
@@ -431,8 +444,8 @@ struct RootView: View {
         func count(for tab: Tab) -> Int {
             switch tab {
             case .pullRequests: pullRequests.count
-            case .issues: asks.count + ready.count
-            case .triage: triage.count
+            case .issues: asks.count + ready.count + hits.issues.count
+            case .triage: triage.count + hits.triage.count
             case .jobs: jobs.count
             case .schedule: 0
             case .merged: merged.count

@@ -3,6 +3,32 @@ import BtonCore
 import SwiftUI
 
 extension AppStore {
+    /// Load more: the next sync reads one page more of each repo's issues, and the list shows them.
+    func loadMoreIssues(repos: [String]) async {
+        guard let engine else { return }
+        for repo in repos { await engine.loadMoreIssues(repo: repo) }
+        await refresh()
+    }
+
+    /// Asks GitHub for the search text in each shown repo, 400 ms after the last keystroke; a
+    /// cancelled search (the text changed) writes nothing, a failed one leaves the hits empty.
+    func searchIssues(_ text: String, repos: [String]) async {
+        let query = SearchQuery(text)
+        // The last query's hits never sit under the new text.
+        searchHits = []
+        guard !query.isEmpty, let github else { return }
+        do {
+            try await Task.sleep(for: .milliseconds(400))
+            var hits: [OpenIssue] = []
+            for repo in repos { hits += try await github.searchIssues(repo: repo, text: query.text) }
+            guard !Task.isCancelled else { return }
+            searchHits = hits
+        } catch is CancellationError {
+        } catch {
+            searchHits = []
+        }
+    }
+
     /// Sets the issue's priority and stage from the answers, then syncs so it leaves the tab when it is ready.
     func applyTriage(_ verdict: TriageVerdict, to issue: TriageIssue) async throws {
         guard let github else { throw CocoaError(.fileNoSuchFile) }
@@ -18,16 +44,29 @@ struct TriageList: View {
     @Environment(AppStore.self) private var store
     let issues: [TriageIssue]
     let showRepo: Bool
+    /// The repos the list covers (the repo filter); GitHub has more issues of one of them when
+    /// `store.issuesMore` names it.
+    var repos: [String] = []
+    /// What GitHub's search found that the synced list does not hold: display only.
+    var hits: [OpenIssue] = []
     let newIssue: () -> Void
+
+    private var more: (title: String, action: () async -> Void)? {
+        let waiting = repos.filter { store.issuesMore.contains($0.lowercased()) }
+        guard !waiting.isEmpty else { return nil }
+        return ("Load more from GitHub", { await store.loadMoreIssues(repos: waiting) })
+    }
 
     var body: some View {
         Group {
-            if issues.isEmpty && store.newIssues.isEmpty {
+            // A page of settled issues still has Load more under it: the pending ones may be on the next.
+            if issues.isEmpty && store.newIssues.isEmpty && hits.isEmpty && more == nil {
                 EmptyState(symbol: "checklist", title: store.lastRefresh == nil ? "Reading GitHub" : "Nothing to triage",
                            detail: "Open issues that are not stage:ready, in progress or in review show here.")
             } else {
                 // The drafts are the first rows of the list, so they scroll with it and never cover an issue.
-                RowStack(items: issues, row: { issue in TriageRow(issue: issue, showRepo: showRepo) }) {
+                RowStack(items: issues, more: more, footer: SearchHitsSection.footer(hits, showRepo: showRepo),
+                         row: { issue in TriageRow(issue: issue, showRepo: showRepo) }) {
                     ForEach(store.newIssues, id: \.id) { inProgress($0) }
                 }
             }
