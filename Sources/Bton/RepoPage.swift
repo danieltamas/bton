@@ -249,14 +249,7 @@ extension View {
     /// would be (a release needs a merged registry, so the two never meet).
     @ViewBuilder func registryPreviewAction(store: AppStore, slug: String, report: FeatureReport?) -> some View {
         if report?.previewPullRequest != nil, let pr = store.registryPullRequest(slug) {
-            contentMargins(.bottom, 64, for: .scrollContent)
-                .overlay(alignment: .bottomTrailing) {
-                    PillButton(title: "Registry PR #\(pr.number) open", symbol: "arrow.up.right", prominent: false) {
-                        NSWorkspace.shared.open(pr.url)
-                    }
-                    .help("The registry is in \(pr.title): the page shows it before the merge")
-                    .shadow(color: .black.opacity(0.35), radius: 10, y: 4).padding(.trailing, 14).padding(.bottom, 12)
-                }
+            floatingAction(title: "Registry PR #\(pr.number)", symbol: "arrow.up.right") { NSWorkspace.shared.open(pr.url) }
         } else {
             self
         }
