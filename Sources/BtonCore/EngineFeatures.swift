@@ -64,7 +64,8 @@ extension Engine {
                 let commits = state.facts.pullRequests.values.compactMap(\.mergeCommit)
                 var git = FeatureGit()
                 if let path = repo.path {
-                    git = await FeatureGit.read(clone: URL(fileURLWithPath: path, isDirectory: true), base: base, to: to, commits: commits)
+                    git = await FeatureGit.read(clone: URL(fileURLWithPath: path, isDirectory: true), base: base, to: to,
+                                                from: flow?.release?.from, commits: commits)
                     // A clone that could not be read would turn every live feature into an idea.
                     if let problem = git.problem { throw FeatureGit.Failure(command: "", reason: problem) }
                 }
@@ -108,5 +109,30 @@ extension Engine {
             report.lastRelease = report.standings.values.filter { $0.status == .live }.compactMap(\.since).max()
         }
         return report
+    }
+}
+
+extension Engine {
+    /// The registry job when due. An automatic run also asks the item's lease when the last run
+    /// started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
+    /// means no automatic run this tick.
+    func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
+                                     pullRequests: [PullRequest], merged: [MergedPullRequest]),
+                            agents: [String: AgentTemplate], leases: LeaseStore) async -> DispatchCandidate? {
+        let slug = read.repo.slug
+        let pressed = next.contains(Self.pick(repo: slug, item: FeatureJob.item))
+        let make = { (teamLast: Date?) -> DispatchCandidate? in
+            FeatureJob.candidate(jobs: self.jobs.all(), repo: slug, flow: read.flow,
+                                 defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
+                                 agents: agents, work: read.repo.work.flatMap(AgentPick.init),
+                                 registry: self.featureStates[slug.lowercased()]?.report?.registry ?? .none,
+                                 pullRequests: read.pullRequests, merged: read.merged,
+                                 issues: self.openIssues[slug.lowercased()] ?? [],
+                                 startsMoves: read.repo.startsMoves, pressed: pressed, teamLast: teamLast)
+        }
+        guard let local = make(nil) else { return nil }
+        if pressed { return local }
+        guard let item = LeaseItem(FeatureJob.item), let state = try? await leases.state(of: item, in: slug) else { return nil }
+        return make(FeatureJob.lastStart(state))
     }
 }

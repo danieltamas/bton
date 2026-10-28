@@ -71,7 +71,17 @@ public enum Release {
 
     /// The release PR: the oldest open PR from `from` into `to`, whoever opened it.
     public static func pullRequest(_ pullRequests: [PullRequest], release: Flow.Release) -> PullRequest? {
-        pullRequests.filter { $0.headRef == release.from && $0.baseRef == release.to }.min { $0.number < $1.number }
+        pullRequests.filter { isRelease($0, release) }.min { $0.number < $1.number }
+    }
+
+    /// A PR on the release pair is the release's, not the flow's: no move, no dispatch, no take,
+    /// also in a flow whose base is `to`.
+    public static func isRelease(_ pr: PullRequest, flow: Flow) -> Bool {
+        flow.release.map { isRelease(pr, $0) } ?? false
+    }
+
+    static func isRelease(_ pr: PullRequest, _ release: Flow.Release) -> Bool {
+        pr.headRef == release.from && pr.baseRef == release.to
     }
 
     public static func standing(release: Flow.Release, report: FeatureReport?, pullRequests: [PullRequest], now: Date) -> ReleaseStanding {
@@ -96,8 +106,9 @@ public enum Release {
             .sorted { $0.number < $1.number }
         for blocker in (release.blockedBy ?? []).compactMap(ReleaseBlocker.init) {
             guard case let .prInReviewOnPaths(glob) = blocker else { continue }
-            if let pr = open.first(where: { pr in pr.changedFiles.contains { PathGlob.matches(glob, $0) } }) {
-                return "PR #\(pr.number) touches \(glob)"
+            // A PR whose files GitHub did not fully list may touch the path: it blocks until read.
+            if let pr = open.first(where: { pr in pr.changedFilesTruncated || pr.changedFiles.contains { PathGlob.matches(glob, $0) } }) {
+                return pr.changedFilesTruncated ? "PR #\(pr.number) has more files than GitHub lists" : "PR #\(pr.number) touches \(glob)"
             }
         }
         return nil
@@ -121,7 +132,8 @@ public enum Release {
                                      key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move, head: pr.headSha),
                                      agent: nil, prompt: nil, command: command, postComment: false,
                                      timeout: .seconds((release.timeoutMinutes ?? defaultTimeoutMinutes) * 60), model: nil)
-        made.checks = release.checks
+        // Empty, never nil: nil would hand the merge the flow's session checks.
+        made.checks = release.checks ?? []
         made.commandBase = release.to
         made.pressed = pressed
         return made

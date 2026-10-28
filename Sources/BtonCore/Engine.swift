@@ -125,29 +125,6 @@ public actor Engine {
         }
     }
 
-    /// The registry job when due. An automatic run also asks the item's lease when the last run
-    /// started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
-    /// means no automatic run this tick.
-    private func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
-                                     pullRequests: [PullRequest], merged: [MergedPullRequest]),
-                            agents: [String: AgentTemplate], leases: LeaseStore) async -> DispatchCandidate? {
-        let slug = read.repo.slug
-        let pressed = next.contains(Self.pick(repo: slug, item: FeatureJob.item))
-        let make = { (teamLast: Date?) -> DispatchCandidate? in
-            FeatureJob.candidate(jobs: self.jobs.all(), repo: slug, flow: read.flow,
-                                 defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
-                                 agents: agents, work: read.repo.work.flatMap(AgentPick.init),
-                                 registry: self.featureStates[slug.lowercased()]?.report?.registry ?? .none,
-                                 pullRequests: read.pullRequests, merged: read.merged,
-                                 issues: self.openIssues[slug.lowercased()] ?? [],
-                                 startsMoves: read.repo.startsMoves, pressed: pressed, teamLast: teamLast)
-        }
-        guard let local = make(nil) else { return nil }
-        if pressed { return local }
-        guard let item = LeaseItem(FeatureJob.item), let state = try? await leases.state(of: item, in: slug) else { return nil }
-        return make(FeatureJob.lastStart(state))
-    }
-
     /// The merged PRs with a head whose leftovers were never looked at, or not for an hour.
     static func cleanupDue(_ merged: [MergedPullRequest], tried: [String: Date], now: Date) -> [MergedPullRequest] {
         merged.filter { pr in !pr.headSha.isEmpty && tried[pr.id].map { now.timeIntervalSince($0) >= 3_600 } ?? true }
@@ -198,10 +175,7 @@ public actor Engine {
                     snapshot.me = read.viewer
                     let pullRequests = read.pullRequests.map { pr in
                         var pr = pr
-                        // The release PR is the release's, not the flow's: no move, no rotation, no take.
-                        pr.move = status.flow.flatMap { flow in
-                            flow.release.map { pr.headRef == $0.from && pr.baseRef == $0.to } == true ? nil : FlowEngine.move(for: pr, flow: flow)
-                        }
+                        pr.move = status.flow.flatMap { FlowEngine.move(for: pr, flow: $0) }
                         return pr
                     }
                     let merged = try await github.mergedPullRequests(repo: repo.slug)

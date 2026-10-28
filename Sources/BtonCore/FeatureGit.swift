@@ -23,10 +23,12 @@ public struct FeatureGit: Sendable, Equatable {
 
     static let timeout: Duration = .seconds(60)
 
-    public static func read(clone: URL, base: String, to: String, commits: [String],
+    /// `from`: the branch the release takes to `to`, for how far ahead it is; the base when nil.
+    public static func read(clone: URL, base: String, to: String, from: String? = nil, commits: [String],
                             runner: ProcessRunner = ProcessRunner()) async -> FeatureGit {
         var git = FeatureGit()
-        guard LocalBranches.isPlain(base), LocalBranches.isPlain(to) else { return git }
+        let from = from ?? base
+        guard LocalBranches.isPlain(base), LocalBranches.isPlain(to), LocalBranches.isPlain(from) else { return git }
         let release = "refs/remotes/origin/\(to)", develop = "refs/remotes/origin/\(base)"
         do {
             let hasRelease = try await exists(release, clone: clone, runner: runner)
@@ -49,8 +51,8 @@ public struct FeatureGit: Sendable, Equatable {
                     git.releasedAt[sha] = Date(timeIntervalSince1970: seconds)
                 }
             }
-            if base != to, hasRelease, hasBase {
-                let ahead = try await lines(["log", "--format=%ct", "\(release)..\(develop)"], clone: clone, runner: runner)
+            if from != to, hasRelease, from == base ? hasBase : try await exists("refs/remotes/origin/\(from)", clone: clone, runner: runner) {
+                let ahead = try await lines(["log", "--format=%ct", "\(release)..refs/remotes/origin/\(from)"], clone: clone, runner: runner)
                 git.unreleasedSince = ahead.last.flatMap { TimeInterval($0) }.map { Date(timeIntervalSince1970: $0) }
                 git.aheadCommits = ahead.count
             }

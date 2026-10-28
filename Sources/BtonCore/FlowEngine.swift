@@ -127,7 +127,7 @@ public enum FlowEngine {
     public static func move(for pr: PullRequest, flow: Flow) -> Move? {
         let verdict = tierVerdict(of: pr, rule: flow.tier)
         let tier = verdict.tier
-        guard let rule = rule(for: pr, flow: flow) else { return nil }
+        guard !Release.isRelease(pr, flow: flow), let rule = rule(for: pr, flow: flow) else { return nil }
         let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
         // The rotation never picks the author for `assignee`; an author who assigned themselves
         // a review their tier won't count from them is flagged instead.
@@ -149,7 +149,7 @@ public enum FlowEngine {
 
     public static func isDispatchable(_ move: Move, pr: PullRequest, flow: Flow, me: String) -> Bool {
         move.hasDispatch && !move.ownerWroteIt && move.isMine(me) && pr.baseRef == flow.base
-            && trustedAssociations.contains(pr.authorAssociation)
+            && !Release.isRelease(pr, flow: flow) && trustedAssociations.contains(pr.authorAssociation)
     }
 
     /// Take it: the PR's move once the PR is assigned to me alone, when that makes it mine to start.
