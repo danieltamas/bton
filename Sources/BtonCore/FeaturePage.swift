@@ -1,9 +1,9 @@
 import Foundation
 
-/// The page's chips: what ships at the next release, what is being built, what is live, and
-/// everything not started.
+/// The page's chips: what ships at the next release, what is being built, what is live,
+/// everything not started, and what the registry retired.
 public enum FeatureFilter: String, CaseIterable, Sendable {
-    case shipsNext = "ships next", building, live, ideas
+    case shipsNext = "ships next", building, live, ideas, retired
 }
 
 /// The repo page as rows: areas in registry order, each feature under its area with its
@@ -39,33 +39,35 @@ public struct FeaturePage: Sendable, Equatable {
 
     public let areas: [AreaRows]
 
-    /// Closed features are left out. A chip keeps a feature whose status matches and the parents
-    /// of a kept sub-feature; the search keeps a feature whose name, summary, id or linked
-    /// numbers match, and its parents. An area with nothing left is left out, unless neither a
-    /// chip nor a search narrows the page.
+    /// Closed features are left out unless the retired chip or a search asks for them. A chip
+    /// keeps a feature whose status matches and the parents of a kept sub-feature; the search
+    /// keeps a feature whose name, summary, id or linked numbers match, and its parents. An area
+    /// with nothing left is left out, unless neither a chip nor a search narrows the page.
     public static func make(registry: FeatureRegistry, report: FeatureReport, filter: FeatureFilter?, query: SearchQuery) -> FeaturePage {
         let open = registry.features.filter { $0.closed == nil }
         let standing = { (feature: FeatureRegistry.Feature) in
             report.standings[feature.id] ?? FeatureStanding(status: .idea, timeline: [], openIssues: 0, openPullRequests: 0, changes: [])
         }
         let narrowed = filter != nil || !query.isEmpty
-        var kept = Set(open.filter { feature in
-            (filter.map { matches($0, standing(feature).status) } ?? true)
-                && query.matches(numbers: (feature.issues + feature.prs).map(\.number), texts: [feature.name, feature.summary, feature.id])
+        var kept = Set(registry.features.filter { feature in
+            // A closed feature needs the retired chip, or a search that names it.
+            let asked = feature.closed == nil ? filter.map { matches($0, standing(feature).status) } ?? true
+                : filter == .retired || (filter == nil && !query.isEmpty)
+            return asked && query.matches(numbers: (feature.issues + feature.prs).map(\.number), texts: [feature.name, feature.summary, feature.id])
         }.map(\.id))
-        // A kept sub-feature needs its parents on the page to be read in place.
-        for feature in open where kept.contains(feature.id) {
-            var parent = feature.parent
-            while let id = parent, kept.insert(id).inserted { parent = registry.feature(id)?.parent }
-        }
-        // A sub-feature of a closed feature hangs under the nearest open ancestor, or the area.
+        // A kept sub-feature needs its parents on the page to be read in place; a closed parent
+        // is skipped, so the sub-feature hangs under its nearest open ancestor, or the area.
         let openIDs = Set(open.map(\.id))
         func openParent(of feature: FeatureRegistry.Feature) -> String {
             var parent = feature.parent
             while let id = parent, !openIDs.contains(id) { parent = registry.feature(id)?.parent }
             return parent ?? ""
         }
-        let byParent = Dictionary(grouping: open.filter { kept.contains($0.id) }, by: openParent)
+        for feature in registry.features where kept.contains(feature.id) {
+            var parent = Optional(openParent(of: feature))
+            while let id = parent, !id.isEmpty, kept.insert(id).inserted { parent = registry.feature(id).map(openParent) }
+        }
+        let byParent = Dictionary(grouping: registry.features.filter { kept.contains($0.id) }, by: openParent)
         func rows(under parent: String, area: String, depth: Int) -> [Row] {
             (byParent[parent] ?? []).filter { $0.area == area || depth > 0 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 .flatMap { [Row(feature: $0, standing: standing($0), depth: depth)] + rows(under: $0.id, area: area, depth: depth + 1) }
@@ -84,14 +86,17 @@ public struct FeaturePage: Sendable, Equatable {
         case .building: status == .building
         case .live: status == .live
         case .ideas: status == .ready || status == .spec || status == .idea
+        case .retired: status == .retired
         }
     }
 
-    /// How many open features the chip would show.
+    /// How many features the chip would show: the closed ones under retired, the open ones elsewhere.
     public static func count(_ filter: FeatureFilter, report: FeatureReport) -> Int {
         guard let registry = report.registry.registry else { return 0 }
         return registry.features.filter { feature in
-            feature.closed == nil && report.standings[feature.id].map { matches(filter, $0.status) } ?? matches(filter, .idea)
+            // The registry's `closed` decides retirement, whatever standing the report kept.
+            if filter == .retired { return feature.closed != nil }
+            return feature.closed == nil && report.standings[feature.id].map { matches(filter, $0.status) } ?? matches(filter, .idea)
         }.count
     }
 

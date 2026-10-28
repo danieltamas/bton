@@ -41,12 +41,14 @@ struct FeaturePageAcceptanceTests {
 
     @Test func filtersMatchOnlyTheirPinnedStatuses() {
         for status in FeatureStatus.allCases {
+            #expect(FeaturePage.matches(.retired, status) == (status == .retired))
             #expect(FeaturePage.matches(.shipsNext, status) == (status == .inDevelop))
             #expect(FeaturePage.matches(.building, status) == (status == .building))
             #expect(FeaturePage.matches(.live, status) == (status == .live))
             #expect(FeaturePage.matches(.ideas, status) == [.ready, .spec, .idea].contains(status))
         }
-        #expect(FeatureFilter.allCases.map(\.rawValue) == ["ships next", "building", "live", "ideas"])
+        #expect(FeatureFilter.allCases.map(\.rawValue) == ["ships next", "building", "live", "ideas", "retired"])
+        #expect(FeatureFilter.allCases.last == .retired)
     }
 
     @Test func filterKeepsAMatchingChildsParent() throws {
@@ -86,13 +88,47 @@ struct FeaturePageAcceptanceTests {
         #expect(FeaturePage.ahead(commits: nil, since: nil, now: now) == nil)
     }
 
-    @Test func closedFeaturesAreHidden() throws {
+    @Test func closedFeaturesAreHiddenByDefaultButVisibleInRetiredAndSearch() throws {
         let f = try FeaturePageFixture.make(includeClosed: true)
-        #expect(f.page().areas.flatMap(\.rows).map(\.id) == ["filing-dedupe", "same-photo", "voice-notes"])
-        #expect(f.page(query: "dropped").areas.isEmpty)
-        #expect(FeaturePage.count(.live, report: f.report) == 0)
-        #expect(FeatureFilter.allCases.reduce(0) { $0 + FeaturePage.count($1, report: f.report) } == 3)
+        let page = f.page()
+        #expect(page.areas.flatMap(\.rows).map(\.id) == ["filing-dedupe", "same-photo", "voice-notes"])
+        #expect(page.areas.allSatisfy { $0.counts[.retired] == nil })
+        let retired = f.page(filter: .retired)
+        #expect(retired.areas.flatMap(\.rows).map(\.id) == ["dropped"])
+        #expect(retired.areas.flatMap(\.rows).map { $0.standing.status } == [.retired])
+        #expect(retired.areas.first?.counts[.retired] == 1)
+        for query in ["Archived capability", "dropped", "#902", "#928"] {
+            #expect(f.page(query: query).areas.flatMap(\.rows).map(\.id) == ["dropped"])
+        }
+        for filter in [FeatureFilter.live, .building, .shipsNext, .ideas] {
+            #expect(!f.page(filter: filter).areas.flatMap(\.rows).contains { $0.id == "dropped" })
+            #expect(f.page(filter: filter, query: "dropped").areas.isEmpty)
+        }
+        #expect(FeaturePage.count(.retired, report: f.report) == 1)
+        #expect(FeatureFilter.allCases.reduce(0) { $0 + FeaturePage.count($1, report: f.report) } == 4)
     }
+
+    @Test func retiredChildKeepsItsOpenParent() throws {
+        let f = try FeaturePageFixture.make(includeClosed: true, closedParent: "same-photo")
+        let page = f.page(filter: .retired)
+        #expect(page.areas.flatMap(\.rows).map(\.id) == ["filing-dedupe", "same-photo", "dropped"])
+        #expect(page.areas.flatMap(\.rows).map(\.depth) == [0, 1, 2])
+        #expect(FeaturePage.count(.retired, report: f.report) == 1)
+    }
+
+    @Test(arguments: FeatureStatus.allCases)
+    func chipCountsUseClosureEvenWithAnInconsistentStanding(status: FeatureStatus) throws {
+        var f = try FeaturePageFixture.make(includeClosed: true)
+        f.report.standings["dropped"] = FeaturePageFixture.standing(status)
+        #expect(FeaturePage.count(.retired, report: f.report) == 1)
+        #expect(FeaturePage.count(.live, report: f.report) == 0)
+        #expect(FeaturePage.count(.building, report: f.report) == 1)
+        #expect(FeaturePage.count(.shipsNext, report: f.report) == 2)
+        #expect(FeaturePage.count(.ideas, report: f.report) == 0)
+        f.report.standings["voice-notes"] = FeaturePageFixture.standing(.retired)
+        #expect(FeaturePage.count(.retired, report: f.report) == 1)
+    }
+
 }
 
 private struct FeaturePageFixture {
@@ -104,7 +140,7 @@ private struct FeaturePageFixture {
             openIssues: 0, openPullRequests: 0, changes: [])
     }
 
-    static func make(includeClosed: Bool = false, extraWaiting: Int = 0) throws -> Self {
+    static func make(includeClosed: Bool = false, extraWaiting: Int = 0, closedParent: String? = nil) throws -> Self {
         var object = try FeatureAcceptanceData.object()
         var areas = try #require(object["areas"] as? [[String: Any]])
         // Chosen second area is intentionally empty, to exercise unfiltered empty-area display.
@@ -121,22 +157,25 @@ private struct FeaturePageFixture {
         voice["issues"] = [["number": 433, "why": "title"]]; voice["prs"] = []
         // Deliberately scrambled; tree order must come from parentage and names.
         var rows = [voice, child, parent]
-        if includeClosed {
-            var closed = parent
-            closed["id"] = "dropped"; closed["name"] = "Dropped feature"; closed["closed"] = "2026-10-20"
-            rows.append(closed)
-        }
         for n in 0..<extraWaiting {
             var waiting = parent
             waiting["id"] = "waiting-\(n)"; waiting["name"] = "Waiting feature \(n)"
             rows.append(waiting)
         }
         object["features"] = rows
-        let registry = try FeatureAcceptanceData.registry(object)
+        let loaded = try FeatureAcceptanceData.registry(object)
+        var features = loaded.features
+        if includeClosed {
+            features.append(FeatureRegistry.Feature(id: "dropped", name: "Archived capability", summary: "Removed capability.",
+                area: "whatsapp-intake", parent: closedParent, paths: [],
+                issues: [.init(number: 902, why: "closes")], prs: [.init(number: 928, why: "closes")],
+                firstSeen: "2026-09-01", closed: "2026-10-01"))
+        }
+        let registry = FeatureRegistry(version: loaded.version, areas: loaded.areas, features: features)
         var report = FeatureReport(repo: "synthetic/project", registry: .ready(registry), hasRelease: true)
         report.standings = ["filing-dedupe": standing(.inDevelop), "same-photo": standing(.inDevelop), "voice-notes": standing(.building)]
         for n in 0..<extraWaiting { report.standings["waiting-\(n)"] = standing(.inDevelop) }
-        if includeClosed { report.standings["dropped"] = standing(.live) }
+        if includeClosed { report.standings["dropped"] = standing(.retired) }
         return Self(registry: registry, report: report)
     }
 

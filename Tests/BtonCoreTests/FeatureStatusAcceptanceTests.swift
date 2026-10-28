@@ -144,9 +144,41 @@ struct FeatureStatusAcceptanceTests {
         #expect(missingBoth.unreleasedSince == nil)
     }
 
+    @Test(arguments: FeatureStatus.allCases.filter { $0 != .retired })
+    func closedFeatureRetiresAfterItsExistingHistory(status: FeatureStatus) throws {
+        var facts = FeatureFacts()
+        let labels = status == .ready ? ["stage:ready"] : status == .spec ? ["stage:spec"] : []
+        facts.issues[402] = .init(number: 402, open: true, createdAt: day(1),
+            labels: labels, labeledAt: Dictionary(uniqueKeysWithValues: labels.map { ($0, day(2)) }))
+        var git = FeatureGit()
+        if [.building, .inDevelop, .live].contains(status) {
+            facts.pullRequests[428] = .init(number: 428, state: status == .building ? "OPEN" : "MERGED",
+                createdAt: day(3), mergedAt: status == .building ? nil : day(4),
+                mergeCommit: "merged", baseRef: "develop")
+            git.onBase = ["merged"]
+            if status == .live {
+                git.onRelease = ["merged"]
+                git.releasedAt["merged"] = day(5)
+            }
+        }
+        let open = try FeatureAcceptanceData.feature(issues: [402], prs: [428], firstSeen: "2026-09-01")
+        let closed = FeatureRegistry.Feature(id: open.id, name: open.name, summary: open.summary,
+            area: open.area, parent: open.parent, paths: open.paths, issues: open.issues, prs: open.prs,
+            firstSeen: open.firstSeen, closed: "2026-10-01")
+        let previous = FeatureStatuses.standing(of: open, facts: facts, git: git, base: "develop", hasRelease: true)
+        #expect(previous.status == status)
+        let result = FeatureStatuses.standing(of: closed, facts: facts, git: git, base: "develop", hasRelease: true)
+        #expect(result.status == .retired)
+        #expect(Array(result.timeline.dropLast()) == previous.timeline)
+        #expect(result.timeline.last?.status == .retired)
+        #expect(result.timeline.last?.at == FeatureAcceptanceData.date("2026-10-01T00:00:00Z"))
+        #expect(result.timeline.last?.number == nil)
+    }
+
     @Test func statusOrderAndRawValues() {
-        #expect(FeatureStatus.allCases == [.live, .inDevelop, .building, .ready, .spec, .idea])
-        #expect(FeatureStatus.allCases.map(\.rawValue) == ["live", "in develop", "building", "ready", "spec", "idea"])
+        #expect(FeatureStatus.allCases == [.live, .inDevelop, .building, .ready, .spec, .idea, .retired])
+        #expect(FeatureStatus.allCases.map(\.rawValue) == ["live", "in develop", "building", "ready", "spec", "idea", "retired"])
+        #expect(FeatureStatus.idea < .retired)
         #expect(FeatureStatus.allCases.reversed().sorted() == FeatureStatus.allCases)
     }
 

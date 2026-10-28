@@ -2,9 +2,9 @@ import Foundation
 
 /// Where a feature is, from the first that applies: its code is on the release branch, merged
 /// into the base and waiting for a release, in an open PR, ready for work, being specified, or
-/// an idea nobody has started.
+/// an idea nobody has started. A feature the registry closed is retired whatever its code did.
 public enum FeatureStatus: String, Sendable, CaseIterable, Comparable {
-    case live, inDevelop = "in develop", building, ready, spec, idea
+    case live, inDevelop = "in develop", building, ready, spec, idea, retired
 
     public static func < (lhs: FeatureStatus, rhs: FeatureStatus) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
@@ -84,11 +84,19 @@ public enum FeatureStatuses {
         // Events that happened in the order they did, not the rank's: a spec after a PR reads as it was.
         timeline.sort { ($0.at ?? .distantPast, $0.status) < ($1.at ?? .distantPast, $1.status) }
 
-        let status: FeatureStatus = live != nil ? .live : inDevelop != nil ? .inDevelop : building != nil ? .building
+        let reached: FeatureStatus = live != nil ? .live : inDevelop != nil ? .inDevelop : building != nil ? .building
             : ready != nil ? .ready : spec != nil ? .spec : .idea
         // A status reached by rank is reached whatever its date; the first event of it is kept.
-        if !timeline.contains(where: { $0.status == status }) {
-            timeline.append(.init(status: status, at: idea.0, number: idea.1))
+        if !timeline.contains(where: { $0.status == reached }) {
+            timeline.append(.init(status: reached, at: idea.0, number: idea.1))
+        }
+        // A retirement ends the story after everything the feature went through.
+        let status: FeatureStatus
+        if let closed = feature.closed {
+            timeline.append(.init(status: .retired, at: Self.day(closed), number: nil))
+            status = .retired
+        } else {
+            status = reached
         }
         return FeatureStanding(status: status, timeline: timeline, openIssues: open.count,
                                openPullRequests: openPRs.count,

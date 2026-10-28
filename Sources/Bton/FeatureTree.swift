@@ -81,6 +81,8 @@ private struct FeatureRow: View {
                 }
                 .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
             }
+            // A retired feature reads as past: dimmed, its chip in the same grey.
+            .opacity(row.standing.status == .retired ? 0.55 : 1)
             Spacer(minLength: 6)
             FeatureStatusChip(status: row.standing.status)
         }

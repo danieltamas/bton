@@ -3,6 +3,10 @@ import SwiftUI
 
 /// One repo's page: its branches against origin, what waits for a release, and every feature
 /// with its status. Opened from the footer's branch line or the repo filter.
+///
+/// The list stays mounted under an open detail and slides aside by offset: a transition on it
+/// would also fire at the page's own boundary (RootView pushes the page from the right) and
+/// bring the page in from the left.
 struct RepoPage: View {
     @Environment(AppStore.self) private var store
     let slug: String
@@ -15,23 +19,32 @@ struct RepoPage: View {
 
     var body: some View {
         let report = store.features[slug]
-        if let detail {
-            FeatureDetail(slug: slug, row: detail) { withAnimation(Motion.spring) { self.detail = nil } }
-                .transition(.push)
-        } else {
-            VStack(spacing: 8) {
-                header(report)
-                // Nothing to search or filter before the registry is there.
-                if let report, case .ready = report.registry {
-                    SearchField(text: $query, prompt: "Search features: #433, a name, a word")
-                        .padding(.horizontal, 14)
-                    scopes(report)
+        GeometryReader { geometry in
+            ZStack {
+                VStack(spacing: 8) {
+                    header(report)
+                    // Nothing to search or filter before the registry is there.
+                    if let report, case .ready = report.registry {
+                        SearchField(text: $query, prompt: "Search features: #433, a name, a word")
+                            .padding(.horizontal, 14)
+                        scopes(report)
+                    }
+                    if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
+                    content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
                 }
-                if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
-                content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
+                .padding(.top, 2)
+                .offset(x: detail == nil ? 0 : -geometry.size.width)
+                .opacity(detail == nil ? 1 : 0)
+                // Its back button's Escape and its rows stay out of the detail's way.
+                .disabled(detail != nil)
+                .allowsHitTesting(detail == nil)
+                .accessibilityHidden(detail != nil)
+                if let detail {
+                    FeatureDetail(slug: slug, row: detail) { withAnimation(Motion.spring) { self.detail = nil } }
+                        .transition(.push)
+                }
             }
-            .padding(.top, 2)
-            .transition(.pushed)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
 
@@ -102,7 +115,7 @@ struct RepoPage: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
-                .help(selected ? "Show every feature" : "Only the features \(item.rawValue)")
+                .help(selected ? "Show every feature" : item == .retired ? "Only the features the registry retired" : "Only the features \(item.rawValue)")
             }
             Spacer(minLength: 0)
         }
@@ -216,6 +229,7 @@ struct FeatureStatusChip: View {
         case .ready: Theme.color(forStage: "ready")
         case .spec: Theme.color(forStage: "spec")
         case .idea: Theme.neutral
+        case .retired: Theme.textTertiary
         }
     }
 }
