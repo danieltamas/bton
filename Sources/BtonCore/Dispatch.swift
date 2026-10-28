@@ -104,7 +104,7 @@ public enum DispatchPlanner {
         } else if let agent = flow.dispatch["fix"]?.agent?.value(for: move.tier)
                     ?? flow.dispatch["review"]?.agent?.value(for: move.tier) {
             made = DispatchCandidate(target: .pullRequest(pr), move: move,
-                                              key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
+                                     key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
                                      agent: agent, prompt: resolvePrompt(number: pr.number, base: pr.baseRef),
                                      command: nil, postComment: false, timeout: .seconds(3_600))
         } else {
@@ -196,7 +196,7 @@ public enum DispatchPlanner {
                 && $0.status == .succeeded }.max { $0.startedAt < $1.startedAt }
             let changed = entry.onlyOnChange != true || succeeded.map { last in
                 let pushed = last.queueHeads.map { $0 != queueHeads } ?? (pushedAt.map { $0 > last.startedAt } ?? false)
-                return changedAt.map { $0 > last.startedAt } ?? false || pushed
+                return (changedAt.map { $0 > last.startedAt } ?? false) || pushed
             } ?? true
             guard runNow.contains(item) || timed.nextRun(after: now) <= now && changed else { return nil }
             let minute = Int(now.timeIntervalSince1970 / 60)
