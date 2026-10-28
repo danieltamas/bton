@@ -34,6 +34,7 @@ enum DemoShots {
         try write(pane(ReposPane()).environment(store), to: directory.appendingPathComponent("settings-repos.png"))
         try write(pane(SchedulesPane()).environment(store), to: directory.appendingPathComponent("settings-schedules.png"))
         try write(pane(AgentsPane()).environment(store), to: directory.appendingPathComponent("settings-agents.png"))
+        try write(pane(MorePane()).environment(store), to: directory.appendingPathComponent("settings-more.png"))
     }
 
     /// Drawn by an offscreen window, not `ImageRenderer`: that one leaves text fields and other

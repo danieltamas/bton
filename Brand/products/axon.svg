@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Axon's mark (three nodes on a bus, from its README hero) on the family's dark tile. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C2A26"/>
+      <stop offset="1" stop-color="#090E0D"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5BE3A4"/>
+      <stop offset="1" stop-color="#2CC98B"/>
+    </linearGradient>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <g filter="url(#drop)"><rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/></g>
+  <rect x="102" y="102" width="820" height="820" rx="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="4"/>
+  <!-- the glyph: viewBox 0 0 24 24 scaled 26x and centred -->
+  <g transform="translate(200 200) scale(26)" fill="none" stroke="url(#node)" stroke-width="2.2" stroke-linecap="round">
+    <path d="M7.4 10.9 16.6 6.1M7.4 13.1l9.2 4.8"/>
+  </g>
+  <g transform="translate(200 200) scale(26)" fill="url(#node)">
+    <circle cx="5" cy="12" r="2.6"/>
+    <circle cx="19" cy="5" r="2.6"/>
+    <circle cx="19" cy="19" r="2.6"/>
+  </g>
+</svg>

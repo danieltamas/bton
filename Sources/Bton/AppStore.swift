@@ -559,7 +559,7 @@ enum SettingsError: Error, LocalizedError {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general = "General", repos = "Repos", agents = "Agents", schedules = "Schedules", supervisor = "Supervisor",
-         voice = "Voice", prices = "Prices", about = "About"
+         voice = "Voice", prices = "Prices", more = "More", about = "About"
     var id: Self { self }
 }
 

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232A33"/>
+      <stop offset="1" stop-color="#0B0E12"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#27C4B0"/>
+      <stop offset="0.55" stop-color="#7BE0A0"/>
+      <stop offset="1" stop-color="#F5C451"/>
+    </linearGradient>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <g filter="url(#drop)"><rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/></g>
+  <rect x="102" y="102" width="820" height="820" rx="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="4"/>
+  <!-- 270 degree dial, open at the bottom -->
+  <path d="M338 686A250 250 0 1 1 686 686" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="64" stroke-linecap="round"/>
+  <path d="M338 686A250 250 0 0 1 512 262A250 250 0 0 1 706 330" fill="none" stroke="url(#arc)" stroke-width="64" stroke-linecap="round"/>
+  <!-- needle -->
+  <path d="M512 540L640 380" stroke="#F4F7F9" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="512" cy="540" r="44" fill="#F4F7F9"/>
+  <circle cx="512" cy="540" r="16" fill="#0B0E12"/>
+</svg>
