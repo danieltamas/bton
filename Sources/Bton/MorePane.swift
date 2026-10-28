@@ -1,4 +1,5 @@
 import AppKit
+import BtonCore
 import SwiftUI
 
 /// One of the owner's other open source tools, as the More apps pane shows it: the same card
@@ -15,14 +16,16 @@ struct MoreApp: Identifiable {
     let platform: String
     let pitch: String
     let detail: String
-    /// Nil until the app has a published release: a command that fails is worse than none.
-    let install: String?
-    let repo: URL
+    /// Shown once the repo has a release (`MoreAppReleases`): a command that fails is worse than none.
+    let install: String
+    /// `owner/name` on GitHub.
+    let repo: String
     var site: URL?
     let dark: UInt32
     let light: UInt32
 
     var id: String { name }
+    var repoURL: URL { URL(string: "https://github.com/\(repo)")! }
     @MainActor var hue: Color { Theme.hue(dark, light: light) }
 
     static let all: [MoreApp] = [
@@ -30,28 +33,28 @@ struct MoreApp: Identifiable {
                 pitch: "Why is my Mac slow? One answer, from the menu bar.",
                 detail: "Shows what is using your Mac, checks it on a schedule, and tells you what to close, what to clean and whether your VPN is really on.",
                 install: "brew install --cask danieltamas/tap/macmax",
-                repo: URL(string: "https://github.com/danieltamas/macmax")!, dark: 0xFFB547, light: 0x9E6801),
+                repo: "danieltamas/macmax", dark: 0xFFB547, light: 0x9E6801),
         MoreApp(name: "RMJ", icon: "rmj", kind: .menuBar, platform: "macOS",
                 pitch: "Run My Job: your builds and tests, on your boxes.",
                 detail: "Sends the builds and test suites your agents start to the Linux boxes on your tailnet, and shows every run in one place.",
-                install: nil,
-                repo: URL(string: "https://github.com/danieltamas/runmyjob")!, dark: 0x5AA9FF, light: 0x1F6FD1),
+                install: "brew install --cask danieltamas/tap/rmj",
+                repo: "danieltamas/runmyjob", dark: 0x5AA9FF, light: 0x1F6FD1),
         MoreApp(name: "Axon", icon: "axon", kind: .terminal, platform: "macOS and Linux",
                 pitch: "Your coding agents, on one bus.",
                 detail: "Lets Claude Code, Codex, OpenCode and Hermes see and talk to each other, and shows what each one does and costs. Bton's agents register on it.",
                 install: "brew install danieltamas/tap/axon",
-                repo: URL(string: "https://github.com/danieltamas/axon")!, dark: 0x4ADE80, light: 0x15803D),
+                repo: "danieltamas/axon", dark: 0x4ADE80, light: 0x15803D),
         MoreApp(name: "Run.dev", icon: "rundev", fullBleed: true, kind: .terminal, platform: "macOS and Linux",
                 pitch: "Every local service, one dashboard.",
                 detail: "One binary starts and watches the services of all your projects from a terminal dashboard, with no config files to babysit.",
                 install: "curl -fsSL https://getrun.dev/install.sh | bash",
-                repo: URL(string: "https://github.com/danieltamas/run.dev")!, site: URL(string: "https://getrun.dev")!,
+                repo: "danieltamas/run.dev", site: URL(string: "https://getrun.dev")!,
                 dark: 0x45C8D4, light: 0x0A7C93),
         MoreApp(name: "Cloak", icon: "cloak", fullBleed: true, kind: .terminal, platform: "CLI and VS Code",
                 pitch: "Keep .env secrets away from AI agents.",
                 detail: "Agents see sandbox values, you see the real ones, and your app still runs with real credentials. Encrypted vault, Touch ID.",
                 install: "curl -fsSL https://getcloak.dev/install.sh | sh",
-                repo: URL(string: "https://github.com/danieltamas/cloak")!, site: URL(string: "https://getcloak.dev")!,
+                repo: "danieltamas/cloak", site: URL(string: "https://getcloak.dev")!,
                 dark: 0x5B9BFF, light: 0x2457C5),
     ]
 }
@@ -64,6 +67,7 @@ struct MorePane: View {
             group("In the menu bar", .menuBar)
             group("In the terminal", .terminal)
         }
+        .onAppear { MoreAppReleases.shared.refresh() }
     }
 
     private func group(_ title: String, _ kind: MoreApp.Kind) -> some View {
@@ -74,8 +78,39 @@ struct MorePane: View {
     }
 }
 
+/// Which of the apps have a release, asked of GitHub when the pane opens and kept across launches:
+/// a label built into this Bton would say "In development" long after the app shipped.
+@MainActor @Observable
+final class MoreAppReleases {
+    static let shared = MoreAppReleases()
+    private static let key = "MoreAppReleases"
+
+    /// By `MoreApp.repo`; an app not in it has not been answered yet.
+    private(set) var states: [String: ReleaseLookup.State]
+    private var lastAttempt: Date?
+
+    init() {
+        states = UserDefaults.standard.data(forKey: Self.key)
+            .flatMap { try? JSONDecoder().decode([String: ReleaseLookup.State].self, from: $0) } ?? [:]
+    }
+
+    /// Asks once per opening, at most every 15 minutes; a failed ask keeps the last answer.
+    func refresh(now: Date = .now) {
+        if let lastAttempt, now >= lastAttempt, now.timeIntervalSince(lastAttempt) < ReleaseCheck.interval { return }
+        lastAttempt = now
+        for app in MoreApp.all {
+            Task {
+                guard let state = try? await ReleaseLookup.latest(of: app.repo) else { return }
+                states[app.repo] = state
+                UserDefaults.standard.set(try? JSONEncoder().encode(states), forKey: Self.key)
+            }
+        }
+    }
+}
+
 private struct MoreAppCard: View {
     let app: MoreApp
+    private var state: ReleaseLookup.State? { MoreAppReleases.shared.states[app.repo] }
 
     var body: some View {
         Bezel(glow: app.hue) {
@@ -86,18 +121,23 @@ private struct MoreAppCard: View {
                         HStack(spacing: 6) {
                             Text(app.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
                             Chip(text: app.platform, color: app.hue)
-                            if app.install == nil { Chip(text: "In development", color: Theme.textTertiary, style: .dashed) }
+                            switch state {
+                            case let .released(tag): Chip(text: tag, color: app.hue, style: .outline)
+                            case .none?: Chip(text: "In development", color: Theme.textTertiary, style: .dashed)
+                            case nil: EmptyView()
+                            }
                             Spacer(minLength: 8)
                             if let site = app.site { LinkChip(title: "Website", url: site) }
-                            LinkChip(title: "GitHub", url: app.repo)
+                            LinkChip(title: "GitHub", url: app.repoURL)
                         }
                         Text(app.pitch).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.textSecondary)
                         Text(app.detail).font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                // Full width, so a curl line reads whole instead of cut in the middle.
-                if let install = app.install {
-                    InstallLine(command: install)
+                // Full width, so a curl line reads whole instead of cut in the middle. Shown until
+                // GitHub says there is no release: a published app is the common case.
+                if state != ReleaseLookup.State.none {
+                    InstallLine(command: app.install)
                 } else {
                     Text("No release yet: watch the repository for the first one.").font(.meta).foregroundStyle(Theme.textTertiary)
                         .padding(.leading, 66)

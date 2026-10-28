@@ -4,7 +4,7 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
-**Settings > More apps.** The other open source tools from the same maker, in two groups: in the menu bar (MacMax, RMJ) and in the terminal (Axon, Run.dev, Cloak). Each card shows the app's own icon, platform, pitch, one line, Website and GitHub links, and its install command with a copy button; an app without a release yet says so instead of a command.
+**Settings > More apps.** The other open source tools from the same maker, in two groups: in the menu bar (MacMax, RMJ) and in the terminal (Axon, Run.dev, Cloak). Each card shows the app's own icon, platform, pitch, one line, Website and GitHub links, and its install command with a copy button; whether an app has a release is asked of GitHub when the pane opens (no login needed) and kept across launches, so an app that ships after this Bton was built shows its version and install line, and one that has not says so instead of a command.
 
 **A schedule with "only on change" no longer re-arms itself.** The gate read each PR's updatedAt, and GitHub bumps that for a label too: a run's own lease claim and release flip the work label on every PR it looks at, so every run made the next one due (430 runs on one schedule). The gate now reads what a run should see: a PR opened, a commit on its head, a comment, a merge, or a head that moved since the last run saw the queue.
 
