@@ -32,19 +32,18 @@ private enum ScheduleQueueChangeFixture {
         return job
     }
 
-    static func candidates(changedAt: Date?, jobs: [Job], queueHeads: [String] = []) -> [DispatchCandidate] {
+    static func candidates(changedAt: Date?, pushedAt: Date? = nil, jobs: [Job], queueHeads: [String] = []) -> [DispatchCandidate] {
         var entry = ScheduleEntry(name: "Daily check", everyMinutes: 10, enabled: true,
                                   repo: repo, agent: "codex", prompt: "Inspect the synthetic widget.", number: 7)
         entry.onlyOnChange = true
         return DispatchPlanner.scheduled([entry], jobs: jobs, repo: repo, defaultBranch: "main",
-                                         me: "octo", now: now, changedAt: changedAt, queueHeads: queueHeads)
+                                         me: "octo", now: now, changedAt: changedAt, pushedAt: pushedAt, queueHeads: queueHeads)
     }
 }
 
 @Suite(ProcessBound())
 struct ScheduleQueueChangeAcceptanceTests {
     private typealias F = ScheduleQueueChangeFixture
-
     @Test func labelFlipDoesNotRearmSchedule() {
         let pr = F.pr(updatedAt: F.now, comments: [F.comment(at: F.old)])
         let changedAt = DispatchPlanner.queueChangedAt([pr], merged: [])
@@ -53,7 +52,6 @@ struct ScheduleQueueChangeAcceptanceTests {
         #expect(F.old < F.firstStart)
         #expect(F.candidates(changedAt: changedAt, jobs: [F.job(startedAt: F.firstStart)]).isEmpty)
     }
-
     @Test func newCommentMakesExactlyOneRunDue() {
         let pr = F.pr(comments: [F.comment(at: F.old), F.comment(at: F.change)])
         let changedAt = DispatchPlanner.queueChangedAt([pr], merged: [])
@@ -62,15 +60,20 @@ struct ScheduleQueueChangeAcceptanceTests {
         #expect(F.candidates(changedAt: changedAt, jobs: [first]).count == 1)
         #expect(F.candidates(changedAt: changedAt, jobs: [first, F.job(startedAt: F.laterStart)]).isEmpty)
     }
-
     @Test func newHeadCommitMakesExactlyOneRunDue() {
-        let changedAt = DispatchPlanner.queueChangedAt([F.pr(headCommittedAt: F.change)], merged: [])
-        #expect(changedAt == F.change)
-        let first = F.job(startedAt: F.firstStart)
-        #expect(F.candidates(changedAt: changedAt, jobs: [first]).count == 1)
-        #expect(F.candidates(changedAt: changedAt, jobs: [first, F.job(startedAt: F.laterStart)]).isEmpty)
+        let prs = [F.pr(headCommittedAt: F.change)]
+        let changedAt = DispatchPlanner.queueChangedAt(prs, merged: [])
+        let pushedAt = DispatchPlanner.queuePushedAt(prs)
+        let heads = DispatchPlanner.queueHeads(prs)
+        #expect(changedAt == F.old)
+        #expect(pushedAt == F.change)
+        let first = F.job(startedAt: F.firstStart, queueHeads: heads)
+        #expect(F.candidates(changedAt: changedAt, pushedAt: pushedAt, jobs: [first], queueHeads: heads).isEmpty)
+        let moved = ["1@new-sha"]
+        #expect(F.candidates(changedAt: changedAt, pushedAt: pushedAt, jobs: [first], queueHeads: moved).count == 1)
+        let next = F.job(startedAt: F.laterStart, queueHeads: moved)
+        #expect(F.candidates(changedAt: changedAt, pushedAt: pushedAt, jobs: [first, next], queueHeads: moved).isEmpty)
     }
-
     @Test func mergedPullRequestMakesRunDue() {
         let merged = MergedPullRequest(repo: F.repo, number: 2, title: "Merged widget", author: "octo",
                                       url: URL(string: "https://example.com/pr/2")!, mergedAt: F.change)
@@ -78,20 +81,17 @@ struct ScheduleQueueChangeAcceptanceTests {
         #expect(changedAt == F.change)
         #expect(F.candidates(changedAt: changedAt, jobs: [F.job(startedAt: F.firstStart)]).count == 1)
     }
-
     @Test func newlyOpenedPullRequestWithOldHeadMakesRunDue() {
         let changedAt = DispatchPlanner.queueChangedAt([F.pr(createdAt: F.change)], merged: [])
         #expect(changedAt == F.change)
         #expect(F.candidates(changedAt: changedAt, jobs: [F.job(startedAt: F.firstStart)]).count == 1)
     }
-
     @Test func emptyQueueNeedsNoChangeForFirstRunButDoesNotRearmSuccess() {
         let changedAt = DispatchPlanner.queueChangedAt([], merged: [])
         #expect(changedAt == nil)
         #expect(F.candidates(changedAt: changedAt, jobs: [F.job(startedAt: F.firstStart)]).isEmpty)
         #expect(F.candidates(changedAt: changedAt, jobs: []).count == 1)
     }
-
     @Test func updatedAtDoesNotAffectQueueChangeTimestamp() {
         let before = F.pr(updatedAt: F.old, comments: [F.comment(at: F.change)])
         let after = F.pr(updatedAt: F.now, comments: [F.comment(at: F.change)])
@@ -141,7 +141,10 @@ struct ScheduleQueueChangeAcceptanceTests {
         let legacy = F.job(startedAt: F.firstStart)
         #expect(legacy.queueHeads == nil)
         let heads = DispatchPlanner.queueHeads([F.pr()])
-        #expect(F.candidates(changedAt: F.old, jobs: [legacy], queueHeads: heads).isEmpty)
+        let olderPush = DispatchPlanner.queuePushedAt([F.pr(headCommittedAt: F.old)])
+        let newerPush = DispatchPlanner.queuePushedAt([F.pr(headCommittedAt: F.change)])
+        #expect(F.candidates(changedAt: F.old, pushedAt: olderPush, jobs: [legacy], queueHeads: heads).isEmpty)
+        #expect(F.candidates(changedAt: F.old, pushedAt: newerPush, jobs: [legacy], queueHeads: heads).count == 1)
         let changedAt = DispatchPlanner.queueChangedAt([F.pr(comments: [F.comment(at: F.change)])], merged: [])
         #expect(changedAt == F.change)
         #expect(F.candidates(changedAt: changedAt, jobs: [legacy], queueHeads: heads).count == 1)
@@ -161,6 +164,30 @@ struct ScheduleQueueChangeAcceptanceTests {
         #expect(DispatchPlanner.queueHeads(prs) == ["10@ten", "1@one", "2@two"])
         #expect(DispatchPlanner.queueHeads(Array(prs.reversed())) == ["10@ten", "1@one", "2@two"])
         #expect(DispatchPlanner.queueHeads([]).isEmpty)
+    }
+
+    @Test func futureDatedHeadNeverRearmsSuccessWithIdenticalHeads() {
+        let future = F.now.addingTimeInterval(86400)
+        let prs = [F.pr(headCommittedAt: future)]
+        let heads = DispatchPlanner.queueHeads(prs)
+        let changedAt = DispatchPlanner.queueChangedAt(prs, merged: [])
+        let pushedAt = DispatchPlanner.queuePushedAt(prs)
+        #expect(changedAt == F.old)
+        #expect(pushedAt == future)
+        let first = F.job(startedAt: F.firstStart, queueHeads: heads)
+        let next = F.job(startedAt: F.laterStart, queueHeads: heads)
+        for jobs in [[first], [first, next]] {
+            #expect(F.candidates(changedAt: changedAt, pushedAt: pushedAt, jobs: jobs, queueHeads: heads).isEmpty)
+        }
+    }
+
+    @Test func queuePushedAtUsesMaximumHeadCommitDate() {
+        let prs = [F.pr(headCommittedAt: F.change), F.pr(number: 2, headCommittedAt: nil),
+                   F.pr(number: 3, headCommittedAt: F.old)]
+        #expect(DispatchPlanner.queuePushedAt(prs) == F.change)
+        #expect(DispatchPlanner.queuePushedAt(Array(prs.reversed())) == F.change)
+        #expect(DispatchPlanner.queuePushedAt([F.pr(headCommittedAt: nil)]) == nil)
+        #expect(DispatchPlanner.queuePushedAt([]) == nil)
     }
 
     @Test func decodedCreationAndFilteredCommentsFeedQueueChangeGate() throws {
