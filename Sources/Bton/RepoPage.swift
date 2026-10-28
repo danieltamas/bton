@@ -25,9 +25,11 @@ struct RepoPage: View {
                     header(report)
                     // Nothing to search or filter before the registry is there.
                     if let report, case .ready = report.registry {
-                        SearchField(text: $query, prompt: "Search features: #433, a name, a word")
-                            .padding(.horizontal, 14)
-                        scopes(report)
+                        HStack(spacing: 8) {
+                            SearchField(text: $query, prompt: "Search: #433, a name, a word")
+                            FeatureScopeFilter(report: report, selection: $filter)
+                        }
+                        .padding(.trailing, 14)
                     }
                     if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
                     content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
@@ -91,35 +93,6 @@ struct RepoPage: View {
             }
         }
         .padding(.horizontal, 14)
-    }
-
-    /// The search's scope line, as under a Finder search: each status with its count, the chosen
-    /// one underlined in mint.
-    private func scopes(_ report: FeatureReport) -> some View {
-        HStack(spacing: 14) {
-            ForEach(FeatureFilter.allCases, id: \.self) { item in
-                let selected = filter == item
-                Button {
-                    withAnimation(Motion.snappy) { filter = selected ? nil : item }
-                } label: {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 4) {
-                            Text(item.rawValue)
-                            Text("\(FeaturePage.count(item, report: report))")
-                                .foregroundStyle(selected ? Theme.mint : Theme.textTertiary)
-                        }
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                        Capsule().fill(selected ? Theme.mint : .clear).frame(height: 2)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(PressStyle())
-                .help(selected ? "Show every feature" : item == .retired ? "Only the features the registry retired" : "Only the features \(item.rawValue)")
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 24)
     }
 
     @ViewBuilder private func content(_ report: FeatureReport?) -> some View {
