@@ -105,6 +105,16 @@ public struct FeaturePage: Sendable, Equatable {
         return text
     }
 
+    /// The release's line on the page and in the footer; `amber` when it asks for a decision.
+    public static func releaseLine(_ standing: ReleaseStanding) -> (text: String, amber: Bool)? {
+        switch standing {
+        case let .due(reason): ("release due: \(reason)", true)
+        case let .blocked(reason): ("release blocked: \(reason)", true)
+        case let .open(number, _): ("release PR #\(number) open", false)
+        case .waiting, .unknown: nil
+        }
+    }
+
     /// "100 commits, 8 days": what the base has that the release branch lacks, and for how long.
     public static func ahead(commits: Int?, since: Date?, now: Date) -> String? {
         guard let commits, commits > 0 else { return nil }

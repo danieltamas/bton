@@ -26,7 +26,7 @@ struct RepoPage: View {
                         .padding(.horizontal, 14)
                     if let problem = report.problem { ProblemText(text: problem).padding(.horizontal, 14) }
                 }
-                content(report)
+                content(report).releaseAction(slug: slug, report: report)
             }
             .padding(.top, 2)
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -62,6 +62,9 @@ struct RepoPage: View {
                 }
                 if let report, let summary = FeaturePage.summary(report: report, to: to, now: .now) {
                     Text(summary).font(.meta).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                }
+                if let line = report?.release.flatMap(FeaturePage.releaseLine) {
+                    Text(line.text).font(.meta).foregroundStyle(line.amber ? Theme.unassigned : Theme.textSecondary).lineLimit(2)
                 }
             }
             Spacer(minLength: 4)

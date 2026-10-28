@@ -23,6 +23,9 @@ struct BranchSummary: View {
                     if let unreleased = report.workingOnly, unreleased > 0 {
                         Text("+\(unreleased) not on \(report.defaultBranch)").foregroundStyle(Theme.textTertiary)
                     }
+                    if let slug = reports.first?.repo, let line = store.features[slug]?.release.flatMap(FeaturePage.releaseLine) {
+                        Text(line.text).foregroundStyle(line.amber ? Theme.unassigned : Theme.textTertiary)
+                    }
                 } else {
                     let needing = reports.filter { $0.report.needsAttention }
                     let needs = needing.count
