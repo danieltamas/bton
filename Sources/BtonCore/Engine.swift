@@ -264,6 +264,7 @@ public actor Engine {
                     pending += DispatchPlanner.scheduled(config.schedules, jobs: jobs.all(), repo: read.repo.slug,
                                                          defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
                                                          runNow: runNow, changedAt: changedAt,
+                                                         pushedAt: DispatchPlanner.queuePushedAt(read.pullRequests),
                                                          queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.

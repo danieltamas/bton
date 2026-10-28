@@ -172,13 +172,16 @@ public enum DispatchPlanner {
     /// `runNow` holds the items the owner asked to run now: due whatever their interval, and even
     /// while switched off. `changedAt` is when the repo's queue last changed (`queueChangedAt`);
     /// an `onlyOnChange` entry is due only if that is after its last successful run
-    /// started, or if `queueHeads` differs from what that run saw (a push of an older commit moves
-    /// the head without a newer date). So nothing that happens during a run is missed, a failed
+    /// started, or if `queueHeads` differs from what that run saw. A push counts through the heads,
+    /// never through a commit date: an older commit moves the head without a newer date, and a
+    /// future-dated one would stay newer than every run. `pushedAt` serves only a job from before
+    /// heads were kept. So nothing that happens during a run is missed, a failed
     /// run is tried again, and a run that changed something is followed by one more, which finds
     /// nothing new to do.
     public static func scheduled(_ schedules: [ScheduleEntry], jobs: [Job], repo: String, defaultBranch: String,
                                  me: String, now: Date = .now, runNow: Set<String> = [],
-                                 changedAt: Date? = nil, queueHeads: [String] = []) -> [DispatchCandidate] {
+                                 changedAt: Date? = nil, pushedAt: Date? = nil,
+                                 queueHeads: [String] = []) -> [DispatchCandidate] {
         schedules.compactMap { entry in
             guard let item = entry.item, entry.enabled || runNow.contains(item),
                   entry.repo?.caseInsensitiveCompare(repo) == .orderedSame,
@@ -192,7 +195,8 @@ public enum DispatchPlanner {
             let succeeded = jobs.filter { $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame && $0.key.item == item
                 && $0.status == .succeeded }.max { $0.startedAt < $1.startedAt }
             let changed = entry.onlyOnChange != true || succeeded.map { last in
-                changedAt.map { $0 > last.startedAt } ?? false || last.queueHeads.map { $0 != queueHeads } ?? false
+                let pushed = last.queueHeads.map { $0 != queueHeads } ?? (pushedAt.map { $0 > last.startedAt } ?? false)
+                return changedAt.map { $0 > last.startedAt } ?? false || pushed
             } ?? true
             guard runNow.contains(item) || timed.nextRun(after: now) <= now && changed else { return nil }
             let minute = Int(now.timeIntervalSince1970 / 60)
@@ -307,14 +311,19 @@ public enum DispatchPlanner {
 
     static let scheduleMove = "schedule"
 
-    /// When the queue last changed in a way a schedule should see: a PR opened, a commit on its
-    /// head, a comment, a merge. Never a PR's `updatedAt`: GitHub bumps that for a label flip too,
+    /// When the queue last changed in a way a schedule should see: a PR opened, a comment, a
+    /// merge; a push shows in `queueHeads`. Never a PR's `updatedAt`: GitHub bumps that for a label flip too,
     /// and a run's own `bton lease claim` and release add and remove the work label on every PR it
     /// looks at, so reading `updatedAt` made each run re-arm the next (430 runs, $287 by 2026-10-28).
     /// A label change alone (turn:dani by hand) waits for the next comment, push or timed run.
     public static func queueChangedAt(_ pullRequests: [PullRequest], merged: [MergedPullRequest]) -> Date? {
-        let fromOpen = pullRequests.flatMap { [$0.createdAt, $0.headCommittedAt, $0.comments.last?.createdAt].compactMap { $0 } }
+        let fromOpen = pullRequests.flatMap { [$0.createdAt, $0.comments.last?.createdAt].compactMap { $0 } }
         return (fromOpen + merged.map(\.mergedAt)).max()
+    }
+
+    /// The newest head commit date: the push signal for a job from before heads were kept.
+    public static func queuePushedAt(_ pullRequests: [PullRequest]) -> Date? {
+        pullRequests.compactMap(\.headCommittedAt).max()
     }
 
     /// The open PRs and their heads, in a fixed order: a schedule run keeps it on its job, and a
