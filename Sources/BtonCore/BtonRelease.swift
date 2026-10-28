@@ -146,37 +146,3 @@ extension GitHubClient {
         return try JSONDecoder().decode(Release.self, from: data).tag_name
     }
 }
-
-/// Whether a public repo has a release, read without a login: GitHub answers the releases endpoint
-/// 60 times an hour per address, and the few cards on Settings > More apps ask once per opening.
-public enum ReleaseLookup {
-    public enum State: Equatable, Sendable, Codable {
-        case released(tag: String)
-        case none
-    }
-
-    public enum Failure: Error, Equatable {
-        case http(Int)
-        case unreadable
-    }
-
-    public static func latest(of repo: String, session: URLSession = .shared) async throws -> State {
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!, timeoutInterval: 20)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        return try decode(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
-    }
-
-    /// 404 is GitHub's answer for a repo with no release, and for one the public cannot see: to the
-    /// person reading the card there is nothing to install either way. Any other failure is not an answer.
-    public static func decode(_ data: Data, status: Int) throws -> State {
-        switch status {
-        case 404: return State.none
-        case 200:
-            guard let tag = try? GitHubClient.decodeLatestRelease(data) else { throw Failure.unreadable }
-            return .released(tag: tag)
-        default: throw Failure.http(status)
-        }
-    }
-}

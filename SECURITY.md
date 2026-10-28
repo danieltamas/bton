@@ -60,6 +60,13 @@ The threat model is a team that trusts its collaborators, not a public repo open
   of a `post: comment` move, removal of a decided move's labels, and failure and staleness
   comments (which carry its marker). A review or decision comment has the repo's environment
   values (8 characters or more, and a URL's password) replaced by their names before it is posted.
+- Settings > More apps reads one file, `apps.json`, and its icons from the owner's registry on
+  `raw.githubusercontent.com` (no GitHub API, no token), at most hourly when the pane opens or
+  on its button. The file is validated whole against the registry's consumer contract (plain
+  ASCII, at most 64 KiB, every field by type and pattern, links and install commands only on
+  github.com, raw.githubusercontent.com, getrun.dev and getcloak.dev, matched whole) before any
+  of it is shown; an entry that fails is never shown, a file that fails keeps the last good
+  copy. An icon is accepted only as a 256 x 256 PNG of at most 64 KiB.
 
 What it does not contain, by design or for want of a client-side lever:
 

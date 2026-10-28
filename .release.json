@@ -13,6 +13,8 @@
   "githubRelease": true,
   "verify": [
     "bash install.sh",
-    "test \"$(defaults read /Applications/Bton.app/Contents/Info.plist CFBundleShortVersionString)\" = {version}"
+    "test \"$(defaults read /Applications/Bton.app/Contents/Info.plist CFBundleShortVersionString)\" = {version}",
+    "gh api repos/danieltamas/registry/dispatches -f event_type=release",
+    "for i in $(seq 18); do v=$(gh api repos/danieltamas/registry/contents/apps.json --jq '.content | @base64d | fromjson | .apps[] | select(.repo == \"danieltamas/bton\") | .latest.version'); test \"$v\" = \"{version}\" && exit 0; sleep 10; done; echo \"registry shows ${v:-no release} for danieltamas/bton, not {version}\"; exit 1"
   ]
 }

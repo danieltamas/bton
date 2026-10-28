@@ -311,6 +311,9 @@ scripts/install-from-source.sh
 Needs Xcode with Swift 6.2. `swift test` runs the suite; `BTON_E2E_REPO=<owner/name> scripts/e2e.sh`
 runs two headless instances against a scratch repo. Releases are reproducible:
 `scripts/release.sh <x.y.z> --verify` builds twice and fails if one byte differs.
+`scripts/registry-snapshot.sh [ref]` refreshes the bundled copy of the More apps list from
+github.com/danieltamas/registry; a release ends by pinging that registry and waiting until it
+shows the new version (the last two `verify` lines of `.release.json`).
 
 </details>
 

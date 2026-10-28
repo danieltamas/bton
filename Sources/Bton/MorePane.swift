@@ -2,167 +2,180 @@ import AppKit
 import BtonCore
 import SwiftUI
 
-/// One of the owner's other open source tools, as the More apps pane shows it: the same card
-/// MacMax shows, so the two apps point at each other the same way.
-struct MoreApp: Identifiable {
-    enum Kind { case menuBar, terminal }
-
-    let name: String
-    /// The file in Support/MoreApps, copied into the bundle by scripts/bundle.sh.
-    let icon: String
-    /// The icon fills its square, so it is inset and rounded to sit beside the macOS-shaped ones.
-    var fullBleed = false
-    let kind: Kind
-    let platform: String
-    let pitch: String
-    let detail: String
-    /// Shown once the repo has a release (`MoreAppReleases`): a command that fails is worse than none.
-    let install: String
-    /// `owner/name` on GitHub.
-    let repo: String
-    var site: URL?
-    let dark: UInt32
-    let light: UInt32
-
-    var id: String { name }
-    var repoURL: URL { URL(string: "https://github.com/\(repo)")! }
+/// The card accent for an app from the registry.
+extension RegistryApp {
     @MainActor var hue: Color { Theme.hue(dark, light: light) }
-
-    static let all: [MoreApp] = [
-        MoreApp(name: "MacMax", icon: "macmax", kind: .menuBar, platform: "macOS",
-                pitch: "Why is my Mac slow? One answer, from the menu bar.",
-                detail: "Shows what is using your Mac, checks it on a schedule, and tells you what to close, what to clean and whether your VPN is really on.",
-                install: "brew install --cask danieltamas/tap/macmax",
-                repo: "danieltamas/macmax", dark: 0xFFB547, light: 0x9E6801),
-        MoreApp(name: "RMJ", icon: "rmj", kind: .menuBar, platform: "macOS",
-                pitch: "Run My Job: your builds and tests, on your boxes.",
-                detail: "Sends the builds and test suites your agents start to the Linux boxes on your tailnet, and shows every run in one place.",
-                install: "brew install --cask danieltamas/tap/rmj",
-                repo: "danieltamas/runmyjob", dark: 0x5AA9FF, light: 0x1F6FD1),
-        MoreApp(name: "Axon", icon: "axon", kind: .terminal, platform: "macOS and Linux",
-                pitch: "Your coding agents, on one bus.",
-                detail: "Lets Claude Code, Codex, OpenCode and Hermes see and talk to each other, and shows what each one does and costs. Bton's agents register on it.",
-                install: "brew install danieltamas/tap/axon",
-                repo: "danieltamas/axon", dark: 0x4ADE80, light: 0x15803D),
-        MoreApp(name: "Run.dev", icon: "rundev", fullBleed: true, kind: .terminal, platform: "macOS and Linux",
-                pitch: "Every local service, one dashboard.",
-                detail: "One binary starts and watches the services of all your projects from a terminal dashboard, with no config files to babysit.",
-                install: "curl -fsSL https://getrun.dev/install.sh | bash",
-                repo: "danieltamas/run.dev", site: URL(string: "https://getrun.dev")!,
-                dark: 0x45C8D4, light: 0x0A7C93),
-        MoreApp(name: "Cloak", icon: "cloak", fullBleed: true, kind: .terminal, platform: "CLI and VS Code",
-                pitch: "Keep .env secrets away from AI agents.",
-                detail: "Agents see sandbox values, you see the real ones, and your app still runs with real credentials. Encrypted vault, Touch ID.",
-                install: "curl -fsSL https://getcloak.dev/install.sh | sh",
-                repo: "danieltamas/cloak", site: URL(string: "https://getcloak.dev")!,
-                dark: 0x5B9BFF, light: 0x2457C5),
-    ]
 }
 
+/// Settings > More apps: the other open source tools from the maker of Bton, read from the owner's
+/// registry (github.com/danieltamas/registry) and shown as the same cards MacMax shows.
 struct MorePane: View {
+    @Environment(AppStore.self) private var store
+    private var apps: MoreApps { MoreApps.shared }
+
+    /// Every app in the registry but Bton itself, in the registry's order.
+    private var shown: [RegistryApp] { apps.registry?.shown(excluding: "bton") ?? [] }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PaneHeader(pane: .more, title: "More apps",
                        detail: "Other open source tools from the maker of Bton, for a Mac that runs coding agents. All MIT, all free.")
+            checkRow
             group("In the menu bar", .menuBar)
             group("In the terminal", .terminal)
         }
-        .onAppear { MoreAppReleases.shared.refresh() }
-    }
-
-    private func group(_ title: String, _ kind: MoreApp.Kind) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: title).padding(.leading, 4)
-            ForEach(MoreApp.all.filter { $0.kind == kind }) { MoreAppCard(app: $0) }
+        .onAppear {
+            apps.open(home: store.home)
+            apps.refresh(byPress: false)
         }
     }
-}
 
-/// Which of the apps have a release, asked of GitHub when the pane opens and kept across launches:
-/// a label built into this Bton would say "In development" long after the app shipped.
-@MainActor @Observable
-final class MoreAppReleases {
-    static let shared = MoreAppReleases()
-    private static let key = "MoreAppReleases"
-
-    /// By `MoreApp.repo`; an app not in it has not been answered yet.
-    private(set) var states: [String: ReleaseLookup.State]
-    private var lastAttempt: Date?
-
-    init() {
-        states = UserDefaults.standard.data(forKey: Self.key)
-            .flatMap { try? JSONDecoder().decode([String: ReleaseLookup.State].self, from: $0) } ?? [:]
+    @ViewBuilder private var checkRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Group {
+                    if apps.checking {
+                        Label("Reading the latest app list...", systemImage: "arrow.triangle.2.circlepath")
+                    } else if let read = apps.readAt {
+                        // The time of the list shown: the last good read, or for the bundled copy the registry's own update.
+                        RelativeTime(date: read) { "Latest releases, checked \($0) ago." }
+                    } else if let updated = apps.registry?.updated {
+                        RelativeTime(date: updated) { "Latest releases as of \($0) ago." }
+                    } else {
+                        Text("Latest releases.")
+                    }
+                }
+                .font(.meta).foregroundStyle(Theme.textTertiary)
+                Spacer()
+                IconButton(symbol: "arrow.clockwise", help: "Read the app list again", size: 22) { apps.refresh(byPress: true) }
+                    .disabled(apps.checking)
+            }
+            if let leftOut = apps.registry?.leftOut, leftOut > 0 {
+                Text(leftOut == 1 ? "1 app needs a newer Bton to show." : "\(leftOut) apps need a newer Bton to show.")
+                    .font(.meta).foregroundStyle(Theme.textTertiary)
+            }
+            if let problem = apps.problem { ProblemText(text: problem) }
+        }
     }
 
-    /// Asks once per opening, at most every 15 minutes; a failed ask keeps the last answer.
-    func refresh(now: Date = .now) {
-        if let lastAttempt, now >= lastAttempt, now.timeIntervalSince(lastAttempt) < ReleaseCheck.interval { return }
-        lastAttempt = now
-        for app in MoreApp.all {
-            Task {
-                guard let state = try? await ReleaseLookup.latest(of: app.repo) else { return }
-                states[app.repo] = state
-                UserDefaults.standard.set(try? JSONEncoder().encode(states), forKey: Self.key)
+    @ViewBuilder private func group(_ title: String, _ kind: RegistryApp.Kind) -> some View {
+        let members = shown.filter { $0.kind == kind }
+        if !members.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Eyebrow(text: title).padding(.leading, 4)
+                ForEach(members) { app in
+                    MoreAppCard(app: app, icon: apps.icons[app.id], installed: app.mac.flatMap { apps.installed[$0.bundleID] })
+                }
             }
         }
     }
 }
 
 private struct MoreAppCard: View {
-    let app: MoreApp
-    private var state: ReleaseLookup.State? { MoreAppReleases.shared.states[app.repo] }
+    let app: RegistryApp
+    let icon: NSImage?
+    let installed: InstalledCopy?
 
     var body: some View {
         Bezel(glow: app.hue) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 14) {
-                    MoreAppIcon(app: app, size: 52)
+                    MoreAppIcon(app: app, image: icon, size: 52)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             Text(app.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1).fixedSize()
                             Chip(text: app.platform, color: app.hue)
-                            switch state {
-                            case let .released(tag): Chip(text: tag, color: app.hue, style: .outline)
-                            case .none?: Chip(text: "In development", color: Theme.textTertiary, style: .dashed)
-                            case nil: EmptyView()
-                            }
                             Spacer(minLength: 8)
+                            if let installed { LinkChip(title: "Open", symbol: "arrow.up.forward.app") { NSWorkspace.shared.open(installed.url) } }
                             if let site = app.site { LinkChip(title: "Website", url: site) }
                             LinkChip(title: "GitHub", url: app.repoURL)
                         }
                         Text(app.pitch).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.textSecondary)
                         Text(app.detail).font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+                        statusLine
                     }
                 }
-                // Full width, so a curl line reads whole instead of cut in the middle. Shown until
-                // GitHub says there is no release: a published app is the common case.
-                if state != ReleaseLookup.State.none {
+                // Full width, so a curl line reads whole instead of cut in the middle. Only once there is a
+                // release: a command that fails is worse than none.
+                if app.latest != nil {
                     InstallLine(command: app.install)
-                } else {
-                    Text("No release yet: watch the repository for the first one.").font(.meta).foregroundStyle(Theme.textTertiary)
-                        .padding(.leading, 66)
                 }
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    /// The latest release and when it came out, and how the copy on this Mac compares with it.
+    private var statusLine: some View {
+        HStack(spacing: 6) {
+            if let latest = app.latest {
+                Chip(text: "v\(latest.version)", color: app.hue, style: .outline).help("The latest release on GitHub")
+            } else {
+                Chip(text: "In development", color: Theme.textTertiary, style: .dashed).help("No release on GitHub yet")
+            }
+            if let installed {
+                installedChip(installed, InstalledStanding.compare(isInstalled: true, installedVersion: installed.version,
+                                                                   latestTag: app.latest?.tag))
+            }
+            if let published = app.latest?.publishedAt {
+                RelativeTime(date: published) { "Released \($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
+            } else if installed == nil {
+                Text("No release yet: watch the repository for the first one.").font(.meta).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    @ViewBuilder private func installedChip(_ installed: InstalledCopy, _ standing: InstalledStanding) -> some View {
+        let version = installed.version.map { " \($0)" } ?? ""
+        if installed.version == nil, let source = installed.source {
+            Chip(text: "Built from source", color: Theme.neutral, style: .outline).help("\(source): not a release, so Bton makes no claim about updates.")
+        } else if installed.version == nil {
+            Chip(text: "Installed, version unknown", color: Theme.neutral, style: .outline).help("Its Info.plist names no version Bton could read.")
+        } else {
+            versionedChip(version, standing)
+        }
+    }
+
+    @ViewBuilder private func versionedChip(_ version: String, _ standing: InstalledStanding) -> some View {
+        switch standing {
+        case .current: Chip(text: "Installed\(version), up to date", symbol: "checkmark", color: Theme.success)
+        case let .behind(latest): Chip(text: "Installed\(version), \(latest) is out", symbol: "arrow.down.circle", color: Theme.blue)
+        case .ahead, .unknown, .notInstalled: Chip(text: "Installed\(version)", color: Theme.neutral)
+        }
+    }
 }
 
-/// A small outlined link that opens in the browser; the arrow says it leaves the app.
+/// A small outlined link; the arrow says it leaves the app.
 private struct LinkChip: View {
     let title: String
-    let url: URL
+    var symbol = "arrow.up.right"
+    var help: String?
+    let action: () -> Void
     @State private var hovering = false
 
+    init(title: String, url: URL) {
+        self.title = title
+        help = url.absoluteString
+        action = { NSWorkspace.shared.open(url) }
+    }
+
+    init(title: String, symbol: String, action: @escaping () -> Void) {
+        self.title = title
+        self.symbol = symbol
+        self.action = action
+    }
+
     var body: some View {
-        Button { NSWorkspace.shared.open(url) } label: {
-            Chip(text: title, symbol: "arrow.up.right", color: hovering ? Theme.textPrimary : Theme.textSecondary, style: .outline)
+        Button(action: action) {
+            Chip(text: title, symbol: symbol, color: hovering ? Theme.textPrimary : Theme.textSecondary, style: .outline)
                 .contentShape(Capsule())
         }
         .buttonStyle(PressStyle(scale: 0.95))
         .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
-        .help(url.absoluteString)
+        .help(help ?? title)
     }
 }
 
@@ -184,32 +197,25 @@ private struct InstallLine: View {
     }
 }
 
-/// The app's own icon from the bundle, or a glyph in its hue when the bundle has none (`swift run`).
+/// The app's icon (fetched from the registry or bundled), or a glyph in its hue when there is none.
 private struct MoreAppIcon: View {
-    let app: MoreApp
+    let app: RegistryApp
+    let image: NSImage?
     let size: CGFloat
 
-    /// Read once per icon: the lookup reads the disk and must not run on every redraw.
-    @MainActor private static var cache: [String: NSImage?] = [:]
-
     var body: some View {
-        if let image = Self.image(app.icon) {
-            let inset = app.fullBleed ? size * 0.1 : 0
+        if let image {
+            // A full-bleed mark is inset and rounded to sit beside the macOS-shaped ones.
+            let fullBleed = app.iconShape == .fullBleed
+            let inset = fullBleed ? size * 0.1 : 0
             let corner = (size - inset * 2) * 0.225
             Image(nsImage: image).resizable().interpolation(.high)
-                .clipShape(RoundedRectangle(cornerRadius: app.fullBleed ? corner : 0, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: fullBleed ? corner : 0, style: .continuous))
                 .padding(inset)
                 .frame(width: size, height: size)
                 .shadow(color: app.hue.opacity(0.35), radius: 10, y: 4)
         } else {
             GlyphDisc(symbol: app.kind == .menuBar ? "menubar.rectangle" : "terminal", color: app.hue, size: size)
         }
-    }
-
-    @MainActor private static func image(_ name: String) -> NSImage? {
-        if let cached = cache[name] { return cached }
-        let image = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MoreApps").flatMap(NSImage.init(contentsOf:))
-        cache[name] = .some(image)
-        return image
     }
 }
