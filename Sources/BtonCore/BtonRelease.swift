@@ -168,7 +168,8 @@ public enum ReleaseLookup {
         return try decode(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 
-    /// 404 is GitHub's answer for a repo with no release; any other failure is not an answer.
+    /// 404 is GitHub's answer for a repo with no release, and for one the public cannot see: to the
+    /// person reading the card there is nothing to install either way. Any other failure is not an answer.
     public static func decode(_ data: Data, status: Int) throws -> State {
         switch status {
         case 404: return State.none
