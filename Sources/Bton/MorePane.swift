@@ -14,7 +14,7 @@ struct MorePane: View {
 }
 
 /// One of the tools: what it is and where it lives.
-struct Product: Identifiable {
+private struct Product: Identifiable {
     let id: String
     let name: String
     let tagline: String
@@ -60,6 +60,8 @@ struct Product: Identifiable {
 private struct ProductCard: View {
     let product: Product
     @State private var copied = false
+    /// The press's own reset: a second press replaces it, so the tick stays its full two seconds.
+    @State private var reset: Task<Void, Never>?
 
     var body: some View {
         Bezel {
@@ -100,8 +102,10 @@ private struct ProductCard: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(product.install, forType: .string)
                 withAnimation(Motion.gentle) { copied = true }
-                Task { @MainActor in
+                reset?.cancel()
+                reset = Task { @MainActor in
                     try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
                     withAnimation(Motion.gentle) { copied = false }
                 }
             }
