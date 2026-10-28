@@ -50,6 +50,9 @@ public struct DispatchCandidate: Sendable {
     /// The branch the trusted command worktree is made from instead of the flow's base (the
     /// release merges into `to`).
     public var commandBase: String?
+    /// A schedule run's view of the queue (`queueHeads`), kept on its job so the next run sees
+    /// a head that moved without a newer commit date.
+    public var queueHeads: [String]?
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }
@@ -101,7 +104,7 @@ public enum DispatchPlanner {
         } else if let agent = flow.dispatch["fix"]?.agent?.value(for: move.tier)
                     ?? flow.dispatch["review"]?.agent?.value(for: move.tier) {
             made = DispatchCandidate(target: .pullRequest(pr), move: move,
-                                     key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
+                                              key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
                                      agent: agent, prompt: resolvePrompt(number: pr.number, base: pr.baseRef),
                                      command: nil, postComment: false, timeout: .seconds(3_600))
         } else {
@@ -169,11 +172,13 @@ public enum DispatchPlanner {
     /// `runNow` holds the items the owner asked to run now: due whatever their interval, and even
     /// while switched off. `changedAt` is when the repo's queue last changed (`queueChangedAt`);
     /// an `onlyOnChange` entry is due only if that is after its last successful run
-    /// started. So nothing that happens during a run is missed, a failed run is tried again, and
-    /// a run that changed something is followed by one more, which finds nothing new to do.
+    /// started, or if `queueHeads` differs from what that run saw (a push of an older commit moves
+    /// the head without a newer date). So nothing that happens during a run is missed, a failed
+    /// run is tried again, and a run that changed something is followed by one more, which finds
+    /// nothing new to do.
     public static func scheduled(_ schedules: [ScheduleEntry], jobs: [Job], repo: String, defaultBranch: String,
                                  me: String, now: Date = .now, runNow: Set<String> = [],
-                                 changedAt: Date? = nil) -> [DispatchCandidate] {
+                                 changedAt: Date? = nil, queueHeads: [String] = []) -> [DispatchCandidate] {
         schedules.compactMap { entry in
             guard let item = entry.item, entry.enabled || runNow.contains(item),
                   entry.repo?.caseInsensitiveCompare(repo) == .orderedSame,
@@ -185,17 +190,20 @@ public enum DispatchPlanner {
                 .max { $0.startedAt < $1.startedAt }
             timed.lastRun = last?.startedAt
             let succeeded = jobs.filter { $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame && $0.key.item == item
-                && $0.status == .succeeded }.map(\.startedAt).max()
-            let changed = entry.onlyOnChange != true
-                || succeeded.map { cutoff in changedAt.map { $0 > cutoff } ?? false } ?? true
+                && $0.status == .succeeded }.max { $0.startedAt < $1.startedAt }
+            let changed = entry.onlyOnChange != true || succeeded.map { last in
+                changedAt.map { $0 > last.startedAt } ?? false || last.queueHeads.map { $0 != queueHeads } ?? false
+            } ?? true
             guard runNow.contains(item) || timed.nextRun(after: now) <= now && changed else { return nil }
             let minute = Int(now.timeIntervalSince1970 / 60)
-            return DispatchCandidate(target: .branch(defaultBranch),
-                                     move: Move(name: scheduleMove, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
-                                     key: JobKey(repo: repo, item: item, move: scheduleMove, head: "m\(minute)"),
-                                     agent: entry.agent, prompt: prompt, command: nil, postComment: false,
-                                     timeout: .seconds(60 * (entry.timeoutMinutes ?? 60)), model: entry.model,
-                                     helpers: entry.helpers ?? [])
+            var candidate = DispatchCandidate(target: .branch(defaultBranch),
+                                              move: Move(name: scheduleMove, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
+                                              key: JobKey(repo: repo, item: item, move: scheduleMove, head: "m\(minute)"),
+                                              agent: entry.agent, prompt: prompt, command: nil, postComment: false,
+                                              timeout: .seconds(60 * (entry.timeoutMinutes ?? 60)), model: entry.model,
+                                              helpers: entry.helpers ?? [])
+            candidate.queueHeads = queueHeads
+            return candidate
         }
     }
 
@@ -307,6 +315,12 @@ public enum DispatchPlanner {
     public static func queueChangedAt(_ pullRequests: [PullRequest], merged: [MergedPullRequest]) -> Date? {
         let fromOpen = pullRequests.flatMap { [$0.createdAt, $0.headCommittedAt, $0.comments.last?.createdAt].compactMap { $0 } }
         return (fromOpen + merged.map(\.mergedAt)).max()
+    }
+
+    /// The open PRs and their heads, in a fixed order: a schedule run keeps it on its job, and a
+    /// different list at the next tick is a change whatever the dates say.
+    public static func queueHeads(_ pullRequests: [PullRequest]) -> [String] {
+        pullRequests.map { "\($0.number)@\($0.headSha)" }.sorted()
     }
 
     /// Each repo's first candidate, then each one's second, and so on, repos in the order they

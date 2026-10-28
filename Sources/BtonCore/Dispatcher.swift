@@ -138,6 +138,7 @@ actor Dispatcher {
         var job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         job.pressed = candidate.pressed ? true : nil
+        job.queueHeads = candidate.queueHeads
         // The agent may have logged out while the lease was claimed: its job waits with the others.
         guard !isLoggedOut(candidate.agent), let lock = LocalLock(jobs.lockURL(id)) else {
             try? await leases.release(lease, ran: false)

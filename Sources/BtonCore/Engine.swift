@@ -263,7 +263,8 @@ public actor Engine {
                     let changedAt = DispatchPlanner.queueChangedAt(read.pullRequests, merged: read.merged)
                     pending += DispatchPlanner.scheduled(config.schedules, jobs: jobs.all(), repo: read.repo.slug,
                                                          defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
-                                                         runNow: runNow, changedAt: changedAt)
+                                                         runNow: runNow, changedAt: changedAt,
+                                                         queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
                     if let registry = await featureJob(read, agents: config.agents, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }

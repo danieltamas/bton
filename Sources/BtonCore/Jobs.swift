@@ -64,6 +64,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var workLabel: String?
     /// Every check passed, against this base: a later run of the key over the same base skips them.
     public var checked: PassedChecks?
+    /// A schedule run's view of the queue when it started (`DispatchPlanner.queueHeads`).
+    public var queueHeads: [String]?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
