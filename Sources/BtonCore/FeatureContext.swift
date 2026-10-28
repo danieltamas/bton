@@ -12,6 +12,10 @@ public enum FeatureContext {
     /// Matched features beyond this many are counted, not described.
     static let featureLimit = 8
     static let pullRequestLimit = 12
+    /// The areas map lists this many; a registry's areas are few, its features many.
+    static let areaLimit = 40
+    /// Largest file handed over: a page an agent reads, not a dump it searches.
+    static let limit = 24_000
 
     public struct Context: Sendable, Equatable {
         /// The attachment's text.
@@ -68,12 +72,22 @@ public enum FeatureContext {
             lines += areas.map { "- `\($0.id)` \($0.name): \($0.paths.joined(separator: ", "))" }
         }
         lines += ["", "## Areas", ""]
-        lines += registry.areas.map { area in
+        lines += registry.areas.prefix(areaLimit).map { area in
             let count = registry.features.filter { $0.area == area.id && $0.closed == nil }.count
             return "- `\(area.id)` \(area.name) (\(count) features): \(area.paths.joined(separator: ", "))"
         }
+        if registry.areas.count > areaLimit { lines.append("...and \(registry.areas.count - areaLimit) more areas, in the registry.") }
         let feature = linked.count == 1 ? linked[0].id : nil
-        return Context(text: lines.joined(separator: "\n") + "\n", feature: feature.flatMap { isID($0) ? $0 : nil })
+        return Context(text: cut(lines.joined(separator: "\n") + "\n"), feature: feature.flatMap { isID($0) ? $0 : nil })
+    }
+
+    /// The text within `limit`, cut at a line end and saying so, so the agent knows to read the registry itself.
+    static func cut(_ text: String) -> String {
+        guard text.utf8.count > limit else { return text }
+        let room = text.utf8.prefix(limit - 80)
+        let kept = String(decoding: room, as: UTF8.self)
+        let end = kept.lastIndex(of: "\n").map { kept.index(after: $0) } ?? kept.endIndex
+        return String(kept[..<end]) + "...cut here: the registry holds more than this file; read `\(FeatureRegistry.relativePath)` for the rest.\n"
     }
 
     /// One feature as the agent reads it: what it is, where it lives, what built it.

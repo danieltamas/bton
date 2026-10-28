@@ -106,6 +106,35 @@ struct FeatureContextTests {
         #expect(FeatureContext.declared(in: "Feature: first\nFeature: second") == "first")
     }
 
+    @Test func aLargeRegistryStaysWithinTheBudget() throws {
+        var object = try FeatureAcceptanceData.object()
+        let area = (object["areas"] as! [[String: Any]])[0]
+        var feature = (object["features"] as! [[String: Any]])[0]
+        feature["summary"] = String(repeating: "A long summary. ", count: 400)
+        object["areas"] = [area] + (0..<300).map { index in
+            var row = area; row["id"] = "area-\(index)"; row["name"] = "Area \(index)"; return row
+        }
+        object["features"] = [feature] + (0..<30).map { index -> [String: Any] in
+            var row = feature; row["id"] = "feature-\(index)"; row["area"] = "area-\(index)"
+            row["issues"] = [["number": 402, "why": "closes"]]; return row
+        }
+        var report = FeatureReport(repo: Self.repo, registry: .ready(try FeatureAcceptanceData.registry(object)), hasRelease: false)
+        report.facts = FeatureFacts()
+        let context = try #require(FeatureContext.make(for: .issue(Self.plan(issue: 402)), report: report))
+        #expect(context.feature == nil, "31 features link the issue")
+        #expect(context.text.utf8.count <= FeatureContext.limit)
+        #expect(context.text.hasSuffix("read `.bton/features.json` for the rest.\n"))
+        #expect(context.text.components(separatedBy: "### `").count <= FeatureContext.featureLimit + 1)
+
+        var areasOnly = object
+        areasOnly["features"] = []
+        let map = try #require(FeatureContext.make(for: .branch("main"), report: FeatureReport(repo: Self.repo, registry: .ready(try FeatureAcceptanceData.registry(areasOnly)), hasRelease: false)))
+        #expect(map.text.contains("- `area-38` Area 38 (0 features)"))
+        #expect(!map.text.contains("- `area-39`"))
+        #expect(map.text.contains("...and 261 more areas, in the registry."))
+        #expect(!map.text.contains("cut here"))
+    }
+
     @Test func noRegistryNoContext() throws {
         let none = FeatureReport(repo: Self.repo, registry: .none, hasRelease: false)
         #expect(FeatureContext.make(for: .issue(Self.plan(issue: 402)), report: none) == nil)
