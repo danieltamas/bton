@@ -45,6 +45,11 @@ public struct DispatchCandidate: Sendable {
     /// An automatic run that must not follow another Mac's within this long: checked under the
     /// lease, from its history, since two Macs can plan in different minutes before either claims.
     public var cooldown: TimeInterval?
+    /// The run's own checks instead of the flow's (the release's); an empty list runs none.
+    public var checks: [[String]]?
+    /// The branch the trusted command worktree is made from instead of the flow's base (the
+    /// release merges into `to`).
+    public var commandBase: String?
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }

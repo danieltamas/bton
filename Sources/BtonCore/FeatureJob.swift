@@ -45,11 +45,9 @@ public enum FeatureJob {
                     startsMoves: startsMoves, pressed: pressed, now: now, teamLast: teamLast) else { return nil }
         let base = flow?.base ?? defaultBranch
         let tier = flow.flatMap { flow in flow.tier.values.first.map { "\(flow.tier.marker) \($0)" } }
-        var loads = true
         var attachments: [String: String] = [:]
         var text = prompt(repo: repo, base: base, branch: branchName(now: now), tier: tier, loads: true)
         if case let .invalid(reason) = registry {
-            loads = false
             text = prompt(repo: repo, base: base, branch: branchName(now: now), tier: tier, loads: false)
             // The reason quotes the file, which any PR can edit: data for the agent, never prompt text.
             // Only a Claude job gets a scratch directory for attachments, so only it is told where

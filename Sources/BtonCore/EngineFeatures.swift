@@ -6,8 +6,11 @@ public struct FeatureReport: Sendable, Equatable {
     public let registry: RegistryStatus
     /// By feature id.
     public var standings: [String: FeatureStanding] = [:]
-    /// The oldest commit on the base that the release branch lacks.
+    /// The oldest commit on the base that the release branch lacks, and how many there are.
     public var unreleasedSince: Date?
+    public var aheadCommits: Int?
+    /// Where the release stands; nil without a `release` section.
+    public var release: ReleaseStanding?
     /// The latest `live` date across features; nil without a `release` section.
     public var lastRelease: Date?
     public var hasRelease: Bool
@@ -39,7 +42,8 @@ extension Engine {
 
     /// The repo's report for this tick: the registry from the branch PRs merge into, the facts
     /// when due, the standings always. Its own failure never marks the repo unread.
-    func readFeatures(repo: WatchedRepo, flow: Flow?, defaultBranch: String, merged: [MergedPullRequest]) async -> FeatureReport {
+    func readFeatures(repo: WatchedRepo, flow: Flow?, defaultBranch: String, merged: [MergedPullRequest],
+                      pullRequests: [PullRequest]) async -> FeatureReport {
         let key = repo.slug.lowercased()
         var state = featureStates[key] ?? FeatureState()
         let hasRelease = flow?.release != nil
@@ -76,6 +80,9 @@ extension Engine {
             if state.lastProblem != reason { log("\(repo.slug): features not read: \(reason)") }
             state.lastProblem = reason
         }
+        if let release = flow?.release {
+            report.release = Release.standing(release: release, report: report, pullRequests: pullRequests, now: .now)
+        }
         state.report = report
         featureStates[key] = state
         return report
@@ -96,6 +103,7 @@ extension Engine {
             report.standings[feature.id] = FeatureStatuses.standing(of: feature, facts: facts, git: git, base: base, hasRelease: hasRelease)
         }
         report.unreleasedSince = git.unreleasedSince
+        report.aheadCommits = git.aheadCommits
         if hasRelease {
             report.lastRelease = report.standings.values.filter { $0.status == .live }.compactMap(\.since).max()
         }

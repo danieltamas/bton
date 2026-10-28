@@ -13,6 +13,8 @@ public struct FeatureGit: Sendable, Equatable {
     public var releasedAt: [String: Date] = [:]
     /// The oldest commit on origin/<base> that origin/<to> lacks: how long the release waits.
     public var unreleasedSince: Date?
+    /// How many commits that is; nil without both branches.
+    public var aheadCommits: Int?
     /// Why the clone could not be read: a git that failed or hung. A missing ref is not one;
     /// the branch has not been fetched, and its sets are empty.
     public var problem: String?
@@ -50,6 +52,7 @@ public struct FeatureGit: Sendable, Equatable {
             if base != to, hasRelease, hasBase {
                 let ahead = try await lines(["log", "--format=%ct", "\(release)..\(develop)"], clone: clone, runner: runner)
                 git.unreleasedSince = ahead.last.flatMap { TimeInterval($0) }.map { Date(timeIntervalSince1970: $0) }
+                git.aheadCommits = ahead.count
             }
         } catch {
             git.problem = error.localizedDescription

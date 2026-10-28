@@ -143,6 +143,11 @@ public struct GitHubClient: Sendable {
     }
 
     /// Posts a comment whose body Bton wrote or validated; never PR text passed through.
+    /// Opens a PR from `head` into `base`; GitHub refuses a second one on the same pair.
+    public func createPullRequest(repo: String, base: String, head: String, title: String, bodyFile: URL) async throws {
+        _ = try await gh(["pr", "create", "--repo", repo, "--base", base, "--head", head, "--title", title, "--body-file", bodyFile.path])
+    }
+
     public func comment(repo: String, number: Int, bodyFile: URL) async throws {
         _ = try await gh(["pr", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }

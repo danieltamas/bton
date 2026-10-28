@@ -223,11 +223,11 @@ actor Dispatcher {
             let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
-                : candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession
+                : candidate.checks ?? (candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession)
             // Not in the saved environment: a posted "1" must not be redacted.
             let runEnvironment = candidate.pressed ? environment.merging(["BTON_PRESSED": "1"]) { $1 } : environment
             if let checks, !checks.isEmpty,
-               let failure = try await runChecks(checks, job: &job, in: worktree, clone: clone, base: base,
+               let failure = try await runChecks(checks, job: &job, in: worktree, clone: clone, base: candidate.commandBase ?? base,
                                                  environment: runEnvironment, timeout: candidate.timeout) {
                 await postFailure(candidate, text: failure)
                 return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
@@ -235,6 +235,7 @@ actor Dispatcher {
             if let command = candidate.command, candidate.agent == nil {
                 // The repo's scripts as merged into the base, never the PR's copy: a PR that edits its
                 // merge script can't have Bton run the edit. Checks above test the PR, so they run its code.
+                let base = candidate.commandBase ?? base
                 guard WatchedRepo.isBranchName(base) else { throw DispatchError.worktree("invalid base branch \(base)") }
                 // Made anew each time, so nothing an earlier run left (ignored files included) is run.
                 let trusted = try await Worktrees.prepare(clone: clone, branch: base, item: "base-\(candidate.key.item)",

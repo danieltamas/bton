@@ -84,6 +84,13 @@ public struct Flow: Decodable, Sendable {
                     return .invalid("release: \(name.prefix(100)) is not a branch name")
                 }
                 if release.from == release.to { return .invalid("release: from and to are the same branch") }
+                if let bad = release.when.first(where: { ReleasePredicate($0) == nil }) {
+                    return .invalid("release.when: \(bad.prefix(100)) is not a predicate")
+                }
+                if let bad = release.blockedBy?.first(where: { ReleaseBlocker($0) == nil }) {
+                    return .invalid("release.blockedBy: \(bad.prefix(100)) is not a blocker")
+                }
+                if let minutes = release.timeoutMinutes, minutes <= 0 { return .invalid("release.timeoutMinutes must be positive") }
             }
             return .ready(flow)
         } catch {

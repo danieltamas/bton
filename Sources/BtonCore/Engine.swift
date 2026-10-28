@@ -51,7 +51,7 @@ public actor Engine {
     private var jobEnded: (@Sendable () -> Void)?
     /// Run-next picks, `owner/name#item` lowercased repo, the latest pick first. A pick stays until
     /// it starts (its repo may be busy), or until a tick finds nothing of it to run.
-    private var next: [String] = []
+    var next: [String] = []
     /// Issues the owner pressed Take on, by lowercased repo: taken at the next sync even where the repo does not start its moves.
     private var taken: [String: Int] = [:]
     /// The picks in `next` a person pressed, until one of their moves starts.
@@ -198,7 +198,10 @@ public actor Engine {
                     snapshot.me = read.viewer
                     let pullRequests = read.pullRequests.map { pr in
                         var pr = pr
-                        pr.move = status.flow.flatMap { FlowEngine.move(for: pr, flow: $0) }
+                        // The release PR is the release's, not the flow's: no move, no rotation, no take.
+                        pr.move = status.flow.flatMap { flow in
+                            flow.release.map { pr.headRef == $0.from && pr.baseRef == $0.to } == true ? nil : FlowEngine.move(for: pr, flow: flow)
+                        }
                         return pr
                     }
                     let merged = try await github.mergedPullRequests(repo: repo.slug)
@@ -209,7 +212,7 @@ public actor Engine {
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
                     await readIssues(repo.slug)
                     snapshot.features[repo.slug] = await readFeatures(repo: repo, flow: status.flow, defaultBranch: read.defaultBranch,
-                                                                      merged: merged)
+                                                                      merged: merged, pullRequests: pullRequests)
                 } catch {
                     failures.append("\(repo.slug): \(error.localizedDescription)")
                     unread.insert(repo.slug.lowercased())
@@ -290,6 +293,8 @@ public actor Engine {
                         .map { ($0, clone, nil) }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
                     if let registry = await featureJob(read, agents: config.agents, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
+                    // The release: opened here when due, merged through a job once its PR is open.
+                    if let release = await planRelease(read) { pending.append((release, clone, read.flow)) }
                     // One supervisor at a time: the first repo with a flagged job takes this tick's.
                     if !pending.contains(where: { $0.candidate.key.move == Supervision.move }),
                        let supervise = Supervision.candidate(settings: config.supervisor, agents: config.agents, jobs: jobs.all(),
