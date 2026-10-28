@@ -65,6 +65,8 @@ if [[ -n $source ]]; then
   plutil -replace BtonSource -string "$source" "$app/Contents/Info.plist"
 fi
 cp Support/Resources/* "$app/Contents/Resources/"
+# Settings > More apps shows these; each is the other project's own icon, committed like the rest of Support.
+cp -R Support/MoreApps "$app/Contents/Resources/"
 # About's Update runs the same installer as the curl line, pinned to the release it showed.
 install -m 755 install.sh "$app/Contents/Resources/install.sh"
 

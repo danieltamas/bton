@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders Brand/*.svg into Support/Resources (menu bar template icon, vendor marks, product marks, AppIcon.icns).
+# Renders Brand/*.svg into Support/Resources (menu bar template icon, vendor marks, AppIcon.icns).
 # The output is committed, so a build copies fixed bytes and never depends on the renderer's
 # version. Run it after changing an SVG, and commit the result.
 set -euo pipefail
@@ -15,12 +15,6 @@ rsvg-convert -f pdf Brand/icon-menubar.svg -o "$out/MenubarIcon.pdf"
 # The vendors' marks (simple-icons), drawn as templates so the app tints them.
 rsvg-convert -f pdf Brand/vendors/claude.svg -o "$out/LogoClaude.pdf"
 rsvg-convert -f pdf Brand/vendors/openai.svg -o "$out/LogoOpenAI.pdf"
-# The marks of the other tools on Settings > More, in colour (each is its app icon).
-rsvg-convert -f pdf Brand/products/axon.svg -o "$out/ProductAxon.pdf"
-rsvg-convert -f pdf Brand/products/rmj.svg -o "$out/ProductRMJ.pdf"
-rsvg-convert -f pdf Brand/products/macmax.svg -o "$out/ProductMacMax.pdf"
-rsvg-convert -f pdf Brand/products/cloak.svg -o "$out/ProductCloak.pdf"
-rsvg-convert -f pdf Brand/products/rundev.svg -o "$out/ProductRunDev.pdf"
 
 iconset="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$iconset"

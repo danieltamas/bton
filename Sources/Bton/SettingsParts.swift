@@ -154,3 +154,27 @@ struct ProblemText: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
+
+/// Copies a command; the glyph turns into a check for a moment so the press never looks like nothing happened.
+struct CopyButton: View {
+    let text: String
+    let help: String
+    @State private var copied = false
+    /// The pending reset, cancelled by a new press so the check always stays the full time.
+    @State private var reset: Task<Void, Never>?
+
+    var body: some View {
+        IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: copied ? "Copied" : help,
+                   tint: copied ? Theme.success : Theme.textSecondary, size: 22) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            withAnimation(Motion.snappy) { copied = true }
+            reset?.cancel()
+            reset = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                withAnimation(Motion.snappy) { copied = false }
+            }
+        }
+    }
+}
