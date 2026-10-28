@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.14.0 (2026-10-29)
 
 **Settings > Agents > Code graphs says everything about graphify.** The card had only the Python field. It now has a "Use graphify" switch that turns code graphs off for every repo at once (the graphs on disk stay), an "Install graphify" button when no Python with graphify is found (a venv at ~/.venvs/graphifyy-arm64 made with uv, or with a Python 3.10 or newer that runs native, since Apple's python3 is 3.9; then the package), the line agents are told about their graph with {graph}, {base} and {commit} to edit and a Reset, and the graphs under ~/.bton/graphs with their size, what they were built from and a trash for each. A repo's page shows "graphify is off" when its own switch is on but the global one is not.
 
