@@ -17,6 +17,9 @@ public actor Engine {
         public var waiting: [String: String] = [:]
         /// Repos GitHub couldn't read this tick, slugs lowercased: their last lists still stand.
         public var unread: Set<String> = []
+        /// Repos whose jobs wait because a service their environment names does not answer, slugs
+        /// lowercased, with the reason (`EnvironmentProbe.hold`).
+        public var outages: [String: String] = [:]
         /// Each read repo's default branch on GitHub (main), by slug.
         public var defaultBranches: [String: String] = [:]
         /// Questions put to me on open issues, newest first.
@@ -293,6 +296,11 @@ public actor Engine {
                     // Every agent job of this repo starts with what the registry knows about its work.
                     for index in first..<pending.count {
                         pending[index].candidate = Self.withFeatureContext(pending[index].candidate, report: snapshot.features[read.repo.slug])
+                    }
+                    // Nothing of this repo starts while a service its environment names does not answer.
+                    if first < pending.count, let hold = await environmentHold(read.repo) {
+                        pending.removeSubrange(first...)
+                        snapshot.outages[read.repo.slug.lowercased()] = hold
                     }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")

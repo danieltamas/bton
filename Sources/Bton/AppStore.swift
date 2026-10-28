@@ -22,6 +22,8 @@ final class AppStore {
     private(set) var next: [String] = []
     /// Why a pick has not started at the last sync, by pick.
     private(set) var waiting: [String: String] = [:]
+    /// Repos whose jobs wait because a service of theirs does not answer, slugs lowercased, with the reason.
+    private(set) var outages: [String: String] = [:]
     /// The PRs each schedule's agent works on, read from its session every few seconds.
     let work = ScheduleWork()
     let local = LocalSync()
@@ -492,7 +494,7 @@ final class AppStore {
         defer { isRefreshing = false }
         defer { icon.update(mode: problem != nil ? .problem : runningJobs > 0 ? .working : .idle, synced: problem == nil) }
         let before = Before(moves: Set(humanMovesForMe.map(\.id)), jobs: jobs, merged: Set(merged.map(\.id)),
-                            first: lastRefresh == nil)
+                            outages: Set(outages.keys), first: lastRefresh == nil)
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
         let snapshot = await engine.tick { read in await self.apply(read) }
         apply(snapshot)
@@ -515,6 +517,7 @@ final class AppStore {
         jobs = snapshot.jobs.reversed()
         next = snapshot.next
         waiting = snapshot.waiting
+        outages = snapshot.outages
         problem = snapshot.problem
         loggedOut = snapshot.loggedOut
         // A failed read keeps the last good lists rather than blanking them: every list when the

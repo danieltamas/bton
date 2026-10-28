@@ -7,6 +7,8 @@ extension AppStore {
         let moves: Set<String>
         let jobs: [Job]
         let merged: Set<String>
+        /// Repos held because a service of theirs did not answer, slugs lowercased.
+        let outages: Set<String>
         let first: Bool
     }
 }
@@ -19,6 +21,11 @@ extension AppStore {
     /// What changed since the last tick and concerns me: a move now waiting for me, a question on
     /// an issue, a job that failed, my PR merged. Nothing on the first tick, which would replay the whole state.
     func notify(since before: Before) {
+        // An outage is a live condition, not history: it is told on the first tick too, once
+        // per outage, so a Bton launched while Docker is down says so at once.
+        for (slug, hold) in outages where !before.outages.contains(slug) {
+            Notifier.post(title: "\(slug) waits · \(hold.prefix { $0 != ":" && $0 != " " })", body: hold, id: "outage-\(slug)")
+        }
         // The first read only seeds what was already asked.
         let newAsks = issueAsks.filter { notifiedAsks.insert($0.notice).inserted }
         guard !before.first, let me else { return }

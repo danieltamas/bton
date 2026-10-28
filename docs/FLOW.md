@@ -157,6 +157,13 @@ agent's review would be posted as the author and ignored.
 - `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`, `{tier}` (the PR's tier, floored by
   `tier.paths`). Nothing else is
   substituted: PR and issue text never goes into a prompt or an argv.
+- **Services first.** Before any job of a repo starts, Bton asks each URL with an explicit port in
+  the repo's environment (Settings > Repos: `DATABASE_URL`, a Redis) for a TCP connect, two seconds
+  at most. One that does not answer (refused, timed out, a name that does not resolve) holds every
+  job of the repo for that sync, pressed picks included, with the reason on their cards: "nothing
+  answers at 127.0.0.1:55439; start the service (Docker?) and Bton goes on". The owner gets one
+  notification per outage. The next sync where the service answers starts the jobs; nothing else
+  changes, and a job already running is not touched.
 - **Feature context.** When the repo has a `.bton/features.json` that loads, every agent job gets
   `feature-context.md` in its scratch directory: what the registry knows about the PR or issue (the
   feature it links, or the features and areas whose paths the PR touches; area, paths, merged PRs
