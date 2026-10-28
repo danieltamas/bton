@@ -217,7 +217,7 @@ struct FeatureJobAcceptanceTests {
         for text in [".bton/features.json", "develop", "bton/features-20261028-0145",
                      "features: <n> added, <m> linked", "Tier: small",
                      "git log -1 --format=%cI -- .bton/features.json", "200",
-                     "closes", "branch", "label", "files", "title"] {
+                     "closes", "feature", "branch", "label", "files", "title", "Feature: <id>"] {
             #expect(prompt.contains(text))
         }
         let lower = prompt.lowercased()

@@ -157,3 +157,23 @@ extension Engine {
         return make(FeatureJob.lastStart(state))
     }
 }
+
+extension Engine {
+    /// The moves that get no feature context: the one that builds the registry, and the drafts,
+    /// which read the code map instead.
+    static let movesWithoutContext: Set = [FeatureJob.move, NewIssues.move, IssueDrafts.move]
+
+    /// The candidate with the registry's knowledge of its work attached, for an agent job of a
+    /// repo whose registry loads. The prompt gains Bton's line naming the file and, for a job that
+    /// edits the PR, the `Feature:` line the body carries.
+    static func withFeatureContext(_ candidate: DispatchCandidate, report: FeatureReport?) -> DispatchCandidate {
+        guard candidate.agent != nil, let prompt = candidate.prompt, !Self.movesWithoutContext.contains(candidate.key.move),
+              candidate.attachments[FeatureContext.file] == nil,
+              let report, let context = FeatureContext.make(for: candidate.target, report: report) else { return candidate }
+        var made = candidate
+        made.attachments[FeatureContext.file] = context.text
+        let writes = !candidate.postComment && candidate.key.move != Supervision.move
+        made.prompt = prompt + "\n\n" + FeatureContext.promptLine(feature: context.feature, writes: writes)
+        return made
+    }
+}

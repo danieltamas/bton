@@ -285,14 +285,16 @@ actor Dispatcher {
                 jobs.note(job.id, "no ask tool for \(agent): told to do the helper's checks itself")
             }
             var scratch: String?
-            if isClaude {
+            if isClaude || !candidate.attachments.isEmpty {
                 // Made anew and private: a path already there, a link above all, fails the job.
                 try FileManager.default.createDirectory(at: Self.scratch(job.id), withIntermediateDirectories: false,
                                                         attributes: [.posixPermissions: 0o700])
                 try Self.attach(candidate.attachments, in: Self.scratch(job.id))
                 scratch = Self.scratch(job.id).path
             }
-            job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(prompt, values), session: job.id,
+            // Claude learns these through its system prompt; another agent has only the task.
+            let task = isClaude ? prompt : Self.told(prompt, scratch: scratch, graphLine: graphLine)
+            job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(task, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model, effort: candidate.effort,
                                                      helpersConfig: helpers?.config, scratch: scratch,
                                                      playbook: playbook,

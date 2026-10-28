@@ -55,18 +55,42 @@ struct CodeGraphDispatchAcceptanceTests {
         #expect(try f.graph.pythonRuns() == 0)
     }
 
-    @Test(ProcessBound()) func codexGetsNoLine() async throws {
+    // Spec change of 2026-10-28: codex gets the graph line and Bton's data files in the task text,
+    // since it has no system prompt of Bton's.
+    @Test(ProcessBound()) func codexGetsTheLineAndItsDataFilesInTheTask() async throws {
         let f = try await GraphDispatchFixture.make(agent: "codex")
         defer { f.graph.remove() }
-        let job = try await f.run()
+        let job = try await f.run(attachments: [FeatureContext.file: "# Synthetic context\n"])
         let log = (try? f.jobLog(job)) ?? ""
         #expect(job.status == .succeeded, "\(job.detail ?? "") \(log)")
         let link = URL(fileURLWithPath: try #require(job.worktree)).appendingPathComponent("graphify-out")
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == f.graph.store.path)
         let argv = try String(contentsOf: f.graph.root.appendingPathComponent("agent-argv"), encoding: .utf8)
-        #expect(!argv.contains("Code graph:"))
+        let expected = "Code graph: graphify-out/ in this checkout is graphify's graph of main at \(f.graph.tip.prefix(8)); this branch's own changes may not be in it. Run graphify-src \"<question>\" before searching the tree."
+        #expect(argv.contains("Synthetic task\n\nYour scratch directory is "))
+        #expect(argv.contains(": the data files this task names are there; put notes and temporary files there, not in /tmp.\n\n" + expected))
         #expect(!argv.contains("--append-system-prompt"))
+        // The agent copied its scratch directory while it ran: Bton removes it when the job ends.
+        let copied = f.graph.root.appendingPathComponent("scratch-copy")
+        #expect(try String(contentsOf: copied.appendingPathComponent(FeatureContext.file), encoding: .utf8) == "# Synthetic context\n")
+        #expect(!FileManager.default.fileExists(atPath: try #require(Self.scratchPath(in: argv))))
         #expect(try f.graph.pythonRuns() == 0)
+    }
+
+    static func scratchPath(in argv: String) -> String? {
+        guard let range = argv.range(of: "Your scratch directory is ") else { return nil }
+        return argv[range.upperBound...].split(separator: ":").first.map(String.init)
+    }
+
+    @Test(ProcessBound()) func codexWithoutDataFilesGetsNoScratchDirectory() async throws {
+        let f = try await GraphDispatchFixture.make(built: false, agent: "codex")
+        defer { f.graph.remove() }
+        let job = try await f.run()
+        #expect(job.status == .succeeded, Comment(rawValue: job.detail ?? ""))
+        let argv = try String(contentsOf: f.graph.root.appendingPathComponent("agent-argv"), encoding: .utf8)
+        #expect(argv.contains("Synthetic task"))
+        #expect(!argv.contains("scratch directory") && !argv.contains("Code graph:"))
+        #expect(!FileManager.default.fileExists(atPath: f.graph.root.appendingPathComponent("scratch-copy").path))
     }
 }
 
@@ -110,6 +134,8 @@ struct GraphDispatchFixture {
             #!/bin/sh
             set -eu
             printf '%s\\n' "$@" > '\(graph.root.appendingPathComponent("agent-argv").path)'
+            dir=$(printf '%s\\n' "$@" | sed -n 's/^Your scratch directory is \\(.*\\): the data files.*/\\1/p' | head -1)
+            if [ -n "$dir" ]; then cp -R "$dir" '\(graph.root.appendingPathComponent("scratch-copy").path)'; fi
             while [ "$#" -gt 0 ]; do
               if [ "$1" = '--append-system-prompt' ]; then
                 printf '%s' "$2" > '\(graph.root.appendingPathComponent("agent-system").path)'
@@ -135,13 +161,14 @@ struct GraphDispatchFixture {
         } catch { graph.remove(); throw error }
     }
 
-    func run(needsGraph: Bool = false) async throws -> Job {
+    func run(needsGraph: Bool = false, attachments: [String: String] = [:]) async throws -> Job {
         var candidate = DispatchCandidate(target: .pullRequest(pr),
             move: Move(name: "fix", owner: "owner", ownerFromRotation: false, tier: "feature", hasDispatch: true),
             key: JobKey(repo: pr.repo, item: "pr-7", move: "fix", head: pr.headSha),
             agent: agent, prompt: "Synthetic task", command: nil, postComment: false, timeout: .seconds(30))
         candidate.skipsChecks = true
         candidate.needsGraph = needsGraph
+        candidate.attachments = attachments
         let executable = graph.root.appendingPathComponent(agent).path
         let argv = agent == "codex" ? [executable, "exec", "--", "{prompt}"] : [executable, "-p", "{prompt}"]
         let outcome = await dispatcher.dispatch(candidate, clone: graph.clone, flow: nil,

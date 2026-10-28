@@ -7,9 +7,10 @@ import Foundation
 public struct FeatureRegistry: Decodable, Sendable, Equatable {
     public static let relativePath = ".bton/features.json"
     public static let supportedVersion = 1
-    /// How a link was made: the PR or issue body says it closes the feature's issue, the branch
-    /// name, a label, the changed files against the feature's paths, or the title alone.
-    public static let whys = ["closes", "branch", "label", "files", "title"]
+    /// How a link was made: the PR or issue body says it closes the feature's issue, a PR body
+    /// names the feature (`Feature: <id>`, as Bton's agents write), the branch name, a label, the
+    /// changed files against the feature's paths, or the title alone.
+    public static let whys = ["closes", "feature", "branch", "label", "files", "title"]
 
     public let version: Int
     public let areas: [Area]

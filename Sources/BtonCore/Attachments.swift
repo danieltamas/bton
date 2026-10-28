@@ -14,4 +14,13 @@ extension Dispatcher {
             try file.close()
         }
     }
+
+    /// The task for an agent without a system prompt of Bton's: the scratch directory its data
+    /// files are in, and the code graph line, after the task in Bton's own words.
+    static func told(_ prompt: String, scratch: String?, graphLine: String?) -> String {
+        var lines = [prompt]
+        if let scratch { lines.append("Your scratch directory is \(scratch): the data files this task names are there; put notes and temporary files there, not in /tmp.") }
+        if let graphLine { lines.append(graphLine) }
+        return lines.joined(separator: "\n\n")
+    }
 }

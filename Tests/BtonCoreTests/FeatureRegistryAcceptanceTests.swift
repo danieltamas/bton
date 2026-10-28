@@ -82,7 +82,7 @@ struct FeatureRegistryAcceptanceTests {
         #expect(feature.firstSeen == "2026-10-03")
         #expect(registry.feature("unknown") == nil)
         #expect(registry.linkedNumbers == [402, 419, 428])
-        #expect(FeatureRegistry.whys == ["closes", "branch", "label", "files", "title"])
+        #expect(FeatureRegistry.whys == ["closes", "feature", "branch", "label", "files", "title"])
     }
 
     @Test func missingAndUnknownVersionAreNone() {

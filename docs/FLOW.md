@@ -157,6 +157,16 @@ agent's review would be posted as the author and ignored.
 - `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`, `{tier}` (the PR's tier, floored by
   `tier.paths`). Nothing else is
   substituted: PR and issue text never goes into a prompt or an argv.
+- **Feature context.** When the repo has a `.bton/features.json` that loads, every agent job gets
+  `feature-context.md` in its scratch directory: what the registry knows about the PR or issue (the
+  feature it links, or the features and areas whose paths the PR touches; area, paths, merged PRs
+  with their titles and dates, open issues; the map of areas) so the agent reads one page before
+  searching the tree. Bton appends one line of its own to the prompt naming the file; when the
+  registry links the work to exactly one feature and the move edits the PR (not a review, not the
+  supervisor), the line also asks for `Feature: <id>` in the PR body, which the registry job then
+  links as hard evidence (`why: feature`). Everything but that id travels as data. A codex job is
+  also told its scratch directory and the code graph line in the task text, as Claude is in its
+  system prompt.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
   line is a review (rules above) naming the current head.
 - `command`: an argv run instead of an agent (merge, or a review), in a fresh worktree of the base
@@ -248,6 +258,8 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   with `prompt`. A `worktreePath` that already exists is someone's work: the job fails and touches
   nothing. `{issue}`, `{repo}`, `{base}` and `{type}` (the first of the issue's labels `type.labels`
   maps, else `type.default`) are the only substitutions; issue text never reaches an argv or the prompt.
+  The feature context above applies: an issue the registry links gets its feature, and the agent is
+  asked to write `Feature: <id>` in the PR body.
 - **The PR.** Bton opens none: the prompt tells the agent to follow the repo's own process (its
   AGENTS.md, its tier, its tests) and open the PR against `base` when the work is complete, which
   is the point where the repo hands the move to a reviewer. The job counts as succeeded only when

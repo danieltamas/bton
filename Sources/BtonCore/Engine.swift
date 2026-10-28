@@ -221,6 +221,7 @@ public actor Engine {
                 guard let path = read.repo.path else { continue }
                 let clone = URL(fileURLWithPath: path)
                 do {
+                    let first = pending.count
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, repos: config.repos)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
@@ -289,6 +290,10 @@ public actor Engine {
                     pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                  me: read.viewer, agents: config.agents, merged: read.merged,
                                                  clone: clone, model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
+                    // Every agent job of this repo starts with what the registry knows about its work.
+                    for index in first..<pending.count {
+                        pending[index].candidate = Self.withFeatureContext(pending[index].candidate, report: snapshot.features[read.repo.slug])
+                    }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
                     unplanned.insert(read.repo.slug.lowercased())
