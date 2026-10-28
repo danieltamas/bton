@@ -19,7 +19,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `reviews` | Per tier, the headings that count as a review: `[{ "heading", "notByAuthor"? }]`. |
 | `fixed` | The heading of a response comment, e.g. `## Fixed:`. |
 | `reviewers` | Optional logins for the reviewer rotation (below). |
-| `moves` | Ordered list of `{ "move", "when": [predicate...], "who" }`. First match wins. |
+| `moves` | Ordered list of `{ "move", "when": [predicate...], "who", "owner"? }`. First match wins. `owner` is `who` for Btons from 0.14.1 on, read instead of `who` when present (below). |
 | `dispatch` | Per move name, what Bton starts for it (below). A move without an entry is a human's. |
 | `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...] }`, run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. When a person started the move (Merge, the move's pill, Retry, Run Next, Take it) rather than the sync, checks and the merge command also see `BTON_PRESSED=1`, so a check that guards a person's decision can let the press through: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" \|\| git diff --quiet origin/develop...HEAD -- migrations/"]`. |
 | `intake` | Optional: how an agent takes a `stage:ready` issue (below). |
@@ -133,6 +133,16 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 - any other string: that login.
 
 A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
+
+**Switching to `reviewer` while some Macs run an older Bton.** A Bton before 0.14.0 reads a `who`
+it does not know as a login, so `who: reviewer` stalls its moves. Write
+`"who": "assignee", "owner": "reviewer"` instead: a Bton from 0.14.1 on reads `owner` in place of
+`who` (same shape, one value or per tier), an older one reads `who` and ignores `owner`. In the
+meantime the older Macs assign the rotation's pick and the newer ones request that pick's review:
+the same login on a PR nobody touched by hand, so the move is the same person's on every Mac. An
+assignee or a request a person set, or a Take it (which changes only its own field), can split the
+owner between old and new Macs for that PR until the fields agree. Once every Mac has updated,
+move the value into `who` and drop `owner`.
 
 **Take it.** A dispatchable move whose `who` for the PR's tier is `assignee` or `reviewer`, owned
 by someone else (or by nobody), can be taken from its row: under the PR's lease, and only if a

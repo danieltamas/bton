@@ -141,7 +141,21 @@ public struct ReviewHeading: Decodable, Sendable {
 public struct MoveRule: Decodable, Sendable {
     public let move: String
     public let when: [String]
+    /// Whose move it is per tier. Read from `owner` when the flow has it, else from `who`: a
+    /// Bton older than 0.14.0 reads an unknown `who` value (`reviewer`) as a login and stalls, so a
+    /// team switching writes `"who": "assignee", "owner": "reviewer"` until every Mac has
+    /// updated, and folds `owner` into `who` afterwards.
     public let who: PerTier<String>
+
+    private enum CodingKeys: String, CodingKey { case move, when, who, owner }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        move = try container.decode(String.self, forKey: .move)
+        when = try container.decode([String].self, forKey: .when)
+        who = try container.decodeIfPresent(PerTier<String>.self, forKey: .owner)
+            ?? container.decode(PerTier<String>.self, forKey: .who)
+    }
 }
 
 public struct DispatchRule: Decodable, Sendable {
