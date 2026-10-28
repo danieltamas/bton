@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.11.0 (2026-10-28)
 
 **A codex reviewer no longer blocks on the ask tool it never had.** Bton offers the `ask` helper tool to Claude agents only, but the playbook told every agent to consult through it, and lexito's decide prompt says to ask codex: a review or decision run by codex (Settings > Agents, reviewer codex) blocked every head on "consultation unavailable". The playbook (now v3) asks a helper only where the session exposes the tool and says a helper that is not exposed never blocks, and a job whose flow names helpers it cannot be offered is told so, by identity: "you are the codex agent; a step that says to consult codex is satisfied by your own work". The job log notes it.
 
