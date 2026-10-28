@@ -21,12 +21,13 @@ struct RepoPage: View {
         } else {
             VStack(spacing: 8) {
                 header(report)
-                if let report {
-                    chips(report)
+                // Nothing to search or filter before the registry is there.
+                if let report, case .ready = report.registry {
                     SearchField(text: $query, prompt: "Search features: #433, a name, a word")
                         .padding(.horizontal, 14)
-                    if let problem = report.problem { ProblemText(text: problem).padding(.horizontal, 14) }
+                    scopes(report)
                 }
+                if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
                 content(report).releaseAction(slug: slug, report: report)
             }
             .padding(.top, 2)
@@ -76,22 +77,33 @@ struct RepoPage: View {
         .padding(.horizontal, 14)
     }
 
-    private func chips(_ report: FeatureReport) -> some View {
-        HStack(spacing: 6) {
+    /// The search's scope line, as under a Finder search: each status with its count, the chosen
+    /// one underlined in mint.
+    private func scopes(_ report: FeatureReport) -> some View {
+        HStack(spacing: 14) {
             ForEach(FeatureFilter.allCases, id: \.self) { item in
                 let selected = filter == item
                 Button {
                     withAnimation(Motion.snappy) { filter = selected ? nil : item }
                 } label: {
-                    Chip(text: "\(item.rawValue) \(FeaturePage.count(item, report: report))",
-                         color: selected ? Theme.mint : Theme.neutral, style: selected ? .filled : .outline)
+                    VStack(spacing: 3) {
+                        HStack(spacing: 4) {
+                            Text(item.rawValue)
+                            Text("\(FeaturePage.count(item, report: report))")
+                                .foregroundStyle(selected ? Theme.mint : Theme.textTertiary)
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
+                        Capsule().fill(selected ? Theme.mint : .clear).frame(height: 2)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
                 .help(selected ? "Show every feature" : "Only the features \(item.rawValue)")
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 24)
     }
 
     @ViewBuilder private func content(_ report: FeatureReport?) -> some View {
