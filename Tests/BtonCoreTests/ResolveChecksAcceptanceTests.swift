@@ -33,9 +33,9 @@ struct ResolveChecksAcceptanceTests {
         let resolve = try #require(flow.dispatch["resolve"])
         let fix = try #require(flow.dispatch["fix"])
         let merge = try #require(flow.dispatch["merge"])
-        #expect(resolve.checks == false)
+        #expect(resolve.checks == RuleChecks.none)
         #expect(fix.checks == nil)
-        #expect(merge.checks == true)
+        #expect(merge.checks == RuleChecks.flow)
         #expect(flow.checks?.beforeSession == [["false"]])
         #expect(flow.checks?.beforeMerge == [["false"]])
     }

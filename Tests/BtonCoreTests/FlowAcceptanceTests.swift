@@ -79,7 +79,7 @@ struct FlowAcceptanceTests {
             #expect(flow.tier.values == ["quick fix", "feature", "high-risk"])
             #expect(flow.tier.defaultTier == "feature")
             #expect(Set(flow.dispatch.keys) == Set(["review", "fix", "resolve", "merge"]))
-            #expect(flow.dispatch["resolve"]?.checks == false)
+            #expect(flow.dispatch["resolve"]?.checks == RuleChecks.none)
         }
     }
 

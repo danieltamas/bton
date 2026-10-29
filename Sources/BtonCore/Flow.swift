@@ -183,14 +183,30 @@ public struct DispatchRule: Decodable, Sendable {
     /// An argv run instead of an agent (merge).
     public let command: [String]?
     public let timeoutMinutes: Int?
-    /// false: the flow's `checks` do not run before this move. A `resolve` agent works on a PR
-    /// that conflicts with its base, which a merge check would refuse.
-    public let checks: Bool?
+    /// Absent or `true`: the flow's `checks` run before this move. `false`: none run, as for a
+    /// `resolve` agent working on a PR that conflicts with its base, which a merge check would
+    /// refuse. A list of argv: the move's own gates run instead of the flow's, so a review is
+    /// stopped by a lint or type error that a `fix` move must be allowed to reach.
+    public let checks: RuleChecks?
     /// Agents on the Mac that runs the move which its Claude may ask (Bton's `ask` tool): the
     /// sandbox keeps them from running from the agent's Bash.
     public let helpers: [String]?
 
     public var timeout: Duration { .seconds(60 * (timeoutMinutes ?? 60)) }
+}
+
+/// What runs before a move: the flow's `checks`, none, or the move's own argv in their place.
+public enum RuleChecks: Decodable, Equatable, Sendable {
+    case flow
+    case none
+    case own([[String]])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let flag = try? container.decode(Bool.self) { self = flag ? .flow : .none; return }
+        if let argv = try? container.decode([[String]].self) { self = .own(argv); return }
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "checks must be true, false or a list of argv")
+    }
 }
 
 public struct Checks: Decodable, Sendable {

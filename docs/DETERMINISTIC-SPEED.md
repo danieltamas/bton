@@ -72,12 +72,16 @@ no blind retry of a timed-out command.
    Risk: two sessions cost more tokens; the review poster has to merge two tables deterministically
    (by file:line) rather than ask a third model.
 
-6. **Cheap deterministic gates before paying for a review.** The team flow's `beforeSession` runs
-   only the conflict check (`examples/team.flow.json`). Add `bun install --frozen-lockfile`,
-   format check, lint, the gateway `tsc` (18 s measured): a mechanical red stops the review before it
-   spawns and the fix agent gets the exact output. Saves an entire review session each time a PR
-   is mechanically broken. Risk: the same gate on the `fix` move stops the agent from repairing what
-   the gate found; gates are chosen per move.
+6. **Done (0.15.0): a dispatch rule's `checks` takes a list of argv that run instead of the
+   flow's list for that move, with the same placeholders, environment, time allowance and
+   receipts; the team example's `review` rule runs the conflict check, `bun install
+   --frozen-lockfile`, lint and typecheck, while `fix` keeps the flow's conflict check only.
+   The original item: cheap deterministic gates before paying for a review.** The team flow's
+   `beforeSession` ran only the conflict check (`examples/team.flow.json`). Add `bun install
+   --frozen-lockfile`, format check, lint, the gateway `tsc` (18 s measured): a mechanical red
+   stops the review before it spawns and the fix agent gets the exact output. Saves an entire
+   review session each time a PR is mechanically broken. Risk: the same gate on the `fix` move
+   stops the agent from repairing what the gate found; gates are chosen per move.
 
 7. **A deterministic review for documentation-only PRs.** Tier rules only raise a tier
    (`TierPaths.swift`). A rule that lowers it when every changed path matches an allowlist
