@@ -191,7 +191,8 @@ actor Dispatcher {
     /// Links the repo's built graph into the job's worktree and says what the agent is told about
     /// it; nil when the repo has no graph yet. A name the tree already uses is left alone and
     /// noted: the graph is a help, never what fails a job.
-    private func graphLine(for repo: String, in worktree: URL, base: String, job: UUID) -> String? {
+    /// `tool` is the graph tool's name for a job without a shell, which asks the graph through it.
+    private func graphLine(for repo: String, in worktree: URL, base: String, job: UUID, tool: String? = nil) -> String? {
         guard let store = graphStores[repo.lowercased()], CodeGraph.isBuilt(store), let marker = CodeGraph.marker(in: store) else { return nil }
         do {
             if case let .kept(reason) = try CodeGraph.link(into: worktree, store: store) {
@@ -202,7 +203,7 @@ actor Dispatcher {
             jobs.note(job, "\(CodeGraph.linkName) kept: \(error.localizedDescription)")
             return nil
         }
-        return CodeGraph.instructionLine(base: base, marker: marker, template: graphInstruction)
+        return CodeGraph.instructionLine(base: base, marker: marker, template: graphInstruction, tool: tool)
     }
 
     /// Worktree, checks, then the command, or the agent's spawn: `watch` takes the agent from there.
@@ -247,7 +248,8 @@ actor Dispatcher {
                 candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
                 if let secondPrompt = candidate.secondPrompt { candidate.secondPrompt = secondPrompt + "\n\n" + PREvidence.promptLine() }
             }
-            let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
+            let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id,
+                                      tool: candidate.denied.isEmpty ? nil : Helpers.graphTool)
             if candidate.needsGraph, graphLine == nil { throw DispatchError.graphNotLinked }
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)
             let checks = candidate.pr == nil || candidate.skipsChecks ? nil
@@ -318,9 +320,9 @@ actor Dispatcher {
             let isClaude = template.argv.first.map(AgentHardening.isClaude) == true
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
             if isClaude, let graphLine { instructions = [instructions, graphLine].compactMap { $0 }.joined(separator: "\n\n") }
-            let helpers = isClaude ? try offerHelpers(candidate.helpers, agents: agents, to: job.id, in: worktree) : nil
+            let helpers = isClaude ? try offerHelpers(candidate.helpers, graph: graphLine != nil, agents: agents, to: job.id, in: worktree) : nil
             var playbook = candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move)
-            if let helpers {
+            if let helpers, !helpers.names.isEmpty {
                 instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n")
             } else if !candidate.helpers.isEmpty {
                 // Named helpers that cannot be offered: the agent hears it, since its task may say to ask one.
@@ -646,20 +648,22 @@ actor Dispatcher {
         job.cost = cost
     }
 
-    /// Writes the job's `ask` server file for the helpers that can run here; one note for each
-    /// that cannot, so a missing program is said once instead of timing out on every ask.
-    private func offerHelpers(_ names: [String], agents: [String: AgentTemplate], to id: UUID, in worktree: URL) throws -> (names: [String], config: String)? {
-        guard !names.isEmpty else { return nil }
+    /// Writes the job's server file for the helpers that can run here, and for the graph tool
+    /// when the job has a graph; one note for each helper that cannot, so a missing program is
+    /// said once instead of timing out on every ask.
+    private func offerHelpers(_ names: [String], graph: Bool, agents: [String: AgentTemplate], to id: UUID,
+                              in worktree: URL) throws -> (names: [String], config: String)? {
+        guard !names.isEmpty || graph else { return nil }
         let (usable, missing) = Helpers.usable(names, agents: agents, resolve: Executables.resolve)
         for name in missing { jobs.note(id, "helper \(name) skipped: not an agent here or its program is not installed") }
-        guard !usable.isEmpty else { return nil }
+        guard !usable.isEmpty || graph else { return nil }
         guard let server = Helpers.serverPath else {
             jobs.note(id, "helpers skipped: this build has no ask server")
             return nil
         }
         let url = jobs.helpersConfigURL(id)
-        try Helpers.serverConfig(server: server, job: id, home: jobs.home.url, cwd: worktree, helpers: usable).write(to: url)
-        jobs.note(id, "can ask \(usable.joined(separator: ", "))")
+        try Helpers.serverConfig(server: server, job: id, home: jobs.home.url, cwd: worktree, helpers: usable, graph: graph).write(to: url)
+        if !usable.isEmpty { jobs.note(id, "can ask \(usable.joined(separator: ", "))") }
         return (usable, url.path)
     }
 

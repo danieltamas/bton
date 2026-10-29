@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A read-only job asks the code graph through a tool.** A draft reply, a new-issue job and the supervisor run without a shell, so the line telling them to run `graphify-src` was one they could not follow: every draft job logged `graph queries: 0` and read the tree file by file. Bton's own MCP server now serves a `graph` tool beside `ask` whenever the job's checkout has a graph; it runs `graphify-src` as Bton's process with the agent's question as its one argument, the agent is told to use it, and the job log counts those calls as graph queries. A job with a shell keeps running `graphify-src` itself.
+
 ## 0.17.1 (2026-10-29)
 
 **A failed step shows why it failed.** A job's transcript cut every result to its first three lines, and a shell prints the reason it failed last: the `wt merge` that landed #565 and then died in its cleanup showed an advisory line and nothing of the `fetching ref ... failed` under it. A failed result now keeps its first three lines, a "..." and its last eight, up to twelve in all; a click still opens the whole result.

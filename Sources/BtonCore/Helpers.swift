@@ -5,6 +5,10 @@ import os
 /// The tool runs outside Claude's Bash sandbox, as Bton's own process, so a helper such as codex can reach its API, and every ask lands in the job's log.
 public enum Helpers {
     public static let tool = "mcp__bton__ask"
+    /// The graph tool on the same server: a job without a shell asks the code graph through it.
+    public static let graphTool = "mcp__bton__graph"
+    static let graphProgram = "graphify-src"
+    public static let graphTimeout: Duration = .seconds(3 * 60)
     static let maxQuestion = 20_000
     static let maxAnswer = 20_000
     /// How long one ask may take; Claude Code waits a minute longer for the tool.
@@ -38,9 +42,11 @@ public enum Helpers {
         return (usable, missing)
     }
 
-    /// The `--mcp-config` file that starts `bton ask-server` for one job.
-    public static func serverConfig(server: String, job: UUID, home: URL, cwd: URL, helpers: [String]) -> Data {
+    /// The `--mcp-config` file that starts `bton ask-server` for one job; `graph` serves the
+    /// graph tool too.
+    public static func serverConfig(server: String, job: UUID, home: URL, cwd: URL, helpers: [String], graph: Bool = false) -> Data {
         let args = ["ask-server", "--job", job.uuidString, "--cwd", cwd.path] + helpers.flatMap { ["--helper", $0] }
+            + (graph ? ["--graph"] : [])
         let config: [String: Any] = ["mcpServers": ["bton": [
             "type": "stdio", "command": server, "args": args, "env": ["BTON_HOME": home.path],
         ]]]
@@ -70,6 +76,55 @@ public enum Helpers {
         return """
             No \(tool) tool exists in this session: you are the \(agent) agent, and the helper \(named)             could not be offered here.\(own) Do every check such a step asks for yourself, in this session,             and say in your result that no separate helper was available. That is not a blocker.
             """
+    }
+
+    /// Runs `graphify-src` on `question` in `cwd` for an agent that has no shell, as Bton's own
+    /// process: one fixed program, the question its single argument. Every ask is noted in the
+    /// job's log, so the log's query count stays honest.
+    public static func graph(question: String, cwd: URL, job: UUID, jobs: JobStore, timeout: Duration,
+                             resolve: (String) -> String? = { Executables.resolve($0) }) async -> AskResult {
+        let firstLine = question.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        jobs.note(job, "graph: \(firstLine)")
+        let refused = { (reason: String) -> AskResult in
+            jobs.note(job, "graph failed after 0s: \(reason)")
+            return AskResult(text: reason, isError: true)
+        }
+        // The link itself counts, even one whose store is gone: the program says so better than a guess here.
+        let link = cwd.appendingPathComponent(CodeGraph.linkName).path
+        guard (try? FileManager.default.attributesOfItem(atPath: link)) != nil else {
+            return refused("no code graph is linked in this checkout")
+        }
+        guard let executable = resolve(graphProgram) else { return refused("\(graphProgram) is not installed on this Mac") }
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, question.count <= maxQuestion else {
+            return refused("the question must be 1 to \(maxQuestion) characters")
+        }
+        let started = Date.now
+        let result: AskResult
+        do {
+            // In the job's helper groups like an ask, so stopping the job stops it too.
+            let group = OSAllocatedUnfairLock<Int32?>(initialState: nil)
+            defer { group.withLock { $0 }.map { try? FileManager.default.removeItem(at: jobs.helperGroupURL(job, group: $0)) } }
+            let output = try await ProcessRunner().run(executable, [question], in: cwd,
+                                                       environment: ["PATH": Executables.searchPath(for: executable)], timeout: timeout) { pid in
+                group.withLock { $0 = pid }
+                FileManager.default.createFile(atPath: jobs.helperGroupURL(job, group: pid).path, contents: nil)
+            }
+            if output.status == 0 {
+                var text = String(decoding: output.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.count > maxAnswer { text = String(text.prefix(maxAnswer)) + "\n[answer cut at \(maxAnswer) characters]" }
+                result = AskResult(text: text, isError: false)
+            } else {
+                result = AskResult(text: "\(graphProgram) exited \(output.status): \(String(output.stderr.suffix(2_000)))", isError: true)
+            }
+        } catch ProcessRunner.Failure.timedOut {
+            result = AskResult(text: "\(graphProgram) timed out after \(timeout) and was stopped", isError: true)
+        } catch {
+            result = AskResult(text: "\(graphProgram) could not run: \(error.localizedDescription)", isError: true)
+        }
+        let seconds = Int(Date.now.timeIntervalSince(started))
+        jobs.note(job, "graph \(result.isError ? "failed" : "answered") after \(seconds)s")
+        return result
     }
 
     /// A helper answers and never changes the tree the asking agent works in, whatever its

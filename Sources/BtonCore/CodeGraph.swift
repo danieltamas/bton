@@ -227,12 +227,15 @@ public enum CodeGraph {
         + "this branch's own changes may not be in it. Run graphify-src \"<question>\" before searching the tree."
 
     /// `template` with its placeholders filled; empty or blank means the default.
-    public static func instructionLine(base: String, marker: Marker, template: String? = nil) -> String {
+    /// `tool` names the MCP tool a job without a shell asks the graph with, after the line.
+    public static func instructionLine(base: String, marker: Marker, template: String? = nil, tool: String? = nil) -> String {
         let text = template?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (text.isEmpty ? defaultInstruction : text)
+        let line = (text.isEmpty ? defaultInstruction : text)
             .replacingOccurrences(of: "{graph}", with: linkName)
             .replacingOccurrences(of: "{base}", with: base)
             .replacingOccurrences(of: "{commit}", with: String(marker.commit.prefix(8)))
+        guard let tool else { return line }
+        return line + " Ask it with the \(tool) tool (question: what you look for); this session has no shell."
     }
 
     /// A graph kept under `<home>/graphs`, for Settings: what it costs on disk and what it is of.

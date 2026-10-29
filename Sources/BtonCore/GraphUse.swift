@@ -10,13 +10,16 @@ public enum GraphUse {
             || command.range(of: #"(^|[^A-Za-z0-9_.-])graphify\s+(explain|query|path|affected)($|[^A-Za-z0-9_-])"#, options: .regularExpression) != nil
     }
 
-    /// The Bash calls of a Claude Code transcript that query the graph; nil for a file that
-    /// cannot be read.
+    /// The Bash calls of a Claude Code transcript that query the graph, and its calls of Bton's
+    /// graph tool; nil for a file that cannot be read.
     public static func queries(inClaudeSessionFile url: URL) -> Int? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return SessionTranscript.entries(in: data, limit: .max).filter { entry in
-            if case .tool(name: "Bash") = entry.kind { return isQuery(entry.text) }
-            return false
+            switch entry.kind {
+            case .tool(name: "Bash"): return isQuery(entry.text)
+            case .tool(name: Helpers.graphTool): return true
+            default: return false
+            }
         }.count
     }
 

@@ -1,14 +1,18 @@
 import Foundation
 
-/// Bton's MCP server for a job's helpers (`bton ask-server`): one tool, `ask`, over JSON-RPC 2.0,
-/// one message per line. Only the helpers Bton named when it started the job can be asked; the
-/// agent's arguments never choose a program.
+/// Bton's MCP server for a job (`bton ask-server`), over JSON-RPC 2.0, one message per line: `ask`
+/// for the job's helpers, and `graph` for the code graph when the job has one. Only the helpers
+/// Bton named when it started the job can be asked, and `graph` runs one fixed program; the
+/// agent's arguments never choose one.
 public struct AskServer: Sendable {
     let helpers: [String]
+    let graph: (@Sendable (_ question: String) async -> Helpers.AskResult)?
     let ask: @Sendable (_ agent: String, _ question: String) async -> Helpers.AskResult
 
-    public init(helpers: [String], ask: @escaping @Sendable (_ agent: String, _ question: String) async -> Helpers.AskResult) {
+    public init(helpers: [String], graph: (@Sendable (_ question: String) async -> Helpers.AskResult)? = nil,
+                ask: @escaping @Sendable (_ agent: String, _ question: String) async -> Helpers.AskResult) {
         self.helpers = helpers
+        self.graph = graph
         self.ask = ask
     }
 
@@ -30,7 +34,7 @@ public struct AskServer: Sendable {
         case "ping":
             reply = ["result": [String: Any]()]
         case "tools/list":
-            reply = ["result": ["tools": helpers.isEmpty ? [] : [tool]]]
+            reply = ["result": ["tools": (helpers.isEmpty ? [] : [tool]) + (graph == nil ? [] : [graphTool])]]
         case "tools/call":
             reply = await call(params)
         default:
@@ -55,9 +59,28 @@ public struct AskServer: Sendable {
         ]
     }
 
+    private var graphTool: [String: Any] {
+        [
+            "name": "graph",
+            "description": "Ask the code graph of this checkout where something lives and how it connects: "
+                + "question is what you look for. Answers with the graph's matches and source slices.",
+            "inputSchema": [
+                "type": "object",
+                "properties": ["question": ["type": "string"]],
+                "required": ["question"],
+            ],
+        ]
+    }
+
     private func call(_ params: [String: Any]) async -> [String: Any] {
-        guard params["name"] as? String == "ask" else { return Self.toolResult(Helpers.AskResult(text: "unknown tool", isError: true)) }
         let arguments = params["arguments"] as? [String: Any] ?? [:]
+        if params["name"] as? String == "graph", let graph {
+            guard let question = arguments["question"] as? String else {
+                return ["error": ["code": -32602, "message": "graph takes question, a string"]]
+            }
+            return Self.toolResult(await graph(question))
+        }
+        guard params["name"] as? String == "ask" else { return Self.toolResult(Helpers.AskResult(text: "unknown tool", isError: true)) }
         guard let agent = arguments["agent"] as? String, let question = arguments["question"] as? String else {
             return ["error": ["code": -32602, "message": "ask takes agent and question, both strings"]]
         }

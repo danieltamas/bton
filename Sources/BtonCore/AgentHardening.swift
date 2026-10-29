@@ -156,7 +156,7 @@ public enum AgentHardening {
             let line = "Your scratch directory is \(scratch): put notes and temporary files there, not in /tmp."
             if !ownPrompt.contains(line) { ownPrompt += " " + line }
         }
-        argv += ["--append-system-prompt", ownPrompt, "--settings", lockedSandbox(settings, allowing: helpers == nil ? [] : [Helpers.tool])]
+        argv += ["--append-system-prompt", ownPrompt, "--settings", lockedSandbox(settings, allowing: helpers == nil ? [] : [Helpers.tool, Helpers.graphTool])]
         var seen = Set<String>()
         return argv + ["--disallowedTools"] + denied.filter { seen.insert($0).inserted } + positional
     }

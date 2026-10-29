@@ -14,7 +14,7 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton prices refresh            fetch token prices now
        bton docs-review <number> <head> <base> <tier>   the docs tier's policy review, written to $BTON_OUT
                                       (a flow's dispatch.review.command; exit 2 = head not fetchable here)
-       bton ask-server --job <uuid> --cwd <dir> --helper <agent>...   a job's MCP ask tool (Bton starts it)
+       bton ask-server --job <uuid> --cwd <dir> [--helper <agent>...] [--graph]   a job's MCP tools (Bton starts it)
 exit: 0 done, 1 held by someone else or lost, 2 usage, 3 error (not held)
 """
 
@@ -46,7 +46,10 @@ do {
         let (jobs, agents) = (try JobStore(home: home), (try? BtonConfig.loadOrCreate(home: home))?.agents ?? [:])
         // A helper's own session never offers helpers: one level of asking, no loops.
         let helpers = ProcessInfo.processInfo.environment["BTON_HELPER"] == nil ? values("--helper") : []
-        let server = AskServer(helpers: helpers) { agent, question in
+        let graph: (@Sendable (String) async -> Helpers.AskResult)? = arguments.contains("--graph") ? { @Sendable question in
+            await Helpers.graph(question: question, cwd: URL(fileURLWithPath: cwd), job: job, jobs: jobs, timeout: Helpers.graphTimeout)
+        } : nil
+        let server = AskServer(helpers: helpers, graph: graph) { agent, question in
             await Helpers.ask(agent: agent, question: question, allowed: helpers, agents: agents,
                               cwd: URL(fileURLWithPath: cwd), job: job, jobs: jobs, timeout: Helpers.askTimeout)
         }
