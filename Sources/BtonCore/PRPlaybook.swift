@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 6
+    public static let version = 7
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -109,7 +109,9 @@ public enum PRPlaybook {
     | --- | --- | --- | --- |
     Use stable IDs for existing findings; one defect per row. With none, one row
     saying None. Add at most a short Checks/limits line. Changes means evidenced
-    blocking defects; blocked means a required judgment cannot be completed.
+    blocking defects; blocked means a required judgment cannot be completed. A
+    second reviewer may run beside you; Bton merges both tables by location and
+    posts one review, so write your own findings only.
     If Bton posts the final message, do not post it yourself.
     """
 

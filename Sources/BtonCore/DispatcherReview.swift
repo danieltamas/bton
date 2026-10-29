@@ -32,12 +32,12 @@ extension Dispatcher {
     /// Posts `text` as the PR's review when its first line is a review heading of the PR's tier
     /// naming the current head; anything else fails the job and posts nothing. Then mirrors the
     /// verdict as a GitHub review and clears the move's labels.
-    func postReview(_ job: Job, text output: String, review: ReviewTarget) async {
+    func postReview(_ job: Job, text output: String, review: ReviewTarget, detail: String? = nil) async {
         guard let body = DispatchPlanner.reviewComment(fromFinalMessage: output, headings: review.headings,
                                                        head: review.head) else {
             return await finish(job, status: .failed, detail: "the review's first line names no review heading for the current head")
         }
-        guard lost[job.id] == nil, !stopping.contains(job.id) else {
+        guard lost[job.id] == nil, !stopRequested(job.id) else {
             return await finish(job, status: .cancelled, detail: "stopped")
         }
         do {
@@ -68,7 +68,7 @@ extension Dispatcher {
             }
             // The posted decision stands, but the label would hold the PR on this move: say so loudly.
             await finish(job, status: kept.isEmpty ? .succeeded : .failed,
-                         detail: kept.isEmpty ? nil : "decision posted; remove \(kept.joined(separator: ", ")) by hand")
+                         detail: kept.isEmpty ? detail : "decision posted; remove \(kept.joined(separator: ", ")) by hand")
         } catch {
             await finish(job, status: .failed, detail: "posting the review failed: \(error.localizedDescription)")
         }

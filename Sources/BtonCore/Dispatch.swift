@@ -39,6 +39,9 @@ public struct DispatchCandidate: Sendable {
     public var steered = false
     /// That note as it ends the prompt, so a line added later goes before it.
     public var steering: String?
+    /// A review's second reviewer: the agent run beside the first in the same job, and its task.
+    public var second: String?
+    public var secondPrompt: String?
     /// Tools denied to this job's Claude on top of Bton's own.
     public var denied: [String] = []
     /// Files written to a Claude job's scratch directory before it starts, by name: text the agent
@@ -174,6 +177,11 @@ public enum DispatchPlanner {
                                           postComment: rule.post == "comment", timeout: rule.timeout)
         candidate.helpers = rule.helpers ?? []
         candidate.skipsChecks = rule.checks == false
+        if candidate.postComment, let second = rule.second, let agent = second.agent.value(for: move.tier),
+           let prompt = second.prompt.value(for: move.tier) {
+            candidate.second = agent
+            candidate.secondPrompt = filling(prompt)
+        }
         return candidate
     }
 
@@ -308,6 +316,7 @@ public enum DispatchPlanner {
             return !seen.contains(candidate.key) && (pressed || !waiting.contains(candidate.key)) && !busyItems.contains("\(repo)#\(candidate.key.item)")
                 && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
                 && candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil)
+                && candidate.second.map({ agents[$0] != nil }) ?? true
         }
         let ordered = inTurns(startable).enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
         for candidate in ordered where picked.count < maxAgents - running.count {

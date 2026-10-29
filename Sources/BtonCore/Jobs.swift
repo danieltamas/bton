@@ -68,6 +68,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var checked: PassedChecks?
     /// A schedule run's view of the queue when it started (`DispatchPlanner.queueHeads`).
     public var queueHeads: [String]?
+    /// A review's second reviewer, run beside the first agent in this job; nil on every other job.
+    public var second: SecondRun?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
@@ -136,6 +138,21 @@ public struct PassedChecks: Hashable, Codable, Sendable {
 }
 
 /// Where a review job posts, and which headings its final message may open with.
+/// The second reviewer's run inside a review job: its own session, pid and files
+/// (`JobStore.secondOutputURL` and the like) beside the first agent's.
+public struct SecondRun: Hashable, Codable, Sendable {
+    public let agent: String
+    /// `{session}` in its argv, so its transcript's usage is counted with the job's.
+    public let session: UUID
+    public var pid: Int32?
+
+    public init(agent: String, session: UUID, pid: Int32? = nil) {
+        self.agent = agent
+        self.session = session
+        self.pid = pid
+    }
+}
+
 public struct ReviewTarget: Hashable, Codable, Sendable {
     public let number: Int
     public let head: String
@@ -237,7 +254,8 @@ public struct JobStore: Sendable {
         var cleared = 0
         for job in all() where job.status != .running {
             guard let ended = job.endedAt, ended < cutoff else { continue }
-            let files = [outputURL(job.id), logURL(job.id), exitURL(job.id), helperSessionsURL(job.id), helpersConfigURL(job.id)]
+            let files = [outputURL(job.id), logURL(job.id), exitURL(job.id), helperSessionsURL(job.id), helpersConfigURL(job.id),
+                         secondOutputURL(job.id), secondLogURL(job.id), secondExitURL(job.id), stopURL(job.id)]
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
             guard !files.isEmpty else { continue }
             files.forEach { try? FileManager.default.removeItem(at: $0) }
@@ -307,6 +325,16 @@ public struct JobStore: Sendable {
 
     /// The wrapper writes the agent's exit status here, so it survives a Bton restart.
     func exitURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).exit") }
+    public func secondOutputURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).second.out") }
+    public func secondLogURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).second.log") }
+    func secondExitURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).second.exit") }
+
+    /// A Stop pressed on an instance that does not own the job: the owner reads it before it
+    /// spawns or posts anything more, and clears it when the job ends.
+    public func stopURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).stop") }
+    public func requestStop(_ id: UUID) { FileManager.default.createFile(atPath: stopURL(id).path, contents: nil) }
+    public func stopRequested(_ id: UUID) -> Bool { FileManager.default.fileExists(atPath: stopURL(id).path) }
+    func clearStopRequest(_ id: UUID) { try? FileManager.default.removeItem(at: stopURL(id)) }
 
     /// Held by the Bton instance that runs the job, for the job's lifetime.
     func lockURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).lock") }

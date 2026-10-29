@@ -166,9 +166,18 @@ public struct MoveRule: Decodable, Sendable {
     }
 }
 
+/// A review's independent second reviewer: another agent run beside the first in the same job,
+/// with its own prompt and transcript; Bton merges both findings tables into the one review posted.
+public struct SecondReviewer: Decodable, Sendable {
+    public let agent: PerTier<String>
+    public let prompt: PerTier<String>
+}
+
 public struct DispatchRule: Decodable, Sendable {
     public let agent: PerTier<String>?
     public let prompt: PerTier<String>?
+    /// The second reviewer, for the tiers where both its agent and prompt have a value.
+    public let second: SecondReviewer?
     /// `"comment"`: Bton posts the agent's final message as the review comment.
     public let post: String?
     /// An argv run instead of an agent (merge).

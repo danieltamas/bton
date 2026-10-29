@@ -474,7 +474,7 @@ public enum PREvidence {
         return quoted.joined(separator: "\n")
     }
 
-    private static func lines(_ text: String) -> [String] {
+    static func lines(_ text: String) -> [String] {
         text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .replacingOccurrences(of: "\u{2028}", with: "\n").replacingOccurrences(of: "\u{2029}", with: "\n")
             .components(separatedBy: "\n")

@@ -17,6 +17,8 @@ actor Dispatcher {
     let runner = ProcessRunner()
     /// Agents this instance started; Foundation reaps a child only while its Process lives.
     private var processes: [UUID: Process] = [:]
+    /// A review job's second reviewer, by job.
+    private var secondProcesses: [UUID: Process] = [:]
     /// Per job this instance runs, from the claim to `finish`: the lease as last written, the task
     /// renewing it, the lock that keeps other instances on this home from adopting the job, and
     /// the work before the agent starts (cancelled when the lease is lost).
@@ -83,7 +85,7 @@ actor Dispatcher {
             guard let item = LeaseItem(job.key.item),
                   let current = try? await leases.current(item, in: job.key.repo, job: job.id, anyHost: true),
                   let lease = try? await leases.renew(current), lease.isLive(at: .now + Self.renewMargin) else {
-                await terminate(job.id, pid: pid)
+                await terminateAll(job)
                 job.retry = resumesAfterDeath(job)
                 await finish(job, status: .failed, detail: "lease lost while Bton was not running")
                 continue
@@ -174,14 +176,16 @@ actor Dispatcher {
     /// adopted first.
     func stop(_ id: UUID) async {
         if locks[id] == nil, LocalLock(jobs.lockURL(id)).map({ $0.release() }) != nil { await adopt() }
-        let pid = jobs.all().first(where: { $0.id == id })?.pid
+        let job = jobs.all().first(where: { $0.id == id })
         guard locks[id] != nil else {
-            if let pid { signal(pid, SIGTERM) }
+            // Another instance owns the job: it reads the request before it spawns or posts anything more.
+            jobs.requestStop(id)
+            for pid in [job?.pid, job?.second?.pid].compactMap({ $0 }) { signal(pid, SIGTERM) }
             return
         }
         stopping.insert(id)
         work[id]?.cancel()
-        if let pid { await terminate(id, pid: pid) }
+        if let job { await terminateAll(job) }
     }
 
     /// Links the repo's built graph into the job's worktree and says what the agent is told about
@@ -241,6 +245,7 @@ actor Dispatcher {
                 candidate.attachments[PREvidence.file] = PREvidence.text(pr: pr, local: local, receipts: receipts, previous: previous,
                                                                          reviewHeadings: flow?.allReviewHeadings ?? [], now: .now)
                 candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
+                if let secondPrompt = candidate.secondPrompt { candidate.secondPrompt = secondPrompt + "\n\n" + PREvidence.promptLine() }
             }
             let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
             if candidate.needsGraph, graphLine == nil { throw DispatchError.graphNotLinked }
@@ -320,6 +325,22 @@ actor Dispatcher {
             }
             // Claude learns these through its system prompt; another agent has only the task.
             let task = isClaude ? prompt : Self.told(prompt, scratch: scratch, graphLine: graphLine)
+            var secondTemplate: AgentTemplate?
+            if let secondAgent = candidate.second {
+                // The independent reviewer beside the first: same worktree and data, its own prompt,
+                // session and files. A Mac without its program leaves the review to one that has it.
+                guard let template = agents[secondAgent], let first = template.argv.first, Executables.resolve(first) != nil else {
+                    job.retry = true
+                    return await finish(job, status: .failed,
+                                        detail: "waiting: \(secondAgent) is unavailable on this Mac; the review runs where it is installed")
+                }
+                secondTemplate = template
+                // Recorded before either agent starts: a restart in between adopts a job that still
+                // owes a second verdict, and posts blocked without one.
+                job.second = SecondRun(agent: secondAgent, session: UUID())
+            }
+            // A Stop from another instance while the prompt was prepared: neither agent starts.
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             job.pid = try spawn(DispatchPlanner.argv(template.argv, prompt: DispatchPlanner.fill(task, values), session: job.id,
                                                      instructions: instructions, values: values, model: candidate.model, effort: candidate.effort,
                                                      helpersConfig: helpers?.config, scratch: scratch,
@@ -328,13 +349,31 @@ actor Dispatcher {
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,
                                 environment: helpers == nil ? [:] : ["MCP_TOOL_TIMEOUT": String(Helpers.toolTimeoutMilliseconds)])
+            // Saved at once: a Stop or a restart in the next awaits must find the pid.
+            try jobs.save(job)
+            if let secondTemplate, let first = secondTemplate.argv.first, let secondPrompt = candidate.secondPrompt, var second = job.second {
+                let secondIsClaude = AgentHardening.isClaude(first)
+                var secondInstructions = secondIsClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
+                if secondIsClaude, let graphLine { secondInstructions = [secondInstructions, graphLine].compactMap { $0 }.joined(separator: "\n\n") }
+                let secondTask = secondIsClaude ? secondPrompt : Self.told(secondPrompt, scratch: scratch, graphLine: graphLine)
+                if stopRequested(job.id) {
+                    await terminateAll(job)
+                    return await finish(job, status: .cancelled, detail: "stopped")
+                }
+                second.pid = try spawn(DispatchPlanner.argv(secondTemplate.argv, prompt: DispatchPlanner.fill(secondTask, values), session: second.session,
+                                                            instructions: secondInstructions, values: values, scratch: scratch,
+                                                            playbook: PRPlaybook.text(for: candidate.key.move), denying: candidate.denied),
+                                       in: worktree, job: job.id, repoEnvironment: environment, second: true)
+                job.second = second
+            }
             try jobs.save(job)
             jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?"), playbook v\(PRPlaybook.version)")
+            if let second = job.second { jobs.note(job.id, "second reviewer \(second.agent) running, pid \(second.pid.map(String.init) ?? "?")") }
             let started = job
             Task { await self.watch(started) }
         } catch {
             // An agent whose job could not be recorded must not run on without its lease.
-            if let pid = job.pid { await terminate(job.id, pid: pid) }
+            await terminateAll(job)
             if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             await finish(job, status: .failed, detail: lost[job.id].map { "lease lost: \($0)" } ?? error.localizedDescription)
         }
@@ -351,11 +390,15 @@ actor Dispatcher {
         let idleWindow = job.deadline.map { $0.timeIntervalSince(job.startedAt) }
         let ceiling = job.startedAt.addingTimeInterval(Self.intakeCeiling)
         var activity = ""
-        while let pid = job.pid, isAlive(job.id, pid: pid) {
+        while isAlive(job) {
             try? await Task.sleep(for: Self.agentPollInterval)
             if lost[job.id] != nil {
-                await terminate(job.id, pid: pid)
+                await terminateAll(job)
                 return await finish(job, status: .failed, detail: nil)
+            }
+            if stopRequested(job.id) {
+                await terminateAll(job)
+                return await finish(job, status: .cancelled, detail: "stopped")
             }
             if clock.now - lastCost >= .seconds(30) {
                 await refreshCost(&job)
@@ -370,15 +413,21 @@ actor Dispatcher {
                 lastCost = clock.now
             }
             // One that exited during the sleep is judged below, by when it exited.
-            if let deadline = job.deadline, Date.now >= deadline, isAlive(job.id, pid: pid) {
-                await terminate(job.id, pid: pid)
-                return await finish(job, status: .failed, detail: "timed out")
+            if let deadline = job.deadline, Date.now >= deadline, isAlive(job) {
+                // The first still running is the job timing out; only the second running leaves
+                // the first's timely answer to post, with the second's absence as blocked.
+                guard let pid = job.pid, !isAlive(job.id, pid: pid) else {
+                    await terminateAll(job)
+                    return await finish(job, status: .failed, detail: "timed out")
+                }
+                await terminateAll(job)
             }
         }
         processes[job.id] = nil
-        // What the agent left running in the background (a dev server, a watcher) goes with it.
-        if let pid = job.pid, kill(-pid, 0) == 0 { await terminate(job.id, pid: pid) }
-        if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+        secondProcesses[job.id] = nil
+        // What the agents left running in the background (a dev server, a watcher) goes with them.
+        await terminateAll(job)
+        if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
         // By the exit file's time, not the poll's: an agent that exited inside its limit while this
         // slept passes, and one that ran past it while Bton was down does not.
         if let deadline = job.deadline, let exited = exitTime(job.id), exited > deadline {
@@ -408,7 +457,44 @@ actor Dispatcher {
                                 detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
         }
         guard let review = job.review else { return await finish(job, status: .succeeded, detail: nil) }
-        await postReview(job, text: output, review: review)
+        guard let second = job.second else { return await postReview(job, text: output, review: review) }
+        let (text, reason) = secondResult(of: job)
+        let judged = text.flatMap { ReviewMerge.table(of: $0, headings: review.headings, head: review.head) } != nil
+        guard let merged = ReviewMerge.merged(first: output, second: text, reason: reason, headings: review.headings,
+                                              head: review.head, agent: second.agent) else {
+            return await finish(job, status: .failed, detail: "the review's first line names no review heading for the current head")
+        }
+        if !judged { jobs.note(job.id, "second reviewer \(second.agent): no result: \(text == nil ? reason : "no verdict")") }
+        await postReview(job, text: merged, review: review,
+                         detail: judged ? nil : "posted blocked: the second reviewer (\(second.agent)) \(text == nil ? reason : "gave no verdict")")
+    }
+
+    /// The second reviewer's final message, or why there is none.
+    private func secondResult(of job: Job) -> (text: String?, reason: String) {
+        guard let status = exitStatus(job.id, second: true) else {
+            return (nil, job.deadline.map { Date.now >= $0 } == true ? "timed out" : "did not finish")
+        }
+        // By its exit file's time, as for the first: one that ran past the deadline while Bton was down is late.
+        if let deadline = job.deadline, let exited = exitTime(job.id, second: true), exited > deadline { return (nil, "timed out") }
+        guard status == 0 else { return (nil, "exited \(status)") }
+        return ((try? String(contentsOf: jobs.secondOutputURL(job.id), encoding: .utf8)) ?? "", "")
+    }
+
+    /// Stopped here, or asked to stop by another instance that could only signal.
+    func stopRequested(_ id: UUID) -> Bool {
+        stopping.contains(id) || jobs.stopRequested(id)
+    }
+
+    /// The first agent or the second still runs.
+    private func isAlive(_ job: Job) -> Bool {
+        (job.pid.map { isAlive(job.id, pid: $0) } ?? false)
+            || (job.second?.pid.map { isAlive(job.id, pid: $0, second: true) } ?? false)
+    }
+
+    /// Both agents' process groups, and whatever they left behind.
+    private func terminateAll(_ job: Job) async {
+        if let pid = job.pid, isAlive(job.id, pid: pid) || kill(-pid, 0) == 0 { await terminate(job.id, pid: pid) }
+        if let pid = job.second?.pid, isAlive(job.id, pid: pid, second: true) || kill(-pid, 0) == 0 { await terminate(job.id, pid: pid, second: true) }
     }
 
     private func hold(_ lease: Lease, for id: UUID) {
@@ -460,6 +546,7 @@ actor Dispatcher {
     func finish(_ job: Job, status: Job.Status, detail: String?) async {
         var job = job
         try? FileManager.default.removeItem(at: Self.scratch(job.id))
+        jobs.clearStopRequest(job.id)
         expiryWatches.removeValue(forKey: job.id)?.cancel()
         if let renewal = renewals.removeValue(forKey: job.id) {
             renewal.cancel()
@@ -521,11 +608,12 @@ actor Dispatcher {
     /// grow for as long as the agent works, and lease renewals must not wait on them.
     private func refreshCost(_ job: inout Job) async {
         let (id, worktree, start, end, home) = (job.id, job.worktree, job.startedAt, job.endedAt ?? .now, jobs.home)
+        let secondSession = job.second.map { [$0.session] } ?? []
         let helperSessions = ((try? String(contentsOf: jobs.helperSessionsURL(id), encoding: .utf8)) ?? "")
             .split(whereSeparator: \.isNewline).compactMap { UUID(uuidString: String($0)) }
         let (usage, cost) = await Task.detached(priority: .utility) { () -> ([String: TokenUsage], Decimal?) in
             var usage: [String: TokenUsage] = [:]
-            for session in [id] + helperSessions {
+            for session in [id] + secondSession + helperSessions {
                 if let file = ClaudeSessions.sessionFile(id: session), let found = try? ClaudeSessions.usage(ofSessionFile: file) {
                     usage.merge(found, uniquingKeysWith: +)
                 }
@@ -560,7 +648,7 @@ actor Dispatcher {
     /// Runs the agent under `/bin/sh` only to record its exit status in a file, so the status
     /// survives a Bton restart. The argv reaches the agent as `"$@"`, never parsed by the shell.
     private func spawn(_ argv: [String], in worktree: URL, job id: UUID, repoEnvironment: [String: String] = [:],
-                       environment: [String: String] = [:]) throws -> Int32 {
+                       environment: [String: String] = [:], second: Bool = false) throws -> Int32 {
         guard let first = argv.first, let executable = Executables.resolve(first) else {
             throw DispatchError.agentNotFound(argv.first ?? "")
         }
@@ -569,32 +657,33 @@ actor Dispatcher {
         process.arguments = ["-c", "\"$@\"; echo $? > \"$BTON_EXIT_FILE\"", "bton-agent", executable] + argv.dropFirst()
         process.currentDirectoryURL = worktree
         let bton = [
-            "PATH": Executables.searchPath(for: executable), "BTON_EXIT_FILE": jobs.exitURL(id).path, "BTON_JOB": id.uuidString,
+            "PATH": Executables.searchPath(for: executable), "BTON_EXIT_FILE": (second ? jobs.secondExitURL(id) : jobs.exitURL(id)).path,
+            "BTON_JOB": id.uuidString,
         ].merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }.merging(environment) { $1 }
         process.environment = ProcessRunner.inheritedEnvironment
             .merging(DispatchPlanner.processEnvironment(repo: repoEnvironment, bton: bton)) { $1 }
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = try FileHandle.appending(to: jobs.outputURL(id))
-        process.standardError = try FileHandle.appending(to: jobs.logURL(id))
-        jobs.note(id, AgentFailure.startNote)
+        process.standardOutput = try FileHandle.appending(to: second ? jobs.secondOutputURL(id) : jobs.outputURL(id))
+        process.standardError = try FileHandle.appending(to: second ? jobs.secondLogURL(id) : jobs.logURL(id))
+        if !second { jobs.note(id, AgentFailure.startNote) }
         try process.run()
-        processes[id] = process
+        if second { secondProcesses[id] = process } else { processes[id] = process }
         return process.processIdentifier
     }
 
-    private func isAlive(_ id: UUID, pid: Int32) -> Bool {
-        if let process = processes[id] { return process.isRunning }
+    private func isAlive(_ id: UUID, pid: Int32, second: Bool = false) -> Bool {
+        if let process = second ? secondProcesses[id] : processes[id] { return process.isRunning }
         return kill(pid, 0) == 0
     }
 
     /// SIGTERM, then SIGKILL after 5 s, and returns once the agent is gone: its lease is released
     /// only after that.
-    private func terminate(_ id: UUID, pid: Int32) async {
+    private func terminate(_ id: UUID, pid: Int32, second: Bool = false) async {
         for sent in [SIGTERM, SIGKILL] {
             signal(pid, sent)
             for _ in 0..<25 {
                 // The whole group: the wrapper shell can be gone while the agent it ran lives on.
-                guard isAlive(id, pid: pid) || kill(-pid, 0) == 0 else { return }
+                guard isAlive(id, pid: pid, second: second) || kill(-pid, 0) == 0 else { return }
                 try? await Task.sleep(for: .milliseconds(200))
             }
         }
@@ -605,12 +694,12 @@ actor Dispatcher {
         kill(-pid, signal)
     }
 
-    private func exitTime(_ id: UUID) -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: jobs.exitURL(id).path))?[.modificationDate] as? Date
+    private func exitTime(_ id: UUID, second: Bool = false) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: (second ? jobs.secondExitURL(id) : jobs.exitURL(id)).path))?[.modificationDate] as? Date
     }
 
-    private func exitStatus(_ id: UUID) -> Int32? {
-        (try? String(contentsOf: jobs.exitURL(id), encoding: .utf8))
+    private func exitStatus(_ id: UUID, second: Bool = false) -> Int32? {
+        (try? String(contentsOf: second ? jobs.secondExitURL(id) : jobs.exitURL(id), encoding: .utf8))
             .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 }

@@ -56,7 +56,14 @@ no blind retry of a timed-out command.
    with small fix batches. Risk: a delta review misses an interaction outside the delta; fall back
    to full scope when the base moved or history was rewritten.
 
-5. **Run the independent reviewer as its own job, in parallel, instead of nested.** The team flow's
+5. **Done (0.15.0): a review rule's `second` (`{"agent": {tier: name}, "prompt": {tier: text}}`)
+   runs the second reviewer as a second agent process in the same job and worktree, with its own
+   prompt, session, output and log; Bton merges both findings tables by location (the second's
+   rows prefixed `S-`, duplicates by location dropped and counted), posts the first's heading with
+   the stricter verdict, and appends the second's notes as data. A second that gives no verdict
+   (died, timed out, no heading) makes the review `blocked`; a Mac without the second's program
+   never starts the review. `examples/team.flow.json` uses it for feature and high-risk instead of
+   "ask codex once". The original item: Run the independent reviewer as its own job, in parallel, instead of nested.** The team flow's
    review prompt (`examples/team.flow.json`) tells the Claude reviewer to ask Codex once through the
    `ask` MCP tool from inside its session, so the second opinion is serial and
    its findings pass through the first model's summary. A `review` move with two agents, each with
