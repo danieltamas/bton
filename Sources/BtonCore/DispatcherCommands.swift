@@ -13,8 +13,8 @@ extension Dispatcher {
     /// `fresh` always runs. Each gets the move's own time limit: a team's suite can take longer
     /// than any fixed limit, and the flow's `timeoutMinutes` is where the team says how long a
     /// move may take.
-    func runChecks(_ checks: [[String]], fresh: [[String]] = [], job: inout Job, in worktree: URL, clone: URL, base: String,
-                   environment: [String: String], timeout: Duration) async throws -> String? {
+    func runChecks(_ checks: [[String]], fresh: [[String]] = [], together: [[[String]]] = [], job: inout Job, in worktree: URL,
+                   clone: URL, base: String, environment: [String: String], timeout: Duration) async throws -> String? {
         let tip = try await Worktrees.tip(of: base, clone: clone, ghPath: github.ghPath, runner: runner)
         let tree = await Worktrees.tree(of: worktree, ghPath: github.ghPath, runner: runner)
         let pressed = environment["BTON_PRESSED"] == "1"
@@ -30,20 +30,76 @@ extension Dispatcher {
             }
         }
         var passed: [[String]] = []
-        for check in checks {
-            if let earlier = receipt(covering: check) {
+        var index = 0
+        while index < checks.count {
+            let check = checks[index]
+            // Consecutive checks of one declared group, none with a receipt, start together.
+            var run = [check]
+            if receipt(covering: check) == nil, let group = together.first(where: { $0.contains(check) }) {
+                while index + run.count < checks.count, group.contains(checks[index + run.count]),
+                      receipt(covering: checks[index + run.count]) == nil {
+                    run.append(checks[index + run.count])
+                }
+            }
+            index += run.count
+            var failure: String?
+            if run.count > 1 {
+                jobs.note(job.id, "ran together: \(run.count) checks")
+                let (statuses, thrown) = await runTogether(run, in: worktree, job: job.id, environment: environment, timeout: timeout)
+                passed += zip(run, statuses).filter { $0.1 == 0 }.map(\.0)
+                if let thrown {
+                    // The checks that passed before the error keep their receipts.
+                    job.checked = PassedChecks(base: tip, checks: passed, pressed: pressed, tree: tree, environment: fingerprint)
+                    try? jobs.save(job)
+                    throw thrown
+                }
+                failure = zip(run, statuses).first { $0.1 > 0 }.map { "`\($0.0.joined(separator: " "))` exited \($0.1)" }
+            } else if let earlier = receipt(covering: check) {
                 let on = "\(tree.map { "tree \($0.prefix(7))" } ?? job.key.head.prefix(7).description) over \(base) \(tip.prefix(7))"
                 jobs.note(job.id, "check `\(check.joined(separator: " "))` passed on \(on) in job \(earlier.id.uuidString); not run again")
+                passed.append(check)
             } else {
                 let status = try await runLogged(check, in: worktree, job: job.id, environment: environment, timeout: timeout)
-                guard status == 0 else { return "`\(check.joined(separator: " "))` exited \(status)" }
+                if status == 0 { passed.append(check) } else { failure = "`\(check.joined(separator: " "))` exited \(status)" }
             }
-            passed.append(check)
             job.checked = PassedChecks(base: tip, checks: passed, pressed: pressed, tree: tree, environment: fingerprint)
             // Unsaved, the next run only checks again.
             try? jobs.save(job)
+            if let failure { return failure }
         }
         return nil
+    }
+
+    /// Declared-independent checks at the same time, each with its own time limit and its output
+    /// as one block in the log. The first ending that is not a pass (a non-zero exit, a time limit,
+    /// an error) ends the others: their process groups are killed, as a cancelled run's are, and
+    /// what they report after that is noise. A terminated sibling keeps -1, never a pass. The
+    /// statuses come back beside the error, so the checks that passed keep their receipts.
+    private func runTogether(_ run: [[String]], in worktree: URL, job id: UUID, environment: [String: String],
+                             timeout: Duration) async -> (statuses: [Int32], thrown: Error?) {
+        await withTaskGroup(of: (Int, Result<Int32, Error>).self) { group in
+            for (offset, argv) in run.enumerated() {
+                group.addTask {
+                    do {
+                        return (offset, .success(try await self.runLogged(argv, in: worktree, job: id, environment: environment,
+                                                                          timeout: timeout, buffered: true)))
+                    } catch { return (offset, .failure(error)) }
+                }
+            }
+            var statuses = [Int32](repeating: -1, count: run.count)
+            var thrown: Error?
+            var ended = false
+            for await (offset, result) in group {
+                switch result {
+                case .success(let status):
+                    statuses[offset] = status
+                    if status != 0, !ended { ended = true; group.cancelAll() }
+                case .failure(let error):
+                    if !ended { ended = true; thrown = error; group.cancelAll() }
+                }
+            }
+            return (statuses, thrown)
+        }
     }
 
     /// Why the command must not run, or nil when the PR on GitHub is still open at the head the
@@ -103,15 +159,21 @@ extension Dispatcher {
     }
 
     func runLogged(_ argv: [String], in directory: URL, job id: UUID, environment: [String: String],
-                   timeout: Duration) async throws -> Int32 {
+                   timeout: Duration, buffered: Bool = false) async throws -> Int32 {
         guard let first = argv.first, let executable = Executables.resolve(first) else {
             throw DispatchError.agentNotFound(argv.first ?? "")
         }
         // The command is logged as it starts and its output as it comes, so a log that stops shows
-        // what is still running and how far it got, even when it is stopped at its time limit.
+        // what is still running and how far it got, even when it is stopped at its time limit. A
+        // check running beside others is written as one block when it ends, so lines never mix.
         let handle = try FileHandle.appending(to: jobs.logURL(id))
         defer { try? handle.close() }
-        handle.write(Data("$ \(argv.joined(separator: " "))\n".utf8))
+        let header = Data("$ \(argv.joined(separator: " "))\n".utf8)
+        let buffer = OSAllocatedUnfairLock<Data>(initialState: Data())
+        defer { if buffered { handle.write(header + buffer.withLock { $0 }) } }
+        if !buffered { handle.write(header) }
+        let write: @Sendable (Data) -> Void
+        if buffered { write = { data in buffer.withLock { $0.append(data) } } } else { write = { handle.write($0) } }
         let group = OSAllocatedUnfairLock<Int32?>(initialState: nil)
         defer { group.withLock { $0 }.map { try? FileManager.default.removeItem(at: jobs.checkGroupURL(id, group: $0)) } }
         do {
@@ -122,7 +184,7 @@ extension Dispatcher {
                                             group.withLock { $0 = pid }
                                             FileManager.default.createFile(atPath: jobs.checkGroupURL(id, group: pid).path, contents: nil)
                                         },
-                                        output: { handle.write($0) }).status
+                                        output: write).status
         } catch ProcessRunner.Failure.timedOut {
             throw DispatchError.timedOut(argv.joined(separator: " "), minutes: Int(timeout.components.seconds / 60))
         }

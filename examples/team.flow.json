@@ -63,7 +63,8 @@
   },
   "checks": {
     "beforeSession": [["git", "merge-tree", "--write-tree", "origin/develop", "HEAD"]],
-    "beforeMerge": [["bash", "scripts/check.sh", "--fast"]]
+    "beforeMerge": [["bash", "scripts/check.sh", "--fast"]],
+    "together": [[["bun", "run", "lint"], ["bun", "run", "typecheck"]]]
   },
   "intake": {
     "search": ["repo:{repo}", "is:issue", "is:open", "no:assignee", "label:stage:ready"],

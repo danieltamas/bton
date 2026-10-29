@@ -82,6 +82,17 @@ public struct Flow: Decodable, Sendable {
                     return .invalid("moves[\(index)].when: \(prefix) needs at least one check name")
                 }
             }
+            var grouped: Set<[String]> = []
+            for group in flow.checks?.together ?? [] {
+                guard group.count >= 2, group.allSatisfy({ !$0.isEmpty }) else {
+                    return .invalid("checks.together: each group names at least two argv")
+                }
+                for argv in group {
+                    guard grouped.insert(argv).inserted else {
+                        return .invalid("checks.together: \(argv.joined(separator: " ")) is in two groups")
+                    }
+                }
+            }
             for (move, rule) in flow.dispatch {
                 // Agents given per tier leave the tiers without one to the command.
                 if rule.command != nil, let agent = rule.agent, case .same = agent {
@@ -225,6 +236,9 @@ public struct Checks: Decodable, Sendable {
     /// Checks never covered by an earlier run's receipt: one that reads a service or the clock is
     /// not a function of the tree.
     public let fresh: [[String]]?
+    /// Groups of argv a team declares independent: consecutive checks of one group run at the
+    /// same time. Declared, never inferred.
+    public let together: [[[String]]]?
 }
 
 public struct Intake: Decodable, Sendable {

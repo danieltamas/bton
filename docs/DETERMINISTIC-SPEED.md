@@ -106,7 +106,11 @@ no blind retry of a timed-out command.
    escalate). Saves one supervisor session per recognized failure. Risk: a broad match hides a real
    defect; match the structured cause only, leave the rest to the model.
 
-9. **Independent checks in parallel groups.** Checks run serially (`DispatcherCommands.swift`).
+9. **Done (0.15.0), opt-in: `checks.together` names groups of argv a team declares independent,
+   and consecutive checks of one group start at the same time (`runTogether`), each with its own
+   time limit and its output as one block in the log; the first failure ends the others. Off
+   without the declaration; little gain where one suite dominates, as measured on lexito. The
+   original item: independent checks in parallel groups.** Checks ran serially (`DispatcherCommands.swift`).
    An opt-in group in the flow runs declared-independent checks together, so A+B becomes max(A, B).
    Little gain where one suite dominates, as on lexito. Risk: Postgres, output directories and CPU
    contention; independence is declared in the flow, never inferred from argv.
