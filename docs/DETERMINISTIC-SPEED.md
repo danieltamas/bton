@@ -43,7 +43,13 @@ no blind retry of a timed-out command.
    context. Risk: contributor text in the packet is prompt input; label it as evidence, keep the
    instructions in the prompt, and keep the live re-read before any write.
 
-4. **Give a re-review its delta.** The agent reconstructs what changed since its last review
+4. **Done (0.15.0): `pr-evidence.md` has a `Previous review` section: the latest review the
+   flow counts (never the decision), its head resolved in the worktree, whether HEAD descends
+   from it, the commits since, whether the merge-base with the base moved, the numstat since,
+   and the posted findings as a table with "Location touched since". Its `scope` line is
+   `delta` only when the reviewed head is an ancestor, the base context is unchanged and every
+   git read succeeded, else `full`; the playbook (v6) reads that line instead of reconstructing it. The original item:
+   Give a re-review its delta.** The agent reconstructs what changed since its last review
    (`PRPlaybook.swift`, ancestry step). Bton knows the reviewed head from the review it posted:
    compute `reviewed-head..head`, whether the base moved, and attach the previous findings as a
    table with each one's state. Saves the discovery turns and the repeated full diff on large PRs

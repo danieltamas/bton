@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 5
+    public static let version = 6
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -86,11 +86,13 @@ public enum PRPlaybook {
     1. Read the current PR diff, latest applicable review and subsequent fixed or
     decision responses. Read older discussion only to resolve an open finding.
     Do not edit, commit or push.
-    2. For a previously reviewed head, verify its SHA and ancestry. If the prior
-    review is usable and the head is its descendant with unchanged base context,
-    focus on the intervening delta, affected interactions and unresolved findings.
-    Reuse evidence for unchanged areas. After force-push, rebase, unavailable old
-    SHA or changed base, reconstruct the current merge-base diff; do not assume
+    2. For a previously reviewed head, pr-evidence.md's Previous review section
+    states the reviewed head, its ancestry, the base context, the changes since
+    and the posted findings with whether each location was touched: its scope
+    line decides. With scope delta, focus on the intervening changes, affected
+    interactions and unresolved findings; reuse evidence for unchanged areas.
+    With scope full (force-push, rebase, old SHA unavailable, changed base) or
+    without the section, reconstruct the current merge-base diff; do not assume
     old coverage still applies.
     3. Trace changed behavior and relevant tests. Check failure paths, compatibility,
     authorization, concurrency and data loss where implicated. Inspect generator

@@ -233,7 +233,12 @@ actor Dispatcher {
                 // What Bton read already, as data, so the agent fetches none of it again.
                 let local = await PREvidence.read(worktree: worktree, base: base, ghPath: github.ghPath, runner: runner)
                 let receipts = jobs.all().filter { $0.key.repo == candidate.key.repo && $0.key.head == pr.headSha }.compactMap(\.checked)
-                candidate.attachments[PREvidence.file] = PREvidence.text(pr: pr, local: local, receipts: receipts,
+                var previous = flow.flatMap { PREvidence.previousReview(pr: pr, flow: $0) }
+                if let review = previous?.review {
+                    previous?.delta = await PREvidence.delta(worktree: worktree, base: base, reviewed: review.head,
+                                                             ghPath: github.ghPath, runner: runner)
+                }
+                candidate.attachments[PREvidence.file] = PREvidence.text(pr: pr, local: local, receipts: receipts, previous: previous,
                                                                          reviewHeadings: flow?.allReviewHeadings ?? [], now: .now)
                 candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
             }
