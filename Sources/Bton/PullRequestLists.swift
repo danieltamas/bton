@@ -124,6 +124,10 @@ private struct PullRequestRow: View {
                         }
                         if let cost = pr.cost { Cost(value: cost) }
                     }
+                    // Its own width, like an issue row's action: a two-line title wraps around it
+                    // instead of squeezing the cost into one character per line.
+                    .fixedSize()
+                    .layoutPriority(2)
                 }
                 // The card's full width, so the reason never squeezes the title into a sliver.
                 if let failed, let detail = failed.job.detail {

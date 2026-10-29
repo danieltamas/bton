@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A PR card's cost never wraps.** A two-line title used to take the card's whole width and squeeze the move chip, the agent line and the cost into one character per line; the trailing column now keeps its width and the title wraps around it, as on an issue card.
+
 ## 0.16.1 (2026-10-29)
 
 **The Triage list shows the newest issues first.** It used to show the oldest first, so a Load more from GitHub put the older page on top. Issues with no priority still come first; within each group the newest is at the top, whatever repo or page it came from.
