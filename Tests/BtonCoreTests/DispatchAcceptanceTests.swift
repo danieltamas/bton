@@ -53,7 +53,7 @@ struct DispatchAcceptanceTests {
         let candidate = try #require(candidates.first)
         #expect(candidates.count == 1)
         #expect(candidate.move.name == "fix")
-        #expect(candidate.key == JobKey(repo: DispatchFixture.repo, item: "pr-12", move: "fix", head: DispatchFixture.head))
+        #expect(candidate.key == DispatchPlanner.key(for: try DispatchFixture.pr(hostile: true), move: "fix", flow: flow, me: "me", repo: DispatchFixture.repo))
         #expect(candidate.agent == "claude")
         #expect(candidate.prompt == "Bton e2e: PR #12 of synthetic/project at head \(DispatchFixture.head). Reply with the single word done.")
         #expect(candidate.command == nil)

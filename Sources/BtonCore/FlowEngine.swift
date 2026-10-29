@@ -127,6 +127,14 @@ public enum FlowEngine {
         }.sorted { $0.createdAt < $1.createdAt }
     }
 
+    /// The PR's review round for me: the newest counting review or decision by someone else, as
+    /// the seconds of its time, or "" before any. My own posts never open a round for me, so a
+    /// job's own review or decision cannot start it again.
+    public static func round(of pr: PullRequest, flow: Flow, me: String) -> String {
+        reviews(of: pr, flow: flow).last { $0.author?.caseInsensitiveCompare(me) != .orderedSame }
+            .map { String(Int($0.createdAt.timeIntervalSince1970)) } ?? ""
+    }
+
     /// The first rule whose conditions all hold for the PR.
     static func rule(for pr: PullRequest, flow: Flow) -> MoveRule? {
         let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))

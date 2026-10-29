@@ -165,7 +165,7 @@ private struct PullRequestRow: View {
         guard let me, let flow = store.flows[pr.repo]?.flow else { return [] }
         let startsMoves = store.repos.first { $0.slug.caseInsensitiveCompare(pr.repo) == .orderedSame }?.startsMoves ?? false
         return RunNowButton.moves(for: pr, current: move, flow: flow, me: me).filter { now in
-            let key = JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: now, head: pr.headSha)
+            let key = store.key(for: pr, move: now)
             return DispatchPlanner.offersStart(now, current: move.name, startsMoves: startsMoves,
                                                ranOnHead: store.jobs.contains { $0.key == key },
                                                failedOnHead: store.failedOnHead(pr, move: now) != nil)

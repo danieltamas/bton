@@ -10,15 +10,30 @@ public struct JobKey: Hashable, Codable, Sendable, CustomStringConvertible {
     public let move: String
     /// The PR head SHA; empty for intake.
     public let head: String
+    /// The review round on that head: the newest review by someone else (`FlowEngine.round`), so
+    /// a move runs again, on every Mac, when a teammate posts another review on the same commit.
+    /// Empty before any review, and for every key that is not a PR move.
+    public let round: String
 
-    public init(repo: String, item: String, move: String, head: String) {
+    public init(repo: String, item: String, move: String, head: String, round: String = "") {
         self.repo = repo
         self.item = item
         self.move = move
         self.head = head
+        self.round = round
     }
 
-    public var description: String { "\(repo)#\(item) \(move)@\(head.prefix(12))" }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        repo = try container.decode(String.self, forKey: .repo)
+        item = try container.decode(String.self, forKey: .item)
+        move = try container.decode(String.self, forKey: .move)
+        head = try container.decode(String.self, forKey: .head)
+        // Jobs written before rounds existed.
+        round = try container.decodeIfPresent(String.self, forKey: .round) ?? ""
+    }
+
+    public var description: String { "\(repo)#\(item) \(move)@\(head.prefix(12))" + (round.isEmpty ? "" : "/\(round)") }
 }
 
 /// One agent session or command working one key, in its own worktree.

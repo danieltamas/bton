@@ -4,6 +4,8 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
+**A new review on the same commit runs the move again.** Bton ran each move once per PR head: on #582 the owner's `decide` job approved, a reviewer answered with `## Review: changes` seconds later on the same head, the move became `decide` again, and nothing happened on any Mac until the author pushed: no job, and the card showed "decide · you" with no button, because the job's key (repo, PR, move, head) was the one that had already run. A job's key now carries the review round too: the newest counting review or decision by someone else. A teammate's new review on the same head opens a new round, so the move starts again where the repo starts its moves, and the card offers it where it does not; your own review or decision never opens a round for you, so a job cannot start itself again from what it posted. Once after this update, a PR whose current move already ran under the old key and has a review by someone else runs that move one more time per Mac that has not updated yet; after that the keys are stable.
+
 **A draft reply shows the conversation it answers.** View draft opened the agent's text over an empty panel: to change a line you had to remember what the teammate asked, or open the issue on GitHub beside it. The draft now sits under the issue's thread, the body and every comment the sync read (its last 20), oldest first, the asking comment tinted and scrolled into view, so the edit has its context. The reply box keeps its height under it; a longer thread is whole on GitHub, through the same arrow as before.
 
 ## 0.18.0 (2026-10-29)

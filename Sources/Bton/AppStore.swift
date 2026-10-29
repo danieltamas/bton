@@ -477,13 +477,18 @@ final class AppStore {
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
     /// The move's run on this head that failed and may run again, if one did.
     func failedOnHead(_ pr: PullRequest, move: String) -> Job? {
-        let key = JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move, head: pr.headSha)
+        let key = key(for: pr, move: move)
         return jobs.first { $0.key == key }.flatMap { $0.canRetry(among: jobs) ? $0 : nil }
+    }
+
+    /// The key a move of this PR runs under now: `DispatchPlanner.key`, with the round the flow reads.
+    func key(for pr: PullRequest, move: String) -> JobKey {
+        DispatchPlanner.key(for: pr, move: move, flow: flows[pr.repo]?.flow, me: me ?? "", repo: pr.repo)
     }
 
     func runNow(_ pr: PullRequest, move: String) async {
         markStarting(repo: pr.repo, item: "pr-\(pr.number)")
-        try? await engine?.runNow(JobKey(repo: pr.repo, item: "pr-\(pr.number)", move: move, head: pr.headSha))
+        try? await engine?.runNow(key(for: pr, move: move))
         await refresh()
     }
 
