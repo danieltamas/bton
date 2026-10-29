@@ -1,0 +1,7 @@
+#!/bin/bash
+# No co-author trailer, ever: the owner is the one author of every commit in this repo.
+if grep -qiE '^(Co-Authored-By|Co-authored-by):' "$1"; then
+  echo "commit message: no Co-Authored-By trailer; the commit has one author" >&2
+  exit 1
+fi
+exit 0

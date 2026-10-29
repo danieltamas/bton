@@ -27,4 +27,18 @@ if command -v repo-sync >/dev/null 2>&1; then
     exit 1
   fi
 fi
+# 3. Every commit is the owner's. A helper agent (codex writing tests, a reviewer) never commits,
+#    and a session never commits with another author: on 2026-10-28 seven test commits landed as
+#    "Codex <codex@openai.com>" and GitHub listed Codex as a contributor.
+owner_name="Daniel Tamas"
+owner_email="hello@danieltamas.ro"
+author_name=$(git var GIT_AUTHOR_IDENT | sed 's/ <.*//')
+author_email=$(git var GIT_AUTHOR_IDENT | sed 's/.*<\(.*\)>.*/\1/')
+committer_name=$(git var GIT_COMMITTER_IDENT | sed 's/ <.*//')
+committer_email=$(git var GIT_COMMITTER_IDENT | sed 's/.*<\(.*\)>.*/\1/')
+if [ "$author_name" != "$owner_name" ] || [ "$author_email" != "$owner_email" ] \
+   || [ "$committer_name" != "$owner_name" ] || [ "$committer_email" != "$owner_email" ]; then
+  echo "commits in this repo are made by $owner_name <$owner_email> only (got author $author_name <$author_email>, committer $committer_name <$committer_email>); a helper agent leaves its files for the owner to commit" >&2
+  exit 1
+fi
 exit 0

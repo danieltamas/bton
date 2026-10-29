@@ -13,6 +13,10 @@ UI:
 Several agents in this repo (enforced by `scripts/hooks`, activated once per clone with
 `git config core.hooksPath scripts/hooks`; run that first thing if `git config core.hooksPath`
 prints nothing):
+- Every commit is authored and committed by the owner, Daniel Tamas <hello@danieltamas.ro>, with
+  no co-author trailer; the `pre-commit` and `commit-msg` hooks refuse anything else. A helper
+  agent (Codex writing tests, a reviewer, a subagent) never runs `git commit`: it leaves its files
+  in the worktree and the session that asked for them stages and commits them.
 - Work in a worktree, `.worktrees/<branch>`, branched from main. The main checkout is for
   merging and releasing only. Before the first write: `repo-sync peers`, then
   `repo-sync claim --task "<what>" <paths>`; stage by path, commit only hunks you wrote.
