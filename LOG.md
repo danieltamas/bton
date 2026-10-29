@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.18.0 (2026-10-29)
 
 **A read-only job asks the code graph through a tool.** A draft reply, a new-issue job and the supervisor run without a shell, so the line telling them to run `graphify-src` was one they could not follow: every draft job logged `graph queries: 0` and read the tree file by file. Bton's own MCP server now serves a `graph` tool beside `ask` whenever the job's checkout has a graph; it runs `graphify-src` as Bton's process with the agent's question as its one argument, the agent is told to use it, and the job log counts those calls as graph queries. A job with a shell keeps running `graphify-src` itself.
 
