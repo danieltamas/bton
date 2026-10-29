@@ -55,7 +55,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: store.triaging)
                 .animation(Motion.spring, value: store.viewingRepo)
                 .animation(Motion.spring, value: store.composing?.id)
-            footer
+            PanelFooter()
         }
         .frame(width: 404, height: Self.height)
         .background(Backdrop())
@@ -63,7 +63,11 @@ struct RootView: View {
         .environment(\.panelVisible, visible)
         // Each opening asks at most once per 15 minutes; ReleaseWatch keeps the answer between them.
         // The README's screenshots never ask.
-        .task(id: visible) { if visible && !stillImage { ReleaseWatch.shared.refresh() } }
+        .task(id: visible) {
+            guard visible && !stillImage else { return }
+            ReleaseWatch.shared.refresh()
+            await store.refreshStarOffer()
+        }
         .preferredColorScheme(Theme.scheme)
     }
 
@@ -462,23 +466,6 @@ struct RootView: View {
     private var listedRepos: [String] {
         Array(Set(store.openPullRequests.map(\.repo) + store.issueAsks.map(\.repo) + store.ready.map(\.repo) + store.triage.map(\.repo)
             + store.jobs.map(\.key.repo) + store.merged.map(\.repo))).sorted()
-    }
-
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if store.local.reports.isEmpty {
-                Text("Checks GitHub every \(store.pollEvery)")
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
-            } else {
-                BranchSummary()
-            }
-            Spacer()
-            AppControls()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Theme.canvas.opacity(0.6))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 0.5) }
     }
 
     /// The menu bar window does not own key focus, so the app comes forward first.

@@ -19,6 +19,11 @@ enum DemoShots {
         try write(hero(prs: panel(.pullRequests), jobs: panel(.jobs)), to: directory.appendingPathComponent("hero.png"))
         try write(panel(.pullRequests), to: directory.appendingPathComponent("pull-requests.png"))
         try write(panel(.jobs), to: directory.appendingPathComponent("jobs.png"))
+        store.showStarOffer()
+        try write(panel(.pullRequests), to: directory.appendingPathComponent("footer-star.png"))
+        store.showStarOffer(starring: true)
+        try write(panel(.pullRequests), to: directory.appendingPathComponent("footer-starring.png"))
+        store.showStarOffer(false)
         try write(panel(.issues), to: directory.appendingPathComponent("issues.png"))
         store.demoReplies = [1: .questions("Should the CSV sit beside the PDF export or replace it?")]
         let started = NewIssueSession(repo: repo)

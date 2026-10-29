@@ -28,6 +28,8 @@ public struct BtonConfig: Codable, Sendable {
     /// What a job is told about its graph, with `{graph}`, `{base}` and `{commit}`; nil is
     /// `CodeGraph.defaultInstruction`.
     public var graphInstruction: String? = nil
+    /// The owner starred Bton on GitHub from the footer (RepoStar): the offer never comes back.
+    public var starredRepo: Bool? = nil
 
     /// Whether Bton keeps and uses the repo's code graph: this switch and the repo's both on.
     public func buildsGraph(_ repo: WatchedRepo) -> Bool { codeGraphs && repo.buildsGraph }

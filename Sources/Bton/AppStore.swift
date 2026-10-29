@@ -29,6 +29,10 @@ final class AppStore {
     let local = LocalSync()
     /// The presses running now: every async button goes through it (AsyncPress).
     let inFlight = InFlightActions()
+    /// The footer's "Star on GitHub": shown once GitHub said the owner's gh has not starred Bton.
+    private(set) var starOffer = false
+    /// The README's starring state: the press is drawn in flight without a press.
+    private(set) var demoStarring = false
     /// The job whose session the window shows in place of its list.
     var watchingJob: UUID?
     /// The issue ask whose drafted reply the window shows in place of its list.
@@ -217,6 +221,31 @@ final class AppStore {
         try update { $0.repos.removeAll { $0.slug == slug } }
         openPullRequests.removeAll { $0.repo == slug }
         merged.removeAll { $0.repo == slug }
+    }
+
+    /// Asks GitHub once per panel open whether to offer the star; a yes on disk skips the
+    /// question for good. Never in the demo: it would run gh.
+    func refreshStarOffer() async {
+        guard !isDemo else { return }
+        let repoStar = RepoStar(home: home)
+        guard repoStar.shouldOffer() else { return }
+        starOffer = await repoStar.refresh() == .notStarred
+    }
+
+    /// Stars Bton through the owner's gh. A yes takes the offer away for good; a no says so.
+    func starRepo() async {
+        if await RepoStar(home: home).star() {
+            starOffer = false
+            config.starredRepo = true
+        } else {
+            Notifier.post(title: "Bton", body: "Could not star it: is gh logged in?", id: "star")
+        }
+    }
+
+    /// The README's footer in its offering state; nothing is asked of GitHub.
+    func showStarOffer(_ on: Bool = true, starring: Bool = false) {
+        starOffer = on
+        demoStarring = on && starring
     }
 
     /// Saves first, so a change that could not be written never shows as made. Starts from the
