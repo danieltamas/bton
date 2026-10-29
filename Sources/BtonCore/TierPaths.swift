@@ -62,11 +62,29 @@ extension FlowEngine {
     /// order of `tier.values` (lowest first). A PR whose files were too many to read counts as the
     /// highest tier, so a long change never hides a sensitive path.
     public static func tierVerdict(of pr: PullRequest, rule: TierRule) -> TierVerdict {
-        let marked = tier(of: pr.body, rule: rule)
-        guard let paths = rule.paths, !paths.isEmpty else { return TierVerdict(tier: marked, reason: nil) }
         let rank = { (tier: String) in rule.values.firstIndex(of: tier) ?? -1 }
-        var best = marked
+        // An `only` tier is earned by the files, never claimed: named in the body, it counts as
+        // nothing, so a code PR marked `Tier: docs` is at the default tier.
+        let claimed = namedTier(of: pr.body, rule: rule).flatMap { rule.only?[$0] == nil ? $0 : nil }
+        var best = claimed ?? rule.defaultTier
         var reason: String?
+        // Lowered when every changed file is under an `only` tier's globs and the body names no
+        // tier but the default (a template pre-fills it). A truncated or empty file list never
+        // lowers; `paths` raise it again below.
+        if let only = rule.only, !only.isEmpty, !pr.changedFilesTruncated, !pr.changedFiles.isEmpty {
+            if claimed == nil || claimed == rule.defaultTier {
+                let covering = only.filter { tier, globs in
+                    rank(tier) >= 0 && rank(tier) < rank(best)
+                        && pr.changedFiles.allSatisfy { file in globs.contains { PathGlob.matches($0, file) } }
+                }
+                if let lowest = covering.keys.min(by: { rank($0) < rank($1) }) {
+                    best = lowest
+                    let count = pr.changedFiles.count
+                    reason = "only \(count) \(count == 1 ? "file" : "files"), all under tier.only"
+                }
+            }
+        }
+        guard let paths = rule.paths, !paths.isEmpty else { return TierVerdict(tier: best, reason: reason) }
         if pr.changedFilesTruncated, let highest = rule.values.last, rank(highest) > rank(best) {
             best = highest
             reason = "more than \(pr.changedFiles.count) changed files"

@@ -70,15 +70,20 @@ public enum FlowEngine {
     static let trustedAssociations: Set<String> = ["OWNER", "MEMBER", "COLLABORATOR"]
 
     public static func tier(of body: String, rule: TierRule) -> String {
+        namedTier(of: body, rule: rule) ?? rule.defaultTier
+    }
+
+    /// The one tier the body's marker line names; nil when there is no line, no value or several.
+    public static func namedTier(of body: String, rule: TierRule) -> String? {
         guard let line = body.split(whereSeparator: \.isNewline)
             .first(where: { $0.range(of: rule.marker, options: .caseInsensitive) != nil }),
-            let marker = line.range(of: rule.marker, options: .caseInsensitive) else { return rule.defaultTier }
+            let marker = line.range(of: rule.marker, options: .caseInsensitive) else { return nil }
         let rest = line[marker.upperBound...]
         let named = rule.values.filter { value in
             let pattern = "(?<![A-Za-z0-9])" + NSRegularExpression.escapedPattern(for: value) + "(?![A-Za-z0-9])"
             return rest.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
         }
-        return named.count == 1 ? named[0] : rule.defaultTier
+        return named.count == 1 ? named[0] : nil
     }
 
     /// Rules 1–3 of "Reviews": heading, verdict word, then a named head.

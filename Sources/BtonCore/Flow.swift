@@ -68,6 +68,12 @@ public struct Flow: Decodable, Sendable {
                     return .invalid("tier.paths.\(tier): \(bad) is not a glob (no negation, no empty pattern)")
                 }
             }
+            for (tier, globs) in flow.tier.only ?? [:] {
+                guard flow.tier.values.contains(tier) else { return .invalid("tier.only.\(tier) is not one of tier.values") }
+                if let bad = globs.first(where: { !PathGlob.isValid($0) }) {
+                    return .invalid("tier.only.\(tier): \(bad) is not a glob (no negation, no empty pattern)")
+                }
+            }
             for (index, rule) in flow.moves.enumerated() {
                 // Any other unknown predicate never holds and the flow stays valid: an older Bton
                 // must not refuse a flow for a predicate it does not know yet.
@@ -77,7 +83,8 @@ public struct Flow: Decodable, Sendable {
                 }
             }
             for (move, rule) in flow.dispatch {
-                if rule.command != nil && (rule.agent != nil || rule.prompt != nil) {
+                // Agents given per tier leave the tiers without one to the command.
+                if rule.command != nil, let agent = rule.agent, case .same = agent {
                     return .invalid("dispatch.\(move): a move runs a command or an agent, not both")
                 }
                 if let helpers = rule.helpers, helpers.count > 3 || !helpers.allSatisfy(BtonConfig.isAgentName) {
@@ -129,8 +136,11 @@ public struct TierRule: Decodable, Sendable {
     public let defaultTier: String
     /// Globs of changed files by tier: a PR touching one is at least that tier, whatever its body says.
     public let paths: [String: [String]]?
+    /// Globs by tier a PR is lowered to when every changed file matches one of them and the body
+    /// names no other tier: earned by the files, never claimed, and raised again by `paths`.
+    public let only: [String: [String]]?
 
-    enum CodingKeys: String, CodingKey { case marker, values, defaultTier = "default", paths }
+    enum CodingKeys: String, CodingKey { case marker, values, defaultTier = "default", paths, only }
 }
 
 public struct ReviewHeading: Decodable, Sendable {

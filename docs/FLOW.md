@@ -15,7 +15,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 |-------|---------|
 | `version` | `1`. |
 | `base` | The branch PRs must target. A PR with another base is shown and never dispatched. |
-| `tier` | `{ "marker", "values", "default", "paths"? }`: how a PR body names its tier, and which changed files raise it (below). |
+| `tier` | `{ "marker", "values", "default", "paths"?, "only"? }`: how a PR body names its tier, which changed files raise it, and which lower it when they are all the PR changes (below). |
 | `reviews` | Per tier, the headings that count as a review: `[{ "heading", "notByAuthor"? }]`. |
 | `fixed` | The heading of a response comment, e.g. `## Fixed:`. |
 | `reviewers` | Optional logins for the reviewer rotation (below). |
@@ -62,6 +62,29 @@ root and one without matches at any depth, and a directory's pattern covers what
 There is no negation or `[...]` class, and a `paths` key that is not one of `values`, or a pattern
 starting with `!` or containing `[` or a backslash, makes the flow invalid. A PR whose file list
 GitHub did not return counts as the highest tier. Without `paths` the body's tier stands.
+
+### Tier lowered by only
+
+`tier.only` maps a tier to globs the other way round: a PR is lowered to that tier when every
+changed file matches one of them, the list is complete (not truncated, not empty) and the body
+names no tier but the default (a template that pre-fills `Tier: feature` does not stop it). An
+`only` tier is earned by the files, never claimed: `Tier: docs` on a PR that changes code counts
+as naming nothing. Any other tier the author names stands, and `paths` raise the lowered tier
+again, so `SECURITY.md` under a high-risk glob wins over `*.md` under `only`. Several `only` tiers
+give the lowest one whose globs cover every file. The chip's hover reads
+`docs: only 2 files, all under tier.only`. Keep the allowlist to files that cannot run
+(`["*.md", "docs/**/*.md"]`): the lowering is by path, never by line count, and a markdown file
+can carry an executable example, so give the tier a review that reads the files. With a
+`dispatch.review.command` beside per-tier agents (below), the `docs` tier gets a command review
+whose verdict is policy, not judgment:
+
+```json
+"tier": { "marker": "Tier:", "values": ["docs", "quick fix", "feature", "high-risk"], "default": "feature",
+          "only": { "docs": ["*.md", "docs/**/*.md"] } },
+"reviews": { "docs": [{ "heading": "## Review:" }], ... },
+"dispatch": { "review": { "command": ["bash", "scripts/docs-review.sh", "{number}", "{head}", "{base}", "{tier}"],
+                          "agent": { "quick fix": "codex", "feature": "claude", "high-risk": "claude" }, ... } }
+```
 
 ## Reviews
 
@@ -200,7 +223,11 @@ agent's review would be posted as the author and ignored.
   line is a review (rules above) naming the current head.
 - `command`: an argv run instead of an agent (merge, or a review), in a fresh worktree of the base
   (the base branch, never the PR's head, so a PR cannot rewrite the script that reviews it). A move
-  takes a `command` or an `agent`, never both. After the
+  takes a `command` or an `agent`; both only when `agent` is given per tier, and then the tiers
+  without an agent run the command (a `docs` tier's review script beside the agents of the other
+  tiers). Since the worktree is at the base, a review script reads the PR from its head:
+  `git fetch origin {head}`, `git diff --name-only {base}...{head}`, `git show {head}:<path>`.
+  After the
   checks, right before the command, Bton re-reads the PR on GitHub and runs it only if the PR is
   still open at the head the move started on (`{head}`); a moved head, a closed PR or a failed
   read fails the job and nothing runs. The command should still pin that head

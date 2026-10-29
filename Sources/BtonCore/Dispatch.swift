@@ -176,7 +176,7 @@ public enum DispatchPlanner {
                                           key: JobKey(repo: repo, item: "pr-\(pr.number)", move: move.name, head: pr.headSha),
                                           agent: rule.agent?.value(for: move.tier),
                                           prompt: rule.prompt?.value(for: move.tier).map(filling),
-                                          command: rule.command?.map(filling),
+                                          command: rule.agent?.value(for: move.tier) == nil ? rule.command?.map(filling) : nil,
                                           postComment: rule.post == "comment", timeout: rule.timeout)
         candidate.helpers = rule.helpers ?? []
         candidate.skipsChecks = rule.checks == RuleChecks.none
@@ -184,7 +184,8 @@ public enum DispatchPlanner {
             candidate.checks = argv.map { $0.map(filling) }
             candidate.fresh = fresh.map { $0.map(filling) }
         }
-        if candidate.postComment, let second = rule.second, let agent = second.agent.value(for: move.tier),
+        // A command review has no first agent for a second to run beside.
+        if candidate.postComment, candidate.agent != nil, let second = rule.second, let agent = second.agent.value(for: move.tier),
            let prompt = second.prompt.value(for: move.tier) {
             candidate.second = agent
             candidate.secondPrompt = filling(prompt)

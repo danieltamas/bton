@@ -83,8 +83,13 @@ no blind retry of a timed-out command.
    review session each time a PR is mechanically broken. Risk: the same gate on the `fix` move
    stops the agent from repairing what the gate found; gates are chosen per move.
 
-7. **A deterministic review for documentation-only PRs.** Tier rules only raise a tier
-   (`TierPaths.swift`). A rule that lowers it when every changed path matches an allowlist
+7. **Done (0.15.0): `tier.only` lowers a PR to a tier when every changed file matches its
+   globs and the body names no tier but the default (an `only` tier named in the body is not a
+   claim; `paths` still raise it), and a dispatch rule with per-tier agents runs its `command`
+   for the tiers without one, so the team example's `docs` tier gets `scripts/docs-review.sh`
+   as its review. The rule's `checks` (item 6) still run before it: checks are per rule, not
+   per tier. The original item: a deterministic review for documentation-only PRs.** Tier
+   rules only raised a tier (`TierPaths.swift`). A rule that lowers it when every changed path matches an allowlist
    (`docs/**`, `*.md`, excluding anything executable or generated), and a command review (link
    check, markdown lint, plain-character check) that posts a verdict marked as policy, not judgment.
    Saves the whole review session and its helper. Risk: a markdown file can carry an executable
