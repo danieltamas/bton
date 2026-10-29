@@ -16,8 +16,7 @@ struct PanelFooter: View {
                 .fixedSize().layoutPriority(1).frame(height: 12)
             }
             if store.local.reports.isEmpty {
-                Text("Checks GitHub every \(store.pollEvery)")
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                nextCheck
             } else {
                 BranchSummary()
             }
@@ -28,5 +27,24 @@ struct PanelFooter: View {
         .padding(.vertical, 10)
         .background(Theme.canvas.opacity(0.6))
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 0.5) }
+    }
+
+    /// The GitHub mark and the time until the next read, counting down by the second; the
+    /// interval itself is the tooltip. Before the first read it shows the interval.
+    private var nextCheck: some View {
+        HStack(spacing: 4) {
+            GitHubMark().fill(Theme.textTertiary).frame(width: 10, height: 10)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(countdown(at: context.date))
+            }
+            .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary).lineLimit(1)
+        }
+        .help("Checks GitHub every \(store.pollEvery)")
+    }
+
+    private func countdown(at now: Date) -> String {
+        guard let last = store.lastRefresh else { return store.pollEvery }
+        let left = max(0, Int(last.addingTimeInterval(TimeInterval(store.pollSeconds)).timeIntervalSince(now).rounded(.up)))
+        return "\(left / 60):\(String(format: "%02d", left % 60))"
     }
 }

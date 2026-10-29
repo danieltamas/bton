@@ -4,7 +4,7 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
-**Star on GitHub, from the footer.** Until the owner's gh account has starred Bton, a gold capsule at the left of the footer offers it; one click stars `danieltamas/bton` through that same logged-in `gh`, and the capsule is gone for good, remembered in `config.json`. Bton asks GitHub once per panel open whether the star is there; no `gh`, no login or no answer shows nothing, a star that fails says "Could not star it: is gh logged in?" and keeps the offer. Nothing is sent anywhere else and nothing is logged. The capsule pulses softly while the panel shows, not under Reduce Motion, and the footer keeps its height.
+**Star on GitHub, from the footer.** Until the owner's gh account has starred Bton, a gold capsule at the left of the footer offers it; one click stars `danieltamas/bton` through that same logged-in `gh`, and the capsule is gone for good, remembered in `config.json`. Bton asks GitHub once per panel open whether the star is there; no `gh`, no login or no answer shows nothing, a star that fails says "Could not star it: is gh logged in?" and keeps the offer. Nothing is sent anywhere else and nothing is logged. The capsule pulses softly while the panel shows, not under Reduce Motion, and the footer keeps its height. Beside it, "Checks GitHub every 5m" is now the GitHub mark and a countdown to the next read, as in RMJ; the interval is the tooltip.
 
 **A PR card's cost never wraps.** A two-line title used to take the card's whole width and squeeze the move chip, the agent line and the cost into one character per line; the trailing column now keeps its width and the title wraps around it, as on an issue card.
 
