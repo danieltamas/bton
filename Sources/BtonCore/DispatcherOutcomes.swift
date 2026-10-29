@@ -12,9 +12,10 @@ extension Dispatcher {
         agent.map { AgentLogins.held(jobs: jobs.all(), loggedInAt: AgentLogins.load(home: jobs.home)).contains($0) } ?? false
     }
 
-    /// One comment per key, carrying Bton's marker so it never changes a move.
-    func postFailure(_ candidate: DispatchCandidate, text: String) async {
-        guard let pr = candidate.pr else { return }
+    /// One comment per key, carrying Bton's marker so it never changes a move. Answers whether
+    /// the comment is on the PR: a failure nobody can read is not the known kind.
+    func postFailure(_ candidate: DispatchCandidate, text: String) async -> Bool {
+        guard let pr = candidate.pr else { return false }
         let body = "Bton did not start `\(candidate.move.name)` on \(pr.headSha.prefix(7)): \(text).\n\n"
             + BtonMarker.line("check-failed \(candidate.key)")
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
@@ -22,8 +23,10 @@ extension Dispatcher {
         do {
             try body.write(to: file, atomically: true, encoding: .utf8)
             try await github.comment(repo: candidate.key.repo, number: pr.number, bodyFile: file)
+            return true
         } catch {
             log("\(candidate.key): could not post the check failure: \(error.localizedDescription)")
+            return false
         }
     }
 

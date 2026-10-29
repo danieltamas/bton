@@ -147,6 +147,42 @@ public enum Supervision {
         return total
     }
 
+    /// The answer Bton already knows for a failure it named itself: a structured cause in the
+    /// job's detail (a tool missing on this Mac, a head that moved, a check past its limit), never
+    /// text an agent or a PR wrote. nil leaves the job to the supervisor.
+    public static func knownAnswer(for job: Job) -> SupervisorVerdict? {
+        guard job.status == .failed, let detail = job.detail else { return nil }
+        // Details that quote an agent, gh or another Mac are read by the supervisor, whatever
+        // they end with: an agent's last line may spell a structured cause it did not have.
+        let quoted = ["agent exited", "posting the review failed", "lease lost", "decision posted"]
+        guard !quoted.contains(where: detail.hasPrefix) else { return nil }
+        let known: (SupervisorVerdict.Action, String)?
+        if detail.hasPrefix("waiting: ") {
+            known = (.none, "waits for a Mac that has the tool: Bton runs the move again in 30 minutes, or at once when pressed")
+        } else if detail.hasSuffix(" not found on this Mac's PATH") {
+            known = (.escalate, "the agent's program is not on this Mac's PATH: install it or point the agent at it in Settings")
+        } else if detail.hasPrefix("agent logged out") {
+            known = (.escalate, "the agent needs a login on this Mac: a retry fails the same way until then")
+        } else if detail.hasPrefix("head moved from ") {
+            known = (.none, "the PR's head moved while the move ran: the new head gets its own move")
+        } else if detail.hasPrefix("PR is not open") {
+            known = (.none, "the PR closed while the move ran: nothing to retry")
+        } else if detail.hasPrefix("checks not green: ") {
+            known = (.none, "CI is not green on this head: the move is due again when it is")
+        } else if detail.hasPrefix("checks not trusted: ") {
+            known = (.escalate, "the PR's checks cannot vouch for it (too many files, or it edits a workflow): a person merges or reviews it")
+        } else if detail.hasSuffix(" minutes and was stopped") {
+            known = (.escalate, "a check or command ran past the move's timeoutMinutes: raise it or speed the command up, then press Retry")
+        } else if detail.hasPrefix("environment: ") {
+            known = (.escalate, "the repo's environment in Settings > Repos is invalid: fix the variable named in the detail")
+        } else if detail.hasPrefix("check ") {
+            known = (.none, "a check failed before the agent started: its output was posted on the PR, so the fix move gets it")
+        } else {
+            known = nil
+        }
+        return known.map { SupervisorVerdict(action: $0.0, note: $0.1, applied: true) }
+    }
+
     /// The supervise job to start for this repo, if any: the newest flagged job nobody looked at
     /// yet, within the budget, one supervisor at a time.
     public static func candidate(settings: SupervisorSettings?, agents: [String: AgentTemplate], jobs: [Job],
@@ -161,9 +197,10 @@ public enum Supervision {
         let looked = Set(jobs.compactMap(\.supervises))
         let supervised = Set(jobs.filter { $0.key.move == move }.map(\.key))
         let flagged = jobs.filter { job in
-            // An expired login is the owner's to fix: a supervisor's retry would fail the same way.
+            // A failure Bton named itself has its answer already (an expired login among them): a
+            // supervisor's run would say the same.
             guard job.key.repo.caseInsensitiveCompare(repo) == .orderedSame, job.flags?.isEmpty == false,
-                  job.flags?.contains(.loggedOut) == false,
+                  job.flags?.contains(.loggedOut) == false, knownAnswer(for: job) == nil,
                   job.status != .running, job.key.move != move, job.steered != true,
                   let ended = job.endedAt, ended >= now.addingTimeInterval(-window),
                   !looked.contains(job.id), !supervised.contains(key(for: job)) else { return false }

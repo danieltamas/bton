@@ -95,7 +95,9 @@ where your flow says a person decides.
       <b>A watchdog and a supervisor</b><br>
       Jobs that failed, timed out, lost their lease or cost far more than usual are flagged. The
       optional Supervisor (Settings > Supervisor) looks at each once: it retries with a note, or
-      says what needs a human. It only reads, and stops at a daily budget.
+      says what needs a human. It only reads, and stops at a daily budget. A failure Bton itself
+      named (a tool missing on this Mac, a head that moved, a check past its time limit) gets its
+      known answer at once, and no supervisor session.
     </td>
     <td width="50%" valign="top">
       <b>Scheduled agents</b><br>

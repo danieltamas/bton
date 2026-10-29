@@ -257,8 +257,10 @@ actor Dispatcher {
             if let checks, !checks.isEmpty,
                let failure = try await runChecks(checks, fresh: candidate.fresh ?? flow?.checks?.fresh ?? [], job: &job, in: worktree, clone: clone, base: candidate.commandBase ?? base,
                                                  environment: runEnvironment, timeout: candidate.timeout) {
-                await postFailure(candidate, text: failure)
-                return await finish(job, status: .failed, detail: "check \(failure.prefix(300))")
+                // Unposted, the failure is not the known kind: nobody on the PR can read it.
+                let posted = await postFailure(candidate, text: failure)
+                return await finish(job, status: .failed,
+                                    detail: (posted ? "check " : "posting the check failure failed: check ") + failure.prefix(300))
             }
             if let command = candidate.command, candidate.agent == nil {
                 // The repo's scripts as merged into the base, never the PR's copy: a PR that edits its
@@ -564,6 +566,10 @@ actor Dispatcher {
         if let count = await graphQueries(of: job) { jobs.note(job.id, "graph queries: \(count)") }
         let flags = Watchdog.flags(for: job, among: jobs.all())
         job.flags = flags.isEmpty ? nil : flags
+        if !flags.isEmpty, job.verdict == nil, let known = Supervision.knownAnswer(for: job) {
+            job.verdict = known
+            jobs.note(job.id, "known failure: \(known.note)")
+        }
         try? jobs.save(job)
         jobs.note(job.id, job.status.rawValue + (job.detail.map { ": \($0)" } ?? "")
                   + (job.cost.map { ", cost $\($0)" } ?? ""))

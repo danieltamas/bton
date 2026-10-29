@@ -95,8 +95,13 @@ no blind retry of a timed-out command.
    Saves the whole review session and its helper. Risk: a markdown file can carry an executable
    example or a security instruction; the allowlist is by path, never by line count.
 
-8. **Route known operational failures past the supervisor.** `Supervision.swift` spends a model run
-   classifying each flagged job; missing executable, stale head, a check timeout, a tool that is not
+8. **Done (0.15.0): `Supervision.knownAnswer` reads the structured details Bton itself writes
+   (`waiting:`, a program not on PATH, a logged-out agent, a moved head, a closed PR, checks not
+   green or not trusted, a check past its limit, an invalid environment, a failed check) and
+   records the known verdict on the job at finish; such a job is never supervised. Agent text
+   (`agent exited`, `timed out`, no verdict, a lost lease) stays with the model. The original
+   item: route known operational failures past the supervisor.** `Supervision.swift` spent a
+   model run classifying each flagged job; missing executable, stale head, a check timeout, a tool that is not
    installed and a logged-out `gh` are structured causes with a known answer (wait, retry once,
    escalate). Saves one supervisor session per recognized failure. Risk: a broad match hides a real
    defect; match the structured cause only, leave the rest to the model.
