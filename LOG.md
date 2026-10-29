@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.15.0 (2026-10-29)
 
 **A dependency cache a team opts into with checks.cache.** It names the files whose bytes key the cache (the lockfiles) and the directories to keep (node_modules). Before a PR job's checks run, each directory the worktree lacks is cloned in from ~/.bton/cache/<repo>/<key>/; after every check passed, a directory the worktree has and the cache lacks is cloned out, so a new PR's first run starts from the last install with the same lockfile. A failed run saves nothing, a copy that fails is noted and never fails the job, and Bton evicts nothing: the directory is the owner's to clear. Off without the declaration, and worth it where an install takes minutes, not seconds.
 
