@@ -374,7 +374,8 @@ struct MoveChip: View {
                 .help("\(owner) wrote this PR, and a \(move.tier) PR counts no review from its author: hand the review to someone else on GitHub")
         } else if let owner = move.owner {
             let mine = me.map(move.isMine) ?? false
-            Chip(text: mine ? "\(move.name) · you" : "\(move.name) · \(owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
+            let held = move.redChecks.isEmpty ? "" : " · \(move.redChecks.joined(separator: ", ")) red"
+            Chip(text: "\(move.name)\(held) · \(mine ? "you" : owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
                  color: mine ? color : color.opacity(0.85), style: mine && !working ? .filled : .tinted)
         } else {
             Chip(text: "\(move.name) · unassigned", symbol: Theme.symbol(forMove: move.name), color: Theme.unassigned, style: .dashed)
@@ -420,7 +421,9 @@ private struct HumanMoveButton: View {
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("\(move.name) · #\(pr.number)").font(.rowTitle).foregroundStyle(Theme.textPrimary)
-                    Text(move.labels.isEmpty
+                    Text(!move.redChecks.isEmpty
+                         ? "Held by a red check on this head: \(move.redChecks.joined(separator: ", ")). Re-run it on GitHub, or fix what it found on the base and push; the flow runs \(move.name) once it is green."
+                         : move.labels.isEmpty
                          ? "Yours to do on GitHub. Bton sees it at the next sync."
                          : "Yours to do on GitHub. When it is done, remove \(move.labels.joined(separator: ", ")) and the flow moves on.")
                         .font(.meta).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)

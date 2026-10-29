@@ -1,7 +1,6 @@
 @testable import BtonCore
 import Foundation
 import Testing
-
 @Suite(ProcessBound())
 struct ChecksGreenAcceptanceTests {
     @Test func capturedRollupsDecode() throws {
@@ -12,7 +11,6 @@ struct ChecksGreenAcceptanceTests {
             #expect(!pr.checksTruncated)
         }
     }
-
     @Test func pendingRunAndLegacyStatusDecode() throws {
         let pr = try ChecksGreenFixture.decoded(rollup: ChecksGreenFixture.rollup([
             ChecksGreenFixture.run(status: "IN_PROGRESS", conclusion: nil),
@@ -21,7 +19,6 @@ struct ChecksGreenAcceptanceTests {
         #expect(Set(pr.checks) == Set([CheckResult(name: "gate", state: .pending),
                                      CheckResult(name: "ci/lint", state: .pending)]))
     }
-
     @Test(arguments: [false, true])
     func newestRerunWinsRegardlessOfArrayOrder(reversed: Bool) throws {
         let runs = [ChecksGreenFixture.run(conclusion: "FAILURE", started: "2026-10-28T10:00:00Z"),
@@ -54,13 +51,12 @@ struct ChecksGreenAcceptanceTests {
         #expect(!decoded.truncated)
     }
 
-    @Test(arguments: ["success", "pending", "failure", "missing", "truncated", "workflow", "files truncated"])
+    @Test(arguments: ["success", "pending", "missing", "truncated", "workflow", "files truncated"])
     func mergeRequiresTrustedCompleteGreenChecks(scenario: String) throws {
         var pr = ChecksGreenFixture.pr()
         pr.checks = [CheckResult(name: "gate", state: .success)]
         switch scenario {
         case "pending": pr.checks = [CheckResult(name: "gate", state: .pending)]
-        case "failure": pr.checks = [CheckResult(name: "gate", state: .failure)]
         case "missing": pr.checks = []
         case "truncated": pr.checksTruncated = true
         case "workflow": pr.changedFiles = [".github/workflows/gate.yml"]
@@ -69,6 +65,68 @@ struct ChecksGreenAcceptanceTests {
         }
         let move = FlowEngine.move(for: pr, flow: try ChecksGreenFixture.flow())
         #expect(move?.name == (scenario == "success" ? "merge" : nil))
+    }
+
+    @Test func redGateShowsBlockedMergeWithRuleOwner() throws {
+        let pr = try ChecksGreenFixture.redPR()
+        let flow = try ChecksGreenFixture.flow(["approved_current_head", "checks_green:gate"])
+        let move = try #require(FlowEngine.move(for: pr, flow: flow))
+        #expect(move.name == "merge")
+        #expect(move.owner == pr.author)
+        #expect(!move.ownerFromRotation)
+        #expect(move.tier == "feature")
+        #expect(move.redChecks == ["gate"])
+        #expect(!move.hasDispatch)
+        #expect(move.labels == [])
+        #expect(FlowEngine.requiredChecks(for: pr, flow: flow) == [])
+    }
+    @Test func pendingGateDoesNotShowBlockedMerge() throws {
+        var pr = try ChecksGreenFixture.redPR()
+        pr.checks = [CheckResult(name: "gate", state: .pending)]
+        #expect(FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow()) == nil)
+    }
+    @Test func absentGateDoesNotShowBlockedMerge() throws {
+        var pr = try ChecksGreenFixture.redPR()
+        pr.checks = []
+        #expect(FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow()) == nil)
+    }
+    @Test func redGateWithoutApprovalDoesNotShowBlockedMerge() throws {
+        var pr = try ChecksGreenFixture.redPR()
+        pr.comments = []
+        #expect(FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow()) == nil)
+    }
+    @Test func redNamesKeepPredicateOrder() throws {
+        var pr = try ChecksGreenFixture.redPR()
+        pr.checks.insert(CheckResult(name: "lint", state: .failure), at: 0)
+        let flow = try ChecksGreenFixture.flow(["approved_current_head", "checks_green:gate,lint"])
+        #expect(FlowEngine.move(for: pr, flow: flow)?.redChecks == ["gate", "lint"])
+    }
+    @Test(arguments: ["checks truncated", "files truncated", "workflow"])
+    func untrustedRedChecksDoNotShowBlockedMerge(scenario: String) throws {
+        var pr = try ChecksGreenFixture.redPR()
+        if scenario == "checks truncated" { pr.checksTruncated = true }
+        if scenario == "files truncated" { pr.changedFilesTruncated = true }
+        if scenario == "workflow" { pr.changedFiles = [".github/workflows/gate.yml"] }
+        #expect(FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow()) == nil)
+    }
+    @Test func realMatchWinsOverEarlierBlockedRule() throws {
+        let data = try ChecksGreenFixture.flowData(["approved_current_head", "checks_green:gate"])
+        var object = try ChecksGreenFixture.object(String(decoding: data, as: UTF8.self))
+        var moves = try #require(object["moves"] as? [[String: Any]])
+        moves.append(["move": "ready", "when": ["approved_current_head"], "who": "author"])
+        object["moves"] = moves
+        let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: object))
+        let move = try #require(FlowEngine.move(for: ChecksGreenFixture.redPR(), flow: flow))
+        #expect(move.name == "ready")
+        #expect(move.redChecks == [])
+    }
+    @Test func blockedMergeIsNotDispatchableByItsOwner() throws {
+        let pr = try ChecksGreenFixture.redPR()
+        let flow = try ChecksGreenFixture.mergeFlow()
+        let move = try #require(FlowEngine.move(for: pr, flow: flow))
+        #expect(flow.dispatch[move.name] != nil)
+        #expect(move.owner == pr.author)
+        #expect(!FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: pr.author))
     }
 
     @Test(arguments: ["checks_green:gate,lint", "checks_green: gate , lint "])
@@ -216,6 +274,12 @@ private enum ChecksGreenFixture {
     }
     static func flow(_ predicates: [String] = ["checks_green:gate"]) throws -> Flow {
         try JSONDecoder().decode(Flow.self, from: flowData(predicates))
+    }
+    static func mergeFlow() throws -> Flow {
+        try flow(["approved_current_head", "checks_green:gate"])
+    }
+    static func redPR() throws -> PullRequest {
+        try decoded(rollup: object(failure), approved: true)
     }
     static func pr(head: String = head) -> PullRequest {
         PullRequest(repo: "synthetic/project", number: 7, title: "Synthetic PR", author: "owner",

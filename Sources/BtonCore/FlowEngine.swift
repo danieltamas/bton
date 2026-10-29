@@ -47,10 +47,14 @@ public struct Move: Hashable, Sendable {
     public let ownerWroteIt: Bool
     /// What raised the tier above the PR body's: a changed file that matches `tier.paths`.
     public let tierReason: String?
+    /// The `checks_green:` checks that are red on the head, when they are all that holds the
+    /// move: nobody's agent runs it, its owner re-runs the check or fixes the base.
+    public let redChecks: [String]
 
     public init(name: String, owner: String?, ownerFromRotation: Bool, tier: String, hasDispatch: Bool, labels: [String] = [],
-                ownerWroteIt: Bool = false, tierReason: String? = nil) {
+                ownerWroteIt: Bool = false, tierReason: String? = nil, redChecks: [String] = []) {
         self.tierReason = tierReason
+        self.redChecks = redChecks
         self.name = name
         self.owner = owner
         self.ownerFromRotation = ownerFromRotation
@@ -129,10 +133,34 @@ public enum FlowEngine {
         return flow.moves.first { $0.when.allSatisfy(facts.holds) }
     }
 
+    /// The first rule that holds but for its `checks_green:` predicates, every named check done
+    /// on the head and at least one red, with the red names. A check still pending or not there
+    /// may yet turn green; a red one does not, and a move held only by it is a person's: re-run
+    /// it, or fix the base.
+    static func blockedRule(for pr: PullRequest, flow: Flow) -> (rule: MoveRule, red: [String])? {
+        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
+        guard facts.checksReadable else { return nil }
+        for rule in flow.moves {
+            let names = requiredChecks(of: rule)
+            guard !names.isEmpty, rule.when.filter({ !$0.hasPrefix(checksPredicate + ":") }).allSatisfy(facts.holds) else { continue }
+            let states = names.map { name in pr.checks.first { $0.name == name }?.state }
+            guard states.allSatisfy({ $0 == .success || $0 == .failure }) else { continue }
+            let red = zip(names, states).filter { $0.1 == .failure }.map(\.0)
+            if !red.isEmpty { return (rule, red) }
+        }
+        return nil
+    }
+
     public static func move(for pr: PullRequest, flow: Flow) -> Move? {
         let verdict = tierVerdict(of: pr, rule: flow.tier)
         let tier = verdict.tier
-        guard !Release.isRelease(pr, flow: flow), let rule = rule(for: pr, flow: flow) else { return nil }
+        guard !Release.isRelease(pr, flow: flow) else { return nil }
+        guard let rule = rule(for: pr, flow: flow) else {
+            guard let blocked = blockedRule(for: pr, flow: flow) else { return nil }
+            let (owner, fromRotation) = resolve(blocked.rule.who.value(for: tier), pr: pr, flow: flow)
+            return Move(name: blocked.rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier, hasDispatch: false,
+                        tierReason: verdict.reason, redChecks: blocked.red)
+        }
         let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
         // The rotation never picks the author for `assignee`; an author who assigned themselves
         // a review their tier won't count from them is flagged instead.
@@ -251,6 +279,13 @@ public enum FlowEngine {
 
         var latest: Review? { reviews.max { $0.createdAt < $1.createdAt } }
 
+        /// A `pull_request` workflow runs the PR's copy of the workflow file, so a PR that edits
+        /// one is not vouched for by its own check; more checks than were read, or more files, is
+        /// a guess, and a gate never passes on a guess.
+        var checksReadable: Bool {
+            !pr.checksTruncated && !pr.changedFilesTruncated && !pr.changedFiles.contains { $0.hasPrefix(".github/workflows/") }
+        }
+
         /// The reviews since the latest decision; a decision itself is never a round.
         var rounds: [Review] {
             guard let heading = flow.decision?.heading else { return reviews }
@@ -289,11 +324,7 @@ public enum FlowEngine {
                 guard let latest, latest.verdict != .approve, let needed = Int(count) else { return false }
                 return rounds.filter { $0.verdict != .approve }.count >= needed
             case let ("checks_green", names?):
-                // A `pull_request` workflow runs the PR's copy of the workflow file, so a PR that
-                // edits one is not vouched for by its own check; more checks than were read, or
-                // more files, is a guess, and a gate never passes on a guess.
-                guard let names = FlowEngine.checkNames(names), !pr.checksTruncated, !pr.changedFilesTruncated,
-                      !pr.changedFiles.contains(where: { $0.hasPrefix(".github/workflows/") }) else { return false }
+                guard let names = FlowEngine.checkNames(names), checksReadable else { return false }
                 return names.allSatisfy { name in pr.checks.contains { $0.name == name && $0.state == .success } }
             default:
                 // An unknown predicate never holds, so a typo in a flow never starts anything.

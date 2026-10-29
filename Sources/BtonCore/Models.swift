@@ -23,7 +23,7 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// A move with `who: reviewer` is owned through this field, never through `assignees`.
     public var requestedReviewers: [String] = []
     /// Oldest first, without Bton's own comments.
-    public let comments: [PullRequestComment]
+    public var comments: [PullRequestComment]
     public let updatedAt: Date
     /// When the PR was opened; nil where the read did not carry it.
     public var createdAt: Date?
