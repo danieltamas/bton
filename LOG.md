@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.15.1 (2026-10-29)
 
 **Every press that waits shows it, by construction.** Retry, Stop, Take, Draft reply, Run now, Run next, Release, Build the registry, I've logged in, Prepare, Download and Check GitHub now dim the moment they are pressed and stay so until the action returns, with a word where the product has one (Taking..., Starting..., Loading from GitHub...); a second press meanwhile is nothing. Load more, Take and Create issue each had this by hand; now every button that awaits is built on one component that holds the press in the app's state, and a test refuses a button closure that starts a task of its own, so the next such action gets its state with the button.
 
