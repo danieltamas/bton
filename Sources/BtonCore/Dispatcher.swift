@@ -254,6 +254,13 @@ actor Dispatcher {
                 : candidate.checks ?? (candidate.key.move == "merge" ? flow?.checks?.beforeMerge : flow?.checks?.beforeSession)
             // Not in the saved environment: a posted "1" must not be redacted.
             let runEnvironment = candidate.pressed ? environment.merging(["BTON_PRESSED": "1"]) { $1 } : environment
+            // The cache only around checks that run: a move without them neither restores nor saves.
+            let cache = (checks?.isEmpty == false) ? flow?.checks?.cache : nil
+            let cacheKey = cache.map { CheckCache.key(for: $0, in: worktree) }
+            if let cache, let cacheKey {
+                await CheckCache.restore(cache, key: cacheKey, into: worktree, home: home, repo: candidate.key.repo,
+                                         note: { [jobs, id = job.id] in jobs.note(id, $0) })
+            }
             if let checks, !checks.isEmpty,
                let failure = try await runChecks(checks, fresh: candidate.fresh ?? flow?.checks?.fresh ?? [],
                                                  together: candidate.together ?? flow?.checks?.together ?? [], job: &job, in: worktree, clone: clone, base: candidate.commandBase ?? base,
@@ -262,6 +269,10 @@ actor Dispatcher {
                 let posted = await postFailure(candidate, text: failure)
                 return await finish(job, status: .failed,
                                     detail: (posted ? "check " : "posting the check failure failed: check ") + failure.prefix(300))
+            }
+            if let cache, let cacheKey {
+                await CheckCache.save(cache, key: cacheKey, from: worktree, home: home, repo: candidate.key.repo,
+                                      note: { [jobs, id = job.id] in jobs.note(id, $0) })
             }
             if let command = candidate.command, candidate.agent == nil {
                 // The repo's scripts as merged into the base, never the PR's copy: a PR that edits its

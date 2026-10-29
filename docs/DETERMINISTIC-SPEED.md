@@ -115,7 +115,10 @@ no blind retry of a timed-out command.
    Little gain where one suite dominates, as on lexito. Risk: Postgres, output directories and CPU
    contention; independence is declared in the flow, never inferred from argv.
 
-10. **Dependency and build caches keyed by lockfile and toolchain.** Worktrees already persist, so
+10. **Done (0.15.0), opt-in: `checks.cache` names the files whose bytes key the cache and the
+    directories to keep; a PR job restores them into its worktree before the checks and saves them
+    after every check passed (`CheckCache.swift`). Measured at 2 s per install on lexito, so it
+    is for repos whose setup takes minutes. The original item: dependency and build caches keyed by lockfile and toolchain.** Worktrees already persist, so
     installs are warm; the measurement puts two installs at 2 s on lexito. Worth doing only for a
     repo whose setup is minutes, not seconds.
 

@@ -93,6 +93,14 @@ public struct Flow: Decodable, Sendable {
                     }
                 }
             }
+            if let cache = flow.checks?.cache {
+                guard !cache.key.isEmpty, !cache.paths.isEmpty else { return .invalid("checks.cache: key and paths name at least one entry each") }
+                for entry in cache.key + cache.paths {
+                    guard !entry.isEmpty, !entry.hasPrefix("/"), !entry.split(separator: "/").contains("..") else {
+                        return .invalid("checks.cache: \(entry) must be a relative path inside the repo")
+                    }
+                }
+            }
             for (move, rule) in flow.dispatch {
                 // Agents given per tier leave the tiers without one to the command.
                 if rule.command != nil, let agent = rule.agent, case .same = agent {
@@ -239,6 +247,16 @@ public struct Checks: Decodable, Sendable {
     /// Groups of argv a team declares independent: consecutive checks of one group run at the
     /// same time. Declared, never inferred.
     public let together: [[[String]]]?
+    /// Opt-in: directories kept between worktrees under a key made of named files' bytes.
+    public let cache: CheckCache?
+}
+
+/// `{ "key": ["bun.lock"], "paths": ["node_modules"] }`: `paths` are copied from and to
+/// `<BTON_HOME>/cache/<repo>/<key>/`, `key` being a digest of the `key` files as they are in
+/// the worktree.
+public struct CheckCache: Decodable, Sendable {
+    public let key: [String]
+    public let paths: [String]
 }
 
 public struct Intake: Decodable, Sendable {
