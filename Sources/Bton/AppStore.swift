@@ -152,7 +152,7 @@ final class AppStore {
             if config.schedules.contains(where: Self.isInert) { try update { $0.schedules.removeAll(where: Self.isInert) } }
             prices = PriceList.load(home: home)
             github = try GitHubClient()
-            let engine = try Engine(home: home)
+            let engine = try Engine(home: home, log: EngineLog.sink(home: home))
             self.engine = engine
             // A job that ends frees an agent: the next one starts now, not at the next sync.
             Task { await engine.onJobEnded { Task { @MainActor [weak self] in await self?.refresh() } } }

@@ -128,6 +128,75 @@ struct IssuePagingAcceptanceTests {
         try f.expectTwoPageCalls()
     }
 
+    @Test func loadMoreInFlightIsSharedBySyncAndSurvivesNextTick() async throws {
+        try await pagingRace(loadMoreFirst: true)
+    }
+
+    @Test func syncInFlightIsFollowedByReadWithLoadMorePageCount() async throws {
+        try await pagingRace(loadMoreFirst: false)
+    }
+
+    private func pagingRace(loadMoreFirst: Bool) async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.release(); f.remove() }
+        let engine = try f.engine()
+        let completion = IssuePagingCompletion()
+        try f.hold()
+        let work = Task {
+            do {
+                let repo = IssuePagingPayload.repo
+                let first = Task { () -> Engine.IssuePage? in
+                    if loadMoreFirst { return await engine.readMoreIssues(repo: repo) }
+                    #expect(await engine.readIssues(repo))
+                    return nil
+                }
+                defer { first.cancel() }
+                try await f.waitBlocked(1)
+                let second = Task { () -> Engine.IssuePage? in
+                    await completion.started()
+                    if !loadMoreFirst { return await engine.readMoreIssues(repo: repo) }
+                    #expect(await engine.readIssues(repo))
+                    return nil
+                }
+                defer { second.cancel() }
+                // Let the second caller enter the engine while GitHub is still held.
+                while !(await completion.secondStarted) { try await Task.sleep(for: .milliseconds(10)) }
+                try await Task.sleep(for: .milliseconds(100))
+                f.release()
+                let firstPage = await first.value
+                let secondPage = await second.value
+                let page = try #require(loadMoreFirst ? firstPage : secondPage)
+                #expect(Set(page.triage.map(\.number)) == [1, 2])
+                #expect(page.triage.count == 2)
+                #expect(!page.more)
+                #expect(await engine.issuePages[repo] == 2)
+                if loadMoreFirst {
+                    try f.expectTwoPageCalls()
+                    let snapshot = await engine.tick(dispatching: false)
+                    #expect(Set(snapshot.triage.map(\.number)) == [1, 2])
+                    #expect(snapshot.triage.count == 2)
+                    #expect(snapshot.issuesMore.isEmpty)
+                } else {
+                    #expect(try String(contentsOf: f.file("call-count"), encoding: .utf8) == "3")
+                    for n in 1...3 {
+                        let args = try String(contentsOf: f.file("call-\(n)"), encoding: .utf8)
+                            .components(separatedBy: "\n")
+                        #expect(args.contains(n == 3 ? "firstPage=false" : "firstPage=true"))
+                        #expect(args.contains("after=C2") == (n == 3))
+                        if n < 3 { #expect(!args.contains { $0.hasPrefix("after=") }) }
+                    }
+                }
+            } catch { Issue.record(error) }
+            await completion.finish()
+        }
+        defer { work.cancel() }
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !(await completion.done), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(await completion.done, "Issue paging race exceeded its 20 second budget")
+    }
+
     @Test func loadMoreNeverExceedsIssuePageCap() async throws {
         let f = try IssuePagingEngineFixture.make()
         defer { f.remove() }
@@ -173,6 +242,8 @@ struct IssuePagingEngineFixture {
                   count=$((count + 1))
                   printf '%s' "$count" > call-count
                   printf '%s\n' "$@" > "call-$count"
+                  touch "blocked-$count"
+                  while [ -f hold ]; do sleep 0.05; done
                   after=
                   for argument in "$@"; do
                     case "$argument" in after=*) after=${argument#after=} ;; esac
@@ -199,6 +270,19 @@ struct IssuePagingEngineFixture {
         try Engine(home: home, github: GitHubClient(ghPath: file("gh").path), log: { _ in })
     }
 
+    func hold() throws { try Data().write(to: file("hold")) }
+    func release() { try? FileManager.default.removeItem(at: file("hold")) }
+    func waitBlocked(_ n: Int) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !FileManager.default.fileExists(atPath: file("blocked-\(n)").path),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let blocked = FileManager.default.fileExists(atPath: file("blocked-\(n)").path)
+        #expect(blocked, "GitHub did not reach the hold within 5 seconds")
+        try #require(blocked)
+    }
+
     func clearCalls() throws { try Data("0".utf8).write(to: file("call-count")) }
 
     func expectTwoPageCalls() throws {
@@ -216,4 +300,11 @@ struct IssuePagingEngineFixture {
         let cursor = try #require(second.firstIndex(of: "after=C2"))
         #expect(cursor > 0 && second[cursor - 1] == "-f")
     }
+}
+
+private actor IssuePagingCompletion {
+    var secondStarted = false
+    var done = false
+    func started() { secondStarted = true }
+    func finish() { done = true }
 }

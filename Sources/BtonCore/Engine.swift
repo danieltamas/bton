@@ -84,6 +84,9 @@ public actor Engine {
     var issueRevisions: [String: Int] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
+    /// Each repo's issue read in flight, by lowercased slug, with the page count it asked for: a
+    /// second caller waits for it instead of racing it (a Load more during a sync's read, or the reverse).
+    var issueReads: [String: (id: UUID, pages: Int, task: Task<Bool, Never>)] = [:]
     /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
     var draftRequests: [IssueAsk] = []
     var composeRequests: [NewIssues.Request] = []

@@ -14,14 +14,33 @@ extension Engine {
     }
 
     /// A repo's open issues, as many pages as Load more asked for; a failure keeps the last read
-    /// whole and never stops the repo's PR work. Answers whether the read went through.
+    /// whole and never stops the repo's PR work. Answers whether the read went through. One read
+    /// per repo at a time: a caller that finds one in flight waits for its answer, and reads again
+    /// only when Load more asked for more pages since that read started.
     @discardableResult
     func readIssues(_ repo: String) async -> Bool {
+        let slug = repo.lowercased()
+        while let running = issueReads[slug] {
+            let ok = await running.task.value
+            if running.pages >= max(1, issuePages[slug] ?? 1) { return ok }
+        }
+        let id = UUID(), pages = max(1, issuePages[slug] ?? 1)
+        let task = Task {
+            let ok = await self.readIssuePages(repo, pages: pages)
+            // Gone before the task ends, so no waiter wakes to a finished read and waits on it again.
+            if self.issueReads[slug]?.id == id { self.issueReads[slug] = nil }
+            return ok
+        }
+        issueReads[slug] = (id, pages, task)
+        return await task.value
+    }
+
+    private func readIssuePages(_ repo: String, pages: Int) async -> Bool {
         let slug = repo.lowercased()
         let revision = (issueRevisions[slug] ?? 0) + 1
         issueRevisions[slug] = revision
         var issues: [OpenIssue] = [], after: String?
-        for page in 1...max(1, issuePages[slug] ?? 1) {
+        for page in 1...pages {
             do {
                 let read = try await github.openIssues(repo: repo, after: after)
                 issues += read.issues
