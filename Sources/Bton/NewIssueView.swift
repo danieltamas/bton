@@ -328,14 +328,7 @@ struct NewIssueView: View {
         Duration.seconds(max(0, Int(now.timeIntervalSince(start)))).formatted(.time(pattern: .minuteSecond))
     }
 
-    private func bubble(_ text: String, mine: Bool) -> some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(mine ? Theme.textPrimary : Theme.textSecondary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(mine ? Theme.mint.opacity(0.12) : Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
+    private func bubble(_ text: String, mine: Bool) -> some View { Bubble(text: text, accented: mine) }
 
     private func input(placeholder: String, send: String, locked: Bool = false) -> some View {
         let voice = store.voice

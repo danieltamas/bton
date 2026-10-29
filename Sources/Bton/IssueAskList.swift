@@ -285,9 +285,11 @@ private struct IssueAskRow: View {
     }
 }
 
-/// A drafted reply in place of the list: read it, edit it, and post it as my comment, or copy it.
+/// A drafted reply in place of the list: the issue's conversation above, so the edit has its
+/// context, then the reply to read, edit, and post as my comment, or copy.
 struct DraftView: View {
     @Environment(AppStore.self) private var store
+    /// The ask as opened; the thread is read from the store's copy, which a later sync extends.
     let ask: IssueAsk
     let close: () -> Void
     @State private var text = ""
@@ -312,11 +314,13 @@ struct DraftView: View {
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(ask.url) }
             }
             .padding(.horizontal, 14)
+            thread
             TextEditor(text: $text)
                 .font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
                 .padding(8)
+                .frame(height: 170)
                 .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, 14)
                 .disabled(posting || posted)
@@ -349,6 +353,38 @@ struct DraftView: View {
         .onAppear { text = store.draftEdits[ask.notice] ?? job.flatMap(store.draftText) ?? "" }
         .onChange(of: text) { store.draftEdits[ask.notice] = text }
     }
+
+    /// The issue body and its comments, oldest first, the asking one tinted and scrolled to; a
+    /// thread longer than the sync reads (its last 20 comments) is whole on GitHub.
+    private var thread: some View {
+        // The store's copy grows with the sync; a newer ask on the issue keeps the opened one's.
+        let entries = (store.issueAsks.first { $0.id == ask.id && $0.commentID == ask.commentID } ?? ask).thread
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 4) {
+                                Text(entry.author ?? "ghost").font(.meta.weight(.medium)).foregroundStyle(Theme.textSecondary)
+                                Text(entry.id == "body" ? "opened it" : "·").font(.meta).foregroundStyle(Theme.textTertiary)
+                                RelativeTime(date: entry.createdAt) { "\($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
+                            }
+                            .padding(.horizontal, 4)
+                            Bubble(text: entry.body, accented: entry.id == ask.commentID)
+                        }
+                        .id(entry.id == ask.commentID ? Self.askingAnchor : nil)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 2)
+            }
+            .scrollIndicators(.never)
+            .frame(maxHeight: .infinity)
+            .onAppear { proxy.scrollTo(Self.askingAnchor, anchor: .top) }
+        }
+    }
+
+    private static let askingAnchor = "asking"
 
     private func post(_ job: Job?) {
         guard let job else { return }

@@ -81,10 +81,14 @@ public struct IssueAsk: Identifiable, Hashable, Sendable {
     public let draftable: Bool
     /// The comment carries a `bton handoff` marker for me: an agent or a teammate sent it on purpose.
     public let handoff: Bool
+    /// The whole conversation the ask sits in, for reading while the reply is edited: the issue
+    /// body first (id "body"), then its comments oldest first, the asking one at `commentID`.
+    public let thread: [IssueComment]
 
     public init(repo: String, number: Int, title: String, url: URL, asker: String, askedAt: Date, commentID: String,
-                draftable: Bool = true, handoff: Bool = false) {
+                draftable: Bool = true, handoff: Bool = false, thread: [IssueComment] = []) {
         self.handoff = handoff
+        self.thread = thread
         self.repo = repo
         self.number = number
         self.title = title
@@ -190,7 +194,7 @@ public enum IssueAsks {
         return IssueAsk(repo: issue.repo, number: issue.number, title: issue.title, url: entry.url ?? issue.url,
                         asker: entry.author ?? "ghost", askedAt: entry.createdAt, commentID: entry.id,
                         draftable: FlowEngine.trustedAssociations.contains(issue.authorAssociation),
-                        handoff: Handoff.isHandoff(entry.body, to: me))
+                        handoff: Handoff.isHandoff(entry.body, to: me), thread: entries)
     }
 
     public static func asks(_ issues: [OpenIssue], me: String) -> [IssueAsk] {

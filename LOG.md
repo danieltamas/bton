@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A draft reply shows the conversation it answers.** View draft opened the agent's text over an empty panel: to change a line you had to remember what the teammate asked, or open the issue on GitHub beside it. The draft now sits under the issue's thread, the body and every comment the sync read (its last 20), oldest first, the asking comment tinted and scrolled into view, so the edit has its context. The reply box keeps its height under it; a longer thread is whole on GitHub, through the same arrow as before.
+
 ## 0.18.0 (2026-10-29)
 
 **A read-only job asks the code graph through a tool.** A draft reply, a new-issue job and the supervisor run without a shell, so the line telling them to run `graphify-src` was one they could not follow: every draft job logged `graph queries: 0` and read the tree file by file. Bton's own MCP server now serves a `graph` tool beside `ask` whenever the job's checkout has a graph; it runs `graphify-src` as Bton's process with the agent's question as its one argument, the agent is told to use it, and the job log counts those calls as graph queries. A job with a shell keeps running `graphify-src` itself.

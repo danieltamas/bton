@@ -553,6 +553,21 @@ struct RelativeTime: View {
     }()
 }
 
+/// One message of a conversation: mine, or the one the view is about, is tinted.
+struct Bubble: View {
+    let text: String
+    var accented = false
+
+    var body: some View {
+        Text(text).font(.system(size: 11.5)).foregroundStyle(accented ? Theme.textPrimary : Theme.textSecondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(accented ? Theme.mint.opacity(0.12) : Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 /// Diagonal lines across a rect, for what is still a draft.
 private struct Hatching: Shape {
     func path(in rect: CGRect) -> Path {
