@@ -214,7 +214,7 @@ public actor Engine {
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
             snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
-            snapshot.triage = config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) }
+            snapshot.triage = IssueTriage.ordered(config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) })
             snapshot.issuesMore = issuesMore
             snapshot.issueRevisions = issueRevisions
             snapshot.ready = config.repos.flatMap { repo in

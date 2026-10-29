@@ -111,16 +111,21 @@ public enum IssueTriage {
         labels.first { $0.lowercased().hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)).lowercased() }
     }
 
-    /// Open issues still waiting for a stage, those with no priority first, then the oldest.
+    /// Open issues still waiting for a stage, those with no priority first, then the newest.
     public static func pending(_ issues: [OpenIssue]) -> [TriageIssue] {
-        issues.compactMap { issue -> TriageIssue? in
+        ordered(issues.compactMap { issue -> TriageIssue? in
             let labels = issue.labels
             guard label(withPrefix: stagePrefix, in: labels).map(settledStages.contains) != true else { return nil }
             return TriageIssue(repo: issue.repo, number: issue.number, title: issue.title, url: issue.url,
                                createdAt: issue.createdAt, body: issue.body, labels: labels)
-        }
-        .sorted { lhs, rhs in
-            (lhs.priority == nil) != (rhs.priority == nil) ? lhs.priority == nil : lhs.createdAt < rhs.createdAt
+        })
+    }
+
+    /// The Triage list's order, whatever repo or page a row came from: no priority first, then the
+    /// newest; rows of one date keep their order (the sort is stable).
+    public static func ordered(_ rows: [TriageIssue]) -> [TriageIssue] {
+        rows.sorted { lhs, rhs in
+            (lhs.priority == nil) != (rhs.priority == nil) ? lhs.priority == nil : lhs.createdAt > rhs.createdAt
         }
     }
 

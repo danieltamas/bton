@@ -17,11 +17,47 @@ import Testing
         #expect(Set(pending.map(\.number)) == [4, 5])
     }
 
-    @Test func withoutPriorityComesFirstThenOldest() {
+    @Test func withoutPriorityComesFirstThenNewest() {
         let pending = IssueTriage.pending([
             issue(1, labels: ["priority:low"], age: 10), issue(2, labels: ["priority:low"], age: 500), issue(3, labels: [], age: 1),
         ])
-        #expect(pending.map(\.number) == [3, 2, 1])
+        #expect(pending.map(\.number) == [3, 1, 2])
+    }
+
+    @Test func unprioritizedIssuesComeNewestFirst() {
+        let pending = IssueTriage.pending([
+            issue(1, labels: [], age: 500), issue(2, labels: [], age: 10),
+        ])
+        #expect(pending.map(\.number) == [2, 1])
+    }
+
+    @Test func rowsAcrossReposInterleaveNewestFirstWithinPriorityGroups() {
+        let rows = [
+            TriageIssue(repo: "o/a", number: 1, title: "t1", url: URL(string: "https://github.com/o/a/issues/1")!,
+                        createdAt: Date(timeIntervalSince1970: 100), body: "b", labels: []),
+            TriageIssue(repo: "o/b", number: 2, title: "t2", url: URL(string: "https://github.com/o/b/issues/2")!,
+                        createdAt: Date(timeIntervalSince1970: 300), body: "b", labels: []),
+            TriageIssue(repo: "o/a", number: 3, title: "t3", url: URL(string: "https://github.com/o/a/issues/3")!,
+                        createdAt: Date(timeIntervalSince1970: 200), body: "b", labels: []),
+            TriageIssue(repo: "o/b", number: 4, title: "t4", url: URL(string: "https://github.com/o/b/issues/4")!,
+                        createdAt: Date(timeIntervalSince1970: 400), body: "b", labels: ["priority:high"]),
+            TriageIssue(repo: "o/a", number: 5, title: "t5", url: URL(string: "https://github.com/o/a/issues/5")!,
+                        createdAt: Date(timeIntervalSince1970: 600), body: "b", labels: ["priority:low"]),
+            TriageIssue(repo: "o/b", number: 6, title: "t6", url: URL(string: "https://github.com/o/b/issues/6")!,
+                        createdAt: Date(timeIntervalSince1970: 500), body: "b", labels: ["priority:medium"]),
+        ]
+        let ordered = IssueTriage.ordered([rows[3], rows[0], rows[4], rows[2], rows[5], rows[1]])
+        #expect(ordered.map(\.number) == [2, 3, 1, 5, 6, 4])
+    }
+
+    @Test func orderingKeepsInputOrderForEqualDates() {
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let first = TriageIssue(repo: "o/b", number: 2, title: "t2", url: URL(string: "https://github.com/o/b/issues/2")!,
+                                createdAt: date, body: "b", labels: [])
+        let second = TriageIssue(repo: "o/a", number: 1, title: "t1", url: URL(string: "https://github.com/o/a/issues/1")!,
+                                 createdAt: date, body: "b", labels: [])
+        #expect(IssueTriage.ordered([first, second]).map(\.number) == [2, 1])
+        #expect(IssueTriage.ordered([second, first]).map(\.number) == [1, 2])
     }
 
     @Test func verdictNeedsEveryAnswer() {

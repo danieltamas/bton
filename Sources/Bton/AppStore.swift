@@ -536,7 +536,7 @@ final class AppStore {
             let slug = repo.lowercased()
             // A page that waited behind a later sync's snapshot is older than what is shown.
             guard let page = await engine.readMoreIssues(repo: repo), page.revision >= issueRevisions[slug] ?? 0 else { continue }
-            triage = triage.filter { $0.repo.lowercased() != slug } + page.triage
+            triage = IssueTriage.ordered(triage.filter { $0.repo.lowercased() != slug } + page.triage)
             if page.more { issuesMore.insert(slug) } else { issuesMore.remove(slug) }
             issueRevisions[slug] = page.revision
         }
@@ -566,7 +566,7 @@ final class AppStore {
             let slug = repo.lowercased()
             return (snapshot.issueRevisions[slug] ?? 0) < (self.issueRevisions[slug] ?? 0)
         }
-        triage = snapshot.triage.filter { !stale($0.repo) } + triage.filter { unread($0.repo) || stale($0.repo) }
+        triage = IssueTriage.ordered(snapshot.triage.filter { !stale($0.repo) } + triage.filter { unread($0.repo) || stale($0.repo) })
         issuesMore = snapshot.issuesMore.filter { !stale($0) }.union(issuesMore.filter(stale))
         issueRevisions.merge(snapshot.issueRevisions) { max($0, $1) }
         features = features.filter { unread($0.key) }.merging(snapshot.features) { _, read in read }
