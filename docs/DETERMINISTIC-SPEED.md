@@ -30,7 +30,11 @@ no blind retry of a timed-out command.
    Saves one full suite per transition that shares a tree. Risk: a check that reads a service or
    the clock is not a pure function of the tree; mark such checks `nocache` in the flow.
 
-3. **Hand the agent an evidence packet instead of telling it to collect one.** Bton reads the PR
+3. **Done (0.15.0): `pr-evidence.md` in the job's scratch directory holds the PR's metadata,
+   head, base, base tip, merge-base, local HEAD, numstat, check receipts and the PR's comments as
+   indented data; every agent job on a PR except `supervise` gets it, and playbook v5 reads it
+   instead of fetching. Review threads (inline comments) are not read by Bton and are not in it.
+   The original item: hand the agent an evidence packet instead of telling it to collect one.** Bton reads the PR
    body, comments, reviews, head and base on every tick, then the playbook (`PRPlaybook.swift`,
    steps 1-2) tells the agent to fetch metadata, SHAs, status, CI and the diff itself. Write a
    bounded file into the worktree at spawn: head, base, merge-base, local SHA, changed paths with

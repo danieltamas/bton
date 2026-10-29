@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 4
+    public static let version = 5
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -29,11 +29,15 @@ public enum PRPlaybook {
 
     1. Establish the requested outcome, allowed writes, posting owner and required
     format from supplied instructions. Reuse injected context; do not reread it.
-    For PR work, record live head/base SHAs, local HEAD, worktree status and relevant
-    CI once. If the dispatched head differs, stop as stale.
-    2. Plan reads internally: fetch required PR metadata together, then the diff
-    once, then only relevant definitions, callers, tests and trusted referenced
-    rules. When the instructions name a code graph (graphify-out), locate those
+    When pr-evidence.md is in your scratch directory, it already holds the PR's
+    head, base, merge-base, changed files, discussion and passed checks as of
+    dispatch: use it and do not fetch them again; the live re-read before a write
+    (step 6) stays. Otherwise, for PR work, record live head/base SHAs, local
+    HEAD, worktree status and relevant CI once. If the dispatched head differs,
+    stop as stale.
+    2. Plan reads internally: read the diff once (the metadata is in pr-evidence.md
+    when present), then only relevant definitions, callers, tests and trusted
+    referenced rules. When the instructions name a code graph (graphify-out), locate those
     definitions and callers with graphify-src "<question>" first and search the
     tree only for what it does not answer.
     Batch independent reads when supported, but use one plain command per

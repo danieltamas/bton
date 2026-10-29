@@ -67,7 +67,8 @@ struct CodeGraphDispatchAcceptanceTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == f.graph.store.path)
         let argv = try String(contentsOf: f.graph.root.appendingPathComponent("agent-argv"), encoding: .utf8)
         let expected = "Code graph: graphify-out/ in this checkout is graphify's graph of main at \(f.graph.tip.prefix(8)); this branch's own changes may not be in it. Run graphify-src \"<question>\" before searching the tree."
-        #expect(argv.contains("Synthetic task\n\nYour scratch directory is "))
+        // Since 0.15.0 a PR job's task also names the evidence packet before the scratch line.
+        #expect(argv.contains("Synthetic task\n\n" + PREvidence.promptLine() + "\n\nYour scratch directory is "))
         #expect(argv.contains(": the data files this task names are there; put notes and temporary files there, not in /tmp.\n\n" + expected))
         #expect(!argv.contains("--append-system-prompt"))
         // The agent copied its scratch directory while it ran: Bton removes it when the job ends.
@@ -82,15 +83,18 @@ struct CodeGraphDispatchAcceptanceTests {
         return argv[range.upperBound...].split(separator: ":").first.map(String.init)
     }
 
-    @Test(ProcessBound()) func codexWithoutDataFilesGetsNoScratchDirectory() async throws {
+    // Since 0.15.0 every PR agent job has one data file, the evidence packet, so the scratch
+    // directory holds exactly that; the code graph line still needs a built graph.
+    @Test(ProcessBound()) func codexWithoutAGraphGetsOnlyTheEvidencePacket() async throws {
         let f = try await GraphDispatchFixture.make(built: false, agent: "codex")
         defer { f.graph.remove() }
         let job = try await f.run()
         #expect(job.status == .succeeded, Comment(rawValue: job.detail ?? ""))
         let argv = try String(contentsOf: f.graph.root.appendingPathComponent("agent-argv"), encoding: .utf8)
         #expect(argv.contains("Synthetic task"))
-        #expect(!argv.contains("scratch directory") && !argv.contains("Code graph:"))
-        #expect(!FileManager.default.fileExists(atPath: f.graph.root.appendingPathComponent("scratch-copy").path))
+        #expect(!argv.contains("Code graph:"))
+        let copied = f.graph.root.appendingPathComponent("scratch-copy")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: copied.path) == [PREvidence.file])
     }
 }
 

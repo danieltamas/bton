@@ -37,6 +37,8 @@ public struct DispatchCandidate: Sendable {
     public var supervises: UUID?
     /// A supervisor's note was added to the prompt.
     public var steered = false
+    /// That note as it ends the prompt, so a line added later goes before it.
+    public var steering: String?
     /// Tools denied to this job's Claude on top of Bton's own.
     public var denied: [String] = []
     /// Files written to a Claude job's scratch directory before it starts, by name: text the agent

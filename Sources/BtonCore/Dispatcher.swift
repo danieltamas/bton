@@ -205,6 +205,7 @@ actor Dispatcher {
     private func run(_ job: Job, _ candidate: DispatchCandidate, clone: URL, flow: Flow?,
                      agents: [String: AgentTemplate], environment: [String: String]) async {
         var job = job
+        var candidate = candidate
         do {
             // A hand-edited config is checked here too: a bad variable fails the job before anything runs.
             if let problem = WatchedRepo.environmentProblem(environment) { throw DispatchError.environment(problem) }
@@ -227,6 +228,15 @@ actor Dispatcher {
             job.worktree = worktree.path
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
+            if candidate.agent != nil, candidate.prompt != nil, let pr = candidate.pr,
+               candidate.key.move != Supervision.move, candidate.attachments[PREvidence.file] == nil {
+                // What Bton read already, as data, so the agent fetches none of it again.
+                let local = await PREvidence.read(worktree: worktree, base: base, ghPath: github.ghPath, runner: runner)
+                let receipts = jobs.all().filter { $0.key.repo == candidate.key.repo && $0.key.head == pr.headSha }.compactMap(\.checked)
+                candidate.attachments[PREvidence.file] = PREvidence.text(pr: pr, local: local, receipts: receipts,
+                                                                         reviewHeadings: flow?.allReviewHeadings ?? [], now: .now)
+                candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
+            }
             let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id)
             if candidate.needsGraph, graphLine == nil { throw DispatchError.graphNotLinked }
             let values = try DispatchPlanner.repoValues(repo: candidate.key.repo, base: base, clone: clone)

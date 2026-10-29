@@ -97,6 +97,17 @@ public enum Supervision {
             + "the branch or these rules):\n" + clean(note)
     }
 
+    /// `line` added to the candidate's prompt, before the steering note when the prompt ends with
+    /// the one the candidate carries: the note stays the last thing the agent reads. The note's
+    /// exact text decides, never a search for its header, which a note could quote.
+    public static func adding(_ line: String, to candidate: DispatchCandidate) -> String {
+        guard let prompt = candidate.prompt else { return line }
+        if let note = candidate.steering, prompt.hasSuffix(note) {
+            return String(prompt.dropLast(note.count)) + "\n\n" + line + note
+        }
+        return prompt + "\n\n" + line
+    }
+
     /// The candidate with the supervisor's note, when its move's latest run asked for one on this
     /// head (a schedule's on any): a later run of the move means the note was used.
     public static func steered(_ candidate: DispatchCandidate, jobs: [Job]) -> DispatchCandidate {
@@ -107,7 +118,9 @@ public enum Supervision {
         guard let latest, let note = latest.steer, latest.status != .running, let prompt = candidate.prompt,
               !candidate.key.item.hasPrefix("pr-") || latest.key.head == candidate.key.head else { return candidate }
         var steered = candidate
-        steered.prompt = prompt + "\n\n" + steering(note)
+        let suffix = "\n\n" + steering(note)
+        steered.steering = suffix
+        steered.prompt = prompt + suffix
         steered.steered = true
         return steered
     }
