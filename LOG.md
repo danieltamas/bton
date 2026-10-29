@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.16.1 (2026-10-29)
 
 **The Triage list shows the newest issues first.** It used to show the oldest first, so a Load more from GitHub put the older page on top. Issues with no priority still come first; within each group the newest is at the top, whatever repo or page it came from.
 
