@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.17.1 (2026-10-29)
 
 **A failed step shows why it failed.** A job's transcript cut every result to its first three lines, and a shell prints the reason it failed last: the `wt merge` that landed #565 and then died in its cleanup showed an advisory line and nothing of the `fetching ref ... failed` under it. A failed result now keeps its first three lines, a "..." and its last eight, up to twelve in all; a click still opens the whole result.
 
