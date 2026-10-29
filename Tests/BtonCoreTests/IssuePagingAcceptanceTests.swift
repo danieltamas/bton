@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-private enum IssuePagingPayload {
+enum IssuePagingPayload {
     static let repo = "synthetic/project"
 
     // Spec-shaped GitHub Issue fields, including fields shared by paging and search.
@@ -141,7 +141,7 @@ struct IssuePagingAcceptanceTests {
     }
 }
 
-private struct IssuePagingEngineFixture {
+struct IssuePagingEngineFixture {
     let root: URL
     let home: BtonHome
     func file(_ name: String) -> URL { root.appendingPathComponent(name) }

@@ -3,13 +3,6 @@ import BtonCore
 import SwiftUI
 
 extension AppStore {
-    /// Load more: the next sync reads one page more of each repo's issues, and the list shows them.
-    func loadMoreIssues(repos: [String]) async {
-        guard let engine else { return }
-        for repo in repos { await engine.loadMoreIssues(repo: repo) }
-        await refresh()
-    }
-
     /// Asks GitHub for the search text in each shown repo, 400 ms after the last keystroke; a
     /// cancelled search (the text changed) writes nothing, a failed one leaves the hits empty.
     func searchIssues(_ text: String, repos: [String]) async {
@@ -51,10 +44,12 @@ struct TriageList: View {
     var hits: [OpenIssue] = []
     let newIssue: () -> Void
 
-    private var more: (title: String, action: () async -> Void)? {
+    private var more: RowStackMore? {
         let waiting = repos.filter { store.issuesMore.contains($0.lowercased()) }
         guard !waiting.isEmpty else { return nil }
-        return ("Load more from GitHub", { await store.loadMoreIssues(repos: waiting) })
+        return RowStackMore(title: "Load more from GitHub",
+                            loading: waiting.contains { store.issuesLoading.contains($0.lowercased()) },
+                            action: { await store.loadMoreIssues(repos: waiting) })
     }
 
     var body: some View {

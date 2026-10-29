@@ -28,6 +28,9 @@ public actor Engine {
         public var triage: [TriageIssue] = []
         /// Repos (slugs lowercased) with open issues beyond the pages read: Load more fetches the next.
         public var issuesMore: Set<String> = []
+        /// The issue read each repo's rows here come from, by lowercased slug: the store keeps rows
+        /// from a later read over these.
+        public var issueRevisions: [String: Int] = [:]
         /// Open issues at `stage:ready`, taken or not.
         public var ready: [ReadyIssue] = []
         /// Agents whose CLI login expired: none of their jobs starts until I log in again.
@@ -76,6 +79,9 @@ public actor Engine {
     var issuePages: [String: Int] = [:]
     /// The repos whose last issue read ended with a next page still unread.
     var issuesMore: Set<String> = []
+    /// Each repo's issue reads so far, by lowercased slug: a read commits only while it is the
+    /// latest started, so a sync's older read never lands over a Load more that finished first.
+    var issueRevisions: [String: Int] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
     /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
@@ -210,6 +216,7 @@ public actor Engine {
             snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
             snapshot.triage = config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) }
             snapshot.issuesMore = issuesMore
+            snapshot.issueRevisions = issueRevisions
             snapshot.ready = config.repos.flatMap { repo in
                 IssueIntake.ready(openIssues[repo.slug.lowercased()] ?? [], priority: snapshot.flows[repo.slug]?.flow?.intake?.priority,
                                   held: IssueIntake.held(by: jobs.all(), repo: repo.slug))

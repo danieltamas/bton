@@ -4,10 +4,22 @@ extension Engine {
     /// Load more never asks for more pages than this (500 issues).
     public static let issuePageCap = 10
 
+    /// What Load more shows at once: the repo's issues to triage after the extra page, and
+    /// whether GitHub holds more.
+    public struct IssuePage: Sendable {
+        public let triage: [TriageIssue]
+        public let more: Bool
+        /// The read these rows come from: a sync's snapshot from an earlier read does not replace them.
+        public let revision: Int
+    }
+
     /// A repo's open issues, as many pages as Load more asked for; a failure keeps the last read
-    /// whole and never stops the repo's PR work.
-    func readIssues(_ repo: String) async {
+    /// whole and never stops the repo's PR work. Answers whether the read went through.
+    @discardableResult
+    func readIssues(_ repo: String) async -> Bool {
         let slug = repo.lowercased()
+        let revision = (issueRevisions[slug] ?? 0) + 1
+        issueRevisions[slug] = revision
         var issues: [OpenIssue] = [], after: String?
         for page in 1...max(1, issuePages[slug] ?? 1) {
             do {
@@ -16,20 +28,34 @@ extension Engine {
                 after = read.nextPage
             } catch {
                 log("\(repo): issues page \(page) not read: \(error.localizedDescription)")
-                return
+                return false
             }
             if after == nil { break }
         }
+        // A read started later (a Load more during a sync, or the reverse) owns the list now.
+        guard issueRevisions[slug] == revision else { return false }
         var seen = Set<Int>()
         openIssues[slug] = issues.filter { seen.insert($0.number).inserted }
         issuesReadThisTick.insert(slug)
         if after == nil { issuesMore.remove(slug) } else { issuesMore.insert(slug) }
+        return true
     }
 
     /// Load more: the next sync reads one page more of the repo's issues, and keeps doing so.
     public func loadMoreIssues(repo: String) {
         let slug = repo.lowercased()
         issuePages[slug] = min(Self.issuePageCap, (issuePages[slug] ?? 1) + 1)
+    }
+
+    /// Load more, pressed: the extra page is read now, not at the next sync, and the rows to
+    /// show come back. Nil when the read failed: the last list stands and the next sync reads
+    /// the extra page again.
+    public func readMoreIssues(repo: String) async -> IssuePage? {
+        loadMoreIssues(repo: repo)
+        guard await readIssues(repo) else { return nil }
+        let slug = repo.lowercased()
+        return IssuePage(triage: IssueTriage.pending(openIssues[slug] ?? []), more: issuesMore.contains(slug),
+                         revision: issueRevisions[slug] ?? 0)
     }
 
     func issueAsks(in repos: [WatchedRepo], me: String?) -> [IssueAsk] {

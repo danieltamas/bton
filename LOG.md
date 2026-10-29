@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**Load more from GitHub answers the press.** The pill dims and says it is loading the moment it is pressed, and stays so until the rows are in; a second press meanwhile does nothing. The extra page is read right away, not at the next sync, so the rows arrive in the seconds one page takes instead of after a whole sync. A read that fails leaves the list as it was and brings the pill back.
+
 ## 0.15.0 (2026-10-29)
 
 **A dependency cache a team opts into with checks.cache.** It names the files whose bytes key the cache (the lockfiles) and the directories to keep (node_modules). Before a PR job's checks run, each directory the worktree lacks is cloned in from ~/.bton/cache/<repo>/<key>/; after every check passed, a directory the worktree has and the cache lacks is cloned out, so a new PR's first run starts from the last install with the same lockfile. A failed run saves nothing, a copy that fails is noted and never fails the job, and Bton evicts nothing: the directory is the owner's to clear. Off without the declaration, and worth it where an install takes minutes, not seconds.

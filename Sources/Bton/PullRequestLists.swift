@@ -270,13 +270,22 @@ struct MergedList: View {
 // MARK: shared row parts
 
 extension RowStack where Header == EmptyView {
-    init(items: [Item], more: (title: String, action: () async -> Void)? = nil, footer: AnyView? = nil,
+    init(items: [Item], more: RowStackMore? = nil, footer: AnyView? = nil,
          @ViewBuilder row: @escaping (Item) -> Row) {
         self.init(items: items, more: more, footer: footer, row: row, header: { EmptyView() })
     }
 }
 
 /// The scrolling column every tab uses, rows rising in on first show. A page at a time, so a
+/// The pill under a list whose remote has more rows: its title, whether the owner of the list is
+/// fetching now (state the store keeps, so the pill shows it from the press to the rows), and
+/// what a press does.
+struct RowStackMore {
+    let title: String
+    var loading = false
+    let action: () async -> Void
+}
+
 /// long history (jobs, merged PRs) never builds hundreds of rows nobody scrolls to.
 struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
     static var page: Int { 25 }
@@ -285,14 +294,13 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
     let header: () -> Header
     /// Once every local item is shown: a pill with this title that fetches more (Load more from
     /// GitHub). Nil when the list is complete.
-    var more: (title: String, action: () async -> Void)?
+    var more: RowStackMore?
     /// Under the rows and their pills: the search hits GitHub added.
     var footer: AnyView?
     @Environment(\.stillImage) private var stillImage
     @State private var shown = Self.page
-    @State private var loading = false
 
-    init(items: [Item], more: (title: String, action: () async -> Void)? = nil, footer: AnyView? = nil,
+    init(items: [Item], more: RowStackMore? = nil, footer: AnyView? = nil,
          @ViewBuilder row: @escaping (Item) -> Row, @ViewBuilder header: @escaping () -> Header) {
         self.items = items
         self.more = more
@@ -327,14 +335,13 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
             }
             .padding(.top, 4)
         } else if let more {
-            PillButton(title: loading ? "Loading..." : more.title, symbol: "arrow.down.circle", prominent: false) {
-                guard !loading else { return }
-                loading = true
+            // Dimmed and renamed from the press until the rows are in: a second press does nothing.
+            PillButton(title: more.loading ? "Loading from GitHub..." : more.title, symbol: "arrow.down.circle",
+                       prominent: false, disabled: more.loading) {
                 Task {
                     await more.action()
                     // The fetched rows show at once, wherever the sort puts them.
                     withAnimation(Motion.spring) { shown = max(shown, items.count) + Self.page * 2 }
-                    loading = false
                 }
             }
             .padding(.top, 4)

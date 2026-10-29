@@ -36,6 +36,12 @@ final class AppStore {
     private(set) var triage: [TriageIssue] = []
     /// Repos (slugs lowercased) with open issues beyond the pages read: the Triage list's Load more.
     private(set) var issuesMore: Set<String> = []
+    /// Repos (slugs lowercased) whose extra page of issues is being read now: the Load more pill
+    /// shows it from the press until the rows are in.
+    private(set) var issuesLoading: Set<String> = []
+    /// The issue read each repo's triage rows come from: a sync's snapshot from an earlier read
+    /// keeps them, so Load more's rows never give way to older ones.
+    private var issueRevisions: [String: Int] = [:]
     /// What GitHub's search found for the lists' search text, beyond the synced issues. Display only.
     var searchHits: [OpenIssue] = []
     /// Open issues at stage:ready, taken or free.
@@ -515,6 +521,25 @@ final class AppStore {
         apply(snapshot)
     }
 
+    /// Load more, pressed: each repo's extra page is read now and its rows shown as they come,
+    /// without a full sync; a second press while a repo loads is nothing. A failed read leaves
+    /// the list as it was, and the pill comes back for the next press.
+    func loadMoreIssues(repos: [String]) async {
+        guard let engine else { return }
+        let repos = repos.filter { !issuesLoading.contains($0.lowercased()) }
+        guard !repos.isEmpty else { return }
+        issuesLoading.formUnion(repos.map { $0.lowercased() })
+        defer { issuesLoading.subtract(repos.map { $0.lowercased() }) }
+        for repo in repos {
+            let slug = repo.lowercased()
+            // A page that waited behind a later sync's snapshot is older than what is shown.
+            guard let page = await engine.readMoreIssues(repo: repo), page.revision >= issueRevisions[slug] ?? 0 else { continue }
+            triage = triage.filter { $0.repo.lowercased() != slug } + page.triage
+            if page.more { issuesMore.insert(slug) } else { issuesMore.remove(slug) }
+            issueRevisions[slug] = page.revision
+        }
+    }
+
     private func apply(_ snapshot: Engine.Snapshot) {
         flows = snapshot.flows
         me = snapshot.me ?? me
@@ -533,9 +558,15 @@ final class AppStore {
         openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
         merged = snapshot.merged + merged.filter { unread($0.repo) }
         issueAsks = snapshot.issueAsks
-        // A repo that could not be read keeps its issues, like its PRs.
-        triage = snapshot.triage + triage.filter { unread($0.repo) }
-        issuesMore = snapshot.issuesMore
+        // A repo that could not be read keeps its issues, like its PRs; so does one whose rows
+        // here come from a later read than the snapshot's (a Load more that landed mid-sync).
+        let stale = { (repo: String) -> Bool in
+            let slug = repo.lowercased()
+            return (snapshot.issueRevisions[slug] ?? 0) < (self.issueRevisions[slug] ?? 0)
+        }
+        triage = snapshot.triage.filter { !stale($0.repo) } + triage.filter { unread($0.repo) || stale($0.repo) }
+        issuesMore = snapshot.issuesMore.filter { !stale($0) }.union(issuesMore.filter(stale))
+        issueRevisions.merge(snapshot.issueRevisions) { max($0, $1) }
         features = features.filter { unread($0.key) }.merging(snapshot.features) { _, read in read }
         // The engine keeps an unread repo's last issues in its own list, so the carried ones are not added twice.
         let readNow = Set(snapshot.ready.map(\.id))
