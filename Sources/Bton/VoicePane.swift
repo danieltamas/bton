@@ -75,15 +75,15 @@ struct VoicePane: View {
         } else if store.voice.downloaded.contains(model) {
             HStack(spacing: 8) {
                 if !store.voice.ready.contains(model) {
-                    PillButton(title: "Prepare \(model.label)", symbol: "bolt", prominent: false) { Task { await store.voice.prepare(model) } }
+                    AsyncPillButton(title: "Prepare \(model.label)", runningTitle: "Preparing...", symbol: "bolt", prominent: false,
+                                    id: "prepare:\(model.rawValue)") { await store.voice.prepare(model) }
                 }
                 PillButton(title: "Delete download", symbol: "trash", prominent: false) { store.voice.remove(model) }
             }
         } else {
-            PillButton(title: "Download \(model.label)", symbol: "arrow.down.circle", prominent: false,
-                       disabled: store.voice.checks(for: model).contains(where: \.blocking)) {
-                Task { await store.voice.download(model) }
-            }
+            AsyncPillButton(title: "Download \(model.label)", runningTitle: "Downloading...", symbol: "arrow.down.circle", prominent: false,
+                            disabled: store.voice.checks(for: model).contains(where: \.blocking),
+                            id: "download:\(model.rawValue)") { await store.voice.download(model) }
         }
     }
 

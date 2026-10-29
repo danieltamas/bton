@@ -81,11 +81,15 @@ private struct JobRow: View {
             }
             if job.status == .running {
                 Divider()
-                Button("Stop") { Task { await store.stop(job) } }
+                AsyncPress(id: "stop:\(job.id)", action: { await store.stop(job) }) { running, press in
+                    Button("Stop", action: press).disabled(running)
+                }
             }
             if store.canRetry(job) {
                 Divider()
-                Button("Retry") { Task { await store.retry(job) } }
+                AsyncPress(id: "retry:\(job.id)", action: { await store.retry(job) }) { running, press in
+                    Button("Retry", action: press).disabled(running)
+                }
             }
         }
     }
@@ -117,14 +121,12 @@ private struct JobRow: View {
         HStack(spacing: 5) {
             IconButton(symbol: "text.bubble", help: "Watch what the agent does", size: 24) { watch() }
             if job.status == .running {
-                IconButton(symbol: "stop.fill", help: "Stop and release the lease", tint: Theme.danger, size: 24) {
-                    Task { await store.stop(job) }
-                }
+                AsyncIconButton(symbol: "stop.fill", help: "Stop and release the lease", tint: Theme.danger, size: 24,
+                                id: "stop:\(job.id)") { await store.stop(job) }
             }
             if store.canRetry(job) {
-                IconButton(symbol: "arrow.clockwise", help: "Run this move again on the same head", size: 24) {
-                    Task { await store.retry(job) }
-                }
+                AsyncIconButton(symbol: "arrow.clockwise", help: "Run this move again on the same head", size: 24,
+                                id: "retry:\(job.id)") { await store.retry(job) }
             }
         }
     }

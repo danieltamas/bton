@@ -4,6 +4,8 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
+**Every press that waits shows it, by construction.** Retry, Stop, Take, Draft reply, Run now, Run next, Release, Build the registry, I've logged in, Prepare, Download and Check GitHub now dim the moment they are pressed and stay so until the action returns, with a word where the product has one (Taking..., Starting..., Loading from GitHub...); a second press meanwhile is nothing. Load more, Take and Create issue each had this by hand; now every button that awaits is built on one component that holds the press in the app's state, and a test refuses a button closure that starts a task of its own, so the next such action gets its state with the button.
+
 **Load more from GitHub answers the press.** The pill dims and says it is loading the moment it is pressed, and stays so until the rows are in; a second press meanwhile does nothing. The extra page is read right away, not at the next sync, so the rows arrive in the seconds one page takes instead of after a whole sync. A read that fails leaves the list as it was and brings the pill back.
 
 ## 0.15.0 (2026-10-29)

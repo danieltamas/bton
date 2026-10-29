@@ -193,15 +193,13 @@ private struct ReadyIssueRow: View {
         } else if store.isNext(repo: issue.repo, item: "issue-\(issue.number)") {
             StartingLabel(repo: issue.repo, reason: store.waitingReason(repo: issue.repo, item: "issue-\(issue.number)"))
         } else if let job, store.canRetry(job) {
-            RunNowButton(title: "Retry", symbol: "arrow.clockwise", color: Theme.color(forStage: "spec"),
-                         help: "Run the job again: the issue is already yours, so it is not claimed twice") {
-                Task { await store.retry(job) }
-            }
+            AsyncRunNowButton(title: "Retry", symbol: "arrow.clockwise", color: Theme.color(forStage: "spec"),
+                              help: "Run the job again: the issue is already yours, so it is not claimed twice",
+                              id: "retry:\(job.id)") { await store.retry(job) }
         } else if canTake {
-            RunNowButton(title: "Take", symbol: "hand.raised", color: Theme.mint,
-                         help: "Claim the issue and start the agent now, also when this repo does not start its moves") {
-                Task { await store.take(issue) }
-            }
+            AsyncRunNowButton(title: "Take", runningTitle: "Taking...", symbol: "hand.raised", color: Theme.mint,
+                              help: "Claim the issue and start the agent now, also when this repo does not start its moves",
+                              id: "take:\(issue.repo)#\(issue.number)") { await store.take(issue) }
         }
     }
 }
@@ -273,17 +271,15 @@ private struct IssueAskRow: View {
             StartingLabel(repo: ask.repo)
         } else if let job {
             if store.canRetry(job) {
-                PillButton(title: "Retry draft", symbol: "arrow.clockwise", disabled: store.draftBlocked != nil) {
-                    Task { await store.retry(job) }
-                }
+                AsyncPillButton(title: "Retry draft", symbol: "arrow.clockwise", disabled: store.draftBlocked != nil,
+                                id: "retry:\(job.id)") { await store.retry(job) }
                 .help(store.draftBlocked ?? "Draft the reply again, on the same question")
             }
         } else {
             let blocked = ask.draftable ? store.draftBlocked
                 : "Opened by someone without write access to the repo: Bton runs no agent on it"
-            PillButton(title: "Draft reply", symbol: "sparkles", disabled: blocked != nil) {
-                Task { await store.requestDraft(ask) }
-            }
+            AsyncPillButton(title: "Draft reply", symbol: "sparkles", disabled: blocked != nil,
+                            id: "draft:\(ask.id)") { await store.requestDraft(ask) }
             .help(blocked ?? "An agent reads the issue and the code and drafts your reply; you post it")
         }
     }

@@ -47,7 +47,7 @@ struct TriageList: View {
     private var more: RowStackMore? {
         let waiting = repos.filter { store.issuesMore.contains($0.lowercased()) }
         guard !waiting.isEmpty else { return nil }
-        return RowStackMore(title: "Load more from GitHub",
+        return RowStackMore(id: "more:\(waiting.map { $0.lowercased() }.sorted().joined(separator: ","))", title: "Load more from GitHub",
                             loading: waiting.contains { store.issuesLoading.contains($0.lowercased()) },
                             action: { await store.loadMoreIssues(repos: waiting) })
     }

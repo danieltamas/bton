@@ -211,7 +211,7 @@ private struct StoredGraphsList: View {
                 Text("no finished build").font(.meta).foregroundStyle(Theme.textTertiary)
             }
             Spacer(minLength: 0)
-            IconButton(symbol: "trash", help: "Delete this graph", size: 22) { delete(graph) }
+            AsyncIconButton(symbol: "trash", help: "Delete this graph", size: 22, id: "delete-graph:\(graph.slug)") { await delete(graph) }
         }
     }
 
@@ -220,20 +220,18 @@ private struct StoredGraphsList: View {
         graphs = await Task.detached { CodeGraph.storedGraphs(home: home) }.value
     }
 
-    private func delete(_ graph: CodeGraph.StoredGraph) {
-        Task {
-            // Hundreds of files: not on the main thread.
-            let failure = await Task.detached { () -> String? in
-                do {
-                    try FileManager.default.removeItem(at: graph.url)
-                    return nil
-                } catch {
-                    return error.localizedDescription
-                }
-            }.value
-            problem = failure
-            await load()
-        }
+    private func delete(_ graph: CodeGraph.StoredGraph) async {
+        // Hundreds of files: not on the main thread.
+        let failure = await Task.detached { () -> String? in
+            do {
+                try FileManager.default.removeItem(at: graph.url)
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+        problem = failure
+        await load()
     }
 
     private static func size(_ bytes: Int64) -> String {

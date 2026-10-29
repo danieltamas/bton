@@ -47,7 +47,8 @@ struct LoginNotice: View {
                             NSWorkspace.shared.openApplication(at: terminal, configuration: NSWorkspace.OpenConfiguration())
                         }
                     }
-                    PillButton(title: "I've logged in", symbol: "checkmark") { Task { await store.markLoggedIn(agent) } }
+                    AsyncPillButton(title: "I've logged in", runningTitle: "Checking...", symbol: "checkmark",
+                                    id: "login:\(agent)") { await store.markLoggedIn(agent) }
                         .help("Its jobs start again at this sync; if it is still logged out, the next one fails and this comes back")
                 }
             }

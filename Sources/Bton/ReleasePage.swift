@@ -36,7 +36,8 @@ private struct ReleaseAction: ViewModifier {
         } else if store.isNext(repo: slug, item: Release.item) {
             StartingLabel(repo: slug, reason: store.waitingReason(repo: slug, item: Release.item))
         } else if isMine, let standing = report?.release, Self.offers(standing) {
-            PillButton(title: "Release", symbol: "shippingbox") { Task { await store.runNext(repo: slug, item: Release.item) } }
+            AsyncPillButton(title: "Release", runningTitle: "Starting...", symbol: "shippingbox",
+                            id: "next:\(slug)#\(Release.item)") { await store.runNext(repo: slug, item: Release.item) }
                 .help(Self.help(standing))
         }
     }

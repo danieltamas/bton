@@ -179,7 +179,8 @@ extension RepoPage {
         } else if store.isNext(repo: slug, item: FeatureJob.item) {
             StartingLabel(repo: slug, reason: store.waitingReason(repo: slug, item: FeatureJob.item))
         } else {
-            PillButton(title: "Build the registry", symbol: "sparkles") { Task { await store.buildRegistry(slug) } }
+            AsyncPillButton(title: "Build the registry", runningTitle: "Starting...", symbol: "sparkles",
+                            id: "registry:\(slug)") { await store.buildRegistry(slug) }
                 .help("An agent reads the issues, the merged PRs and the code graph, writes the registry and opens a PR")
         }
     }

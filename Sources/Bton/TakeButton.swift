@@ -12,14 +12,13 @@ struct TakeButton: View {
         let taking = store.taking.contains(pr.id)
         let asReviewer = store.flows[pr.repo]?.flow.map { FlowEngine.ownerKind(for: pr, flow: $0) == "reviewer" } ?? false
         let review = asReviewer && move.name == "review"
-        RunNowButton(title: taking ? (review ? "Starting..." : "Taking...") : (review ? "Review here" : "Take it"),
-                     symbol: review ? "eye" : "hand.raised", color: Theme.color(forMove: move.name),
-                     help: asReviewer
-                         ? "Ask GitHub for your review on #\(pr.number) and run its \(move.name) here; the assignee stays"
-                         : "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here",
-                     disabled: taking) {
-            Task { await store.take(pr, from: move.owner) }
-        }
+        AsyncRunNowButton(title: taking ? (review ? "Starting..." : "Taking...") : (review ? "Review here" : "Take it"),
+                          runningTitle: review ? "Starting..." : "Taking...",
+                          symbol: review ? "eye" : "hand.raised", color: Theme.color(forMove: move.name),
+                          help: asReviewer
+                              ? "Ask GitHub for your review on #\(pr.number) and run its \(move.name) here; the assignee stays"
+                              : "Assign #\(pr.number) to you alone on GitHub and start its \(move.name) here",
+                          disabled: taking, id: "take:\(pr.repo)#\(pr.number)") { await store.take(pr, from: move.owner) }
     }
 }
 

@@ -145,9 +145,12 @@ struct ReposPane: View {
     }
 
     private func chooseClone(for slug: String) {
+        guard !adding else { return }
         guard let clone = pickFolder(message: "Choose the local clone of \(slug). Bton makes its worktrees there.") else { return }
         problem = nil
+        adding = true
         Task {
+            defer { adding = false }
             do { try await store.chooseClone(clone, for: slug) } catch { problem = error.localizedDescription }
         }
     }

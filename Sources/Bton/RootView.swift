@@ -90,7 +90,9 @@ struct RootView: View {
                     .transition(.opacity)
             }
             // No spinner: the sync line's dot pulses while a sync runs, and a sync can last as long as a check.
-            IconButton(symbol: "arrow.clockwise", help: "Check GitHub now") { Task { await store.refresh() } }
+            // Dimmed while any sync runs: refresh() returns at once then, so the press alone would undim too early.
+            AsyncIconButton(symbol: "arrow.clockwise", help: "Check GitHub now", disabled: store.isRefreshing,
+                            id: "refresh") { await store.refresh() }
             IconButton(symbol: "gearshape", help: "Settings") { openSettings(.general) }
         }
         .padding(.horizontal, 14)

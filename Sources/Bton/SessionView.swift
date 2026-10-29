@@ -85,9 +85,8 @@ struct SessionView: View {
                 }
             }
             if current.status == .running {
-                IconButton(symbol: "stop.fill", help: "Stop and release the lease", tint: Theme.danger, size: 24) {
-                    Task { await store.stop(current) }
-                }
+                AsyncIconButton(symbol: "stop.fill", help: "Stop and release the lease", tint: Theme.danger, size: 24,
+                                id: "stop:\(current.id)") { await store.stop(current) }
             }
         }
     }

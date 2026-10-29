@@ -296,7 +296,8 @@ struct NewIssueView: View {
         if let job, job.status == .failed || job.status == .cancelled {
             VStack(alignment: .leading, spacing: 6) {
                 ProblemText(text: job.detail ?? "The agent stopped before it answered.")
-                PillButton(title: "Try again", symbol: "arrow.clockwise", prominent: false) { Task { await store.retryTurn(session) } }
+                AsyncPillButton(title: "Try again", symbol: "arrow.clockwise", prominent: false,
+                                id: "turn:\(session.id)") { await store.retryTurn(session) }
             }
         } else {
             HStack(spacing: 8) {
@@ -375,11 +376,11 @@ struct NewIssueView: View {
                             .disabled(locked)
                     }
                 }
-                PillButton(title: send, symbol: "paperplane",
-                           disabled: locked || busy || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                               || store.composeBlocked != nil) {
-                    let text = session.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task { await store.send(text, in: session) }
+                AsyncPillButton(title: send, symbol: "paperplane",
+                                disabled: locked || busy || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || store.composeBlocked != nil,
+                                id: "send:\(session.id)") {
+                    await store.send(session.draft.trimmingCharacters(in: .whitespacesAndNewlines), in: session)
                 }
                 .keyboardShortcut(.return, modifiers: .command)
             }
@@ -424,11 +425,10 @@ struct NewIssueView: View {
                 Text("Answer all three to score it").font(.meta).foregroundStyle(Theme.textTertiary)
             }
             Spacer()
-            PillButton(title: session.creating ? "Creating..." : "Create issue", symbol: "plus.circle",
-                       disabled: verdict == nil || session.creating || session.title.trimmingCharacters(in: .whitespaces).isEmpty
-                           || session.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                Task { await store.createIssue(from: session) }
-            }
+            AsyncPillButton(title: session.creating ? "Creating..." : "Create issue", runningTitle: "Creating...", symbol: "plus.circle",
+                            disabled: verdict == nil || session.creating || session.title.trimmingCharacters(in: .whitespaces).isEmpty
+                                || session.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            id: "create:\(session.id)") { await store.createIssue(from: session) }
         }
         .padding(.horizontal, 14)
     }

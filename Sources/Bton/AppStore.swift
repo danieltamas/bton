@@ -27,6 +27,8 @@ final class AppStore {
     /// The PRs each schedule's agent works on, read from its session every few seconds.
     let work = ScheduleWork()
     let local = LocalSync()
+    /// The presses running now: every async button goes through it (AsyncPress).
+    let inFlight = InFlightActions()
     /// The job whose session the window shows in place of its list.
     var watchingJob: UUID?
     /// The issue ask whose drafted reply the window shows in place of its list.

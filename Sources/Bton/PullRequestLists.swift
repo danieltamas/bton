@@ -92,8 +92,10 @@ private struct PullRequestRow: View {
                                 HumanMoveButton(pr: pr, move: move, me: me)
                             } else if let pillStart, let me {
                                 // The agent's move runs here, in Bton: the pill starts it.
-                                StartMoveButton(move: move, me: me, failed: store.failedOnHead(pr, move: pillStart) != nil) {
-                                    Task { await store.runNow(pr, move: pillStart) }
+                                AsyncPress(id: "run:\(pr.repo)#\(pr.number):\(pillStart)", action: { await store.runNow(pr, move: pillStart) }) { running, press in
+                                    StartMoveButton(move: move, me: me, failed: store.failedOnHead(pr, move: pillStart) != nil, action: press)
+                                        .disabled(running)
+                                        .opacity(running ? 0.6 : 1)
                                 }
                             } else {
                                 MoveChip(move: move, me: me, working: busy)
@@ -102,11 +104,10 @@ private struct PullRequestRow: View {
                             if starting {
                                 StartingLabel(repo: pr.repo, reason: store.waitingReason(repo: pr.repo, item: "pr-\(pr.number)"))
                             } else if let buttonStart {
-                                RunNowButton(title: RunNowButton.title(for: buttonStart, failed: store.failedOnHead(pr, move: buttonStart) != nil),
-                                             symbol: Theme.symbol(forMove: buttonStart),
-                                             color: buttonStart == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: buttonStart)) {
-                                    Task { await store.runNow(pr, move: buttonStart) }
-                                }
+                                AsyncRunNowButton(title: RunNowButton.title(for: buttonStart, failed: store.failedOnHead(pr, move: buttonStart) != nil),
+                                                  runningTitle: "Starting...", symbol: Theme.symbol(forMove: buttonStart),
+                                                  color: buttonStart == move.name ? moveColor ?? Theme.neutral : Theme.color(forMove: buttonStart),
+                                                  id: "run:\(pr.repo)#\(pr.number):\(buttonStart)") { await store.runNow(pr, move: buttonStart) }
                             } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
                                       FlowEngine.takeover(of: pr, flow: flow, me: me) != nil {
                                 TakeButton(pr: pr, move: move)
@@ -147,7 +148,9 @@ private struct PullRequestRow: View {
         .contextMenu {
             // Only a move this Mac's agent takes can start; the rest are people's.
             if !busy, let move = pr.move, move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
-                Button("Run Next") { Task { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") } }
+                AsyncPress(id: "next:\(pr.repo)#pr-\(pr.number)", action: { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") }) { running, press in
+                    Button("Run Next", action: press).disabled(running)
+                }
             }
             Button("Open on GitHub") { NSWorkspace.shared.open(pr.url) }
         }
@@ -281,6 +284,8 @@ extension RowStack where Header == EmptyView {
 /// fetching now (state the store keeps, so the pill shows it from the press to the rows), and
 /// what a press does.
 struct RowStackMore {
+    /// The press id, stable per list (`more:<slug>`): see AsyncPress.
+    let id: String
     let title: String
     var loading = false
     let action: () async -> Void
@@ -336,13 +341,11 @@ struct RowStack<Item: Identifiable, Row: View, Header: View>: View {
             .padding(.top, 4)
         } else if let more {
             // Dimmed and renamed from the press until the rows are in: a second press does nothing.
-            PillButton(title: more.loading ? "Loading from GitHub..." : more.title, symbol: "arrow.down.circle",
-                       prominent: false, disabled: more.loading) {
-                Task {
-                    await more.action()
-                    // The fetched rows show at once, wherever the sort puts them.
-                    withAnimation(Motion.spring) { shown = max(shown, items.count) + Self.page * 2 }
-                }
+            AsyncPillButton(title: more.loading ? "Loading from GitHub..." : more.title, runningTitle: "Loading from GitHub...",
+                            symbol: "arrow.down.circle", prominent: false, disabled: more.loading, id: more.id) {
+                await more.action()
+                // The fetched rows show at once, wherever the sort puts them.
+                withAnimation(Motion.spring) { shown = max(shown, items.count) + Self.page * 2 }
             }
             .padding(.top, 4)
         }
