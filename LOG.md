@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A failed step shows why it failed.** A job's transcript cut every result to its first three lines, and a shell prints the reason it failed last: the `wt merge` that landed #565 and then died in its cleanup showed an advisory line and nothing of the `fetching ref ... failed` under it. A failed result now keeps its first three lines, a "..." and its last eight, up to twelve in all; a click still opens the whole result.
+
 ## 0.17.0 (2026-10-29)
 
 **A merge held by a red check waits on a person, and the panel says so.** An approved PR whose `checks_green` check had failed was nobody's: no rule held, so the card showed no move and Waiting on you stayed at 0 while the PR sat there. It is now the merge move's owner's, with "gate red" on the chip and, in the chip's popover, what to do: re-run the check or fix what it found on the base. A check still pending is still just waited for, and no agent ever starts a move held by a red check.

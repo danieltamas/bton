@@ -127,9 +127,28 @@ public enum SessionTranscript {
         return input.values.compactMap { $0 as? String }.first ?? ""
     }
 
+    /// A result cut to `lines` lines for a collapsed row: its first three lines, "...", and its
+    /// last lines. A shell prints the reason it failed last, so the tail is what a person needs
+    /// from a failed step, and the head keeps the exit code.
+    public static func preview(_ text: String, lines: Int = 12) -> String {
+        let lines = max(lines, 5)
+        let trimmed = text.trimmingSuffix(while: { $0 == "\n" })
+        let all = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+        guard all.count > lines else { return String(trimmed) }
+        return (all.prefix(3) + ["..."] + all.suffix(lines - 4)).joined(separator: "\n")
+    }
+
     private static func resultText(_ content: Any?) -> String {
         if let text = content as? String { return text }
         let parts = (content as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
         return parts.joined(separator: "\n")
+    }
+}
+
+private extension String {
+    func trimmingSuffix(while keep: (Character) -> Bool) -> Substring {
+        var end = endIndex
+        while end > startIndex, keep(self[index(before: end)]) { end = index(before: end) }
+        return self[..<end]
     }
 }

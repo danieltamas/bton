@@ -146,10 +146,13 @@ private struct EntryRow: View {
             }
             .onTapGesture { expanded.toggle() }
         case let .result(isError):
-            Text(entry.text.isEmpty ? "(no output)" : entry.text)
+            // A failed step's reason is in its last lines, so a collapsed failure keeps them: the
+            // preview cuts it to twelve lines itself, so a wrapped long line cannot push them out.
+            Text(entry.text.isEmpty ? "(no output)"
+                 : isError && !expanded ? SessionTranscript.preview(entry.text) : entry.text)
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(isError ? Theme.danger.opacity(0.9) : Theme.textTertiary)
-                .lineLimit(expanded ? 40 : 3).textSelection(.enabled)
+                .lineLimit(expanded ? 40 : isError ? nil : 3).textSelection(.enabled)
                 .padding(.leading, 10)
                 .overlay(alignment: .leading) { Rectangle().fill(Theme.hairline).frame(width: 1) }
                 .onTapGesture { expanded.toggle() }
