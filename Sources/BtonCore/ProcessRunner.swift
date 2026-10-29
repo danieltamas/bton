@@ -115,8 +115,13 @@ public enum Executables {
         return ([directory] + searchPath.split(separator: ":").map(String.init).filter { $0 != directory }).joined(separator: ":")
     }
 
-    public static func resolve(_ name: String) -> String? {
+    /// `bton` is the CLI inside this app's bundle first: the app and its CLI are one release, so
+    /// a stale `bton` on PATH never runs a flow's command. Every other name is PATH only.
+    public static func resolve(_ name: String) -> String? { resolve(name, bundled: { Helpers.serverPath }) }
+
+    public static func resolve(_ name: String, bundled: () -> String?) -> String? {
         if name.contains("/") { return FileManager.default.isExecutableFile(atPath: name) ? name : nil }
+        if name == "bton", let cli = bundled() { return cli }
         return searchPath.split(separator: ":").map { "\($0)/\(name)" }
             .first(where: FileManager.default.isExecutableFile)
     }

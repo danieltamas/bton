@@ -86,8 +86,9 @@ no blind retry of a timed-out command.
 7. **Done (0.15.0): `tier.only` lowers a PR to a tier when every changed file matches its
    globs and the body names no tier but the default (an `only` tier named in the body is not a
    claim; `paths` still raise it), and a dispatch rule with per-tier agents runs its `command`
-   for the tiers without one, so the team example's `docs` tier gets `scripts/docs-review.sh`
-   as its review. The rule's `checks` (item 6) still run before it: checks are per rule, not
+   for the tiers without one, so the team example's `docs` tier gets its review from a command
+   (0.15.0 said `scripts/docs-review.sh`, a script every team would have written identically;
+   0.16.0 ships it as `bton docs-review`, see FLOW.md). The rule's `checks` (item 6) still run before it: checks are per rule, not
    per tier. The original item: a deterministic review for documentation-only PRs.** Tier
    rules only raised a tier (`TierPaths.swift`). A rule that lowers it when every changed path matches an allowlist
    (`docs/**`, `*.md`, excluding anything executable or generated), and a command review (link

@@ -82,7 +82,7 @@ whose verdict is policy, not judgment:
 "tier": { "marker": "Tier:", "values": ["docs", "quick fix", "feature", "high-risk"], "default": "feature",
           "only": { "docs": ["*.md", "docs/**/*.md"] } },
 "reviews": { "docs": [{ "heading": "## Review:" }], ... },
-"dispatch": { "review": { "command": ["bash", "scripts/docs-review.sh", "{number}", "{head}", "{base}", "{tier}"],
+"dispatch": { "review": { "command": ["bton", "docs-review", "{number}", "{head}", "{base}", "{tier}"],
                           "agent": { "quick fix": "codex", "feature": "claude", "high-risk": "claude" }, ... } }
 ```
 
@@ -241,6 +241,16 @@ agent's review would be posted as the author and ignored.
   lacks): nothing is posted, the job shows `waiting: ...` and runs again after 30 minutes (at once if you press it), so a
   Mac that has the tool takes it; any other exit fails the job. Pass the PR's head and tier to the
   script with `{head}` and `{tier}`.
+- `bton docs-review {number} {head} {base} {tier}` is the review command Bton ships for the
+  `docs` tier, so no team writes one: a policy check, not a judgment. Every changed file of the
+  PR (against the base as merged) must be under the tier's `only` globs (else any `*.md`),
+  non-empty UTF-8, with no secret-shaped string (GitHub and API tokens, AWS keys, private key
+  blocks; the finding names the line, never the match), no invisible character (zero-width,
+  bidi, soft hyphen, BOM) and no relative markdown link to a path missing from the PR's tree
+  (code blocks and spans are skipped; reference-style links are not checked). Any finding is
+  `changes` with one line per finding; none is `approve`. `bton` in a command resolves to the CLI
+  inside the app bundle first, so a flow never needs a path. A team with its own policy points
+  `command` at its script instead, under the same contract.
 - `helpers`: up to three agents of this Mac's `agents` config that a Claude agent may ask for a
   second opinion through Bton's `ask` tool (`mcp__bton__ask`). Bton runs the helper itself,
   outside the agent's sandbox, Claude and codex read-only (any other program as its template

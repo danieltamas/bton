@@ -153,7 +153,8 @@ struct DocsTierAcceptanceTests {
         #expect(flow.tier.values.first == "docs")
         #expect(flow.tier.only?["docs"]?.contains("*.md") == true)
         #expect(flow.reviews["docs"]?.isEmpty == false)
-        #expect(flow.dispatch["review"]?.command?.first == "bash")
+        // 0.16.0 (spec-docs-review item 5): the policy review ships as `bton docs-review`, not a team script.
+        #expect(flow.dispatch["review"]?.command?.prefix(2) == ["bton", "docs-review"])
         #expect(flow.dispatch["review"]?.agent?.value(for: "docs") == nil)
     }
 

@@ -12,6 +12,8 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton handoff <owner/name> [<issue>] --to <login> <text>   comment @login on an issue, once;
                                       no issue: the repo's open issue labelled bton:inbox
        bton prices refresh            fetch token prices now
+       bton docs-review <number> <head> <base> <tier>   the docs tier's policy review, written to $BTON_OUT
+                                      (a flow's dispatch.review.command; exit 2 = head not fetchable here)
        bton ask-server --job <uuid> --cwd <dir> --helper <agent>...   a job's MCP ask tool (Bton starts it)
 exit: 0 done, 1 held by someone else or lost, 2 usage, 3 error (not held)
 """
@@ -200,6 +202,16 @@ do {
         } catch let problem as Handoff.Problem {
             fail(problem.localizedDescription)
         }
+    case "docs-review":
+        // Exit 3, not the usage exit 2: to the dispatcher 2 means "retry later", and bad arguments never get better.
+        guard arguments.count == 5, let number = Int(arguments[1]) else {
+            fail("docs-review needs <number> <head> <base> <tier>", status: 3)
+        }
+        guard let out = ProcessInfo.processInfo.environment["BTON_OUT"], !out.isEmpty else { fail("docs-review needs BTON_OUT", status: 3) }
+        let status = await DocsReviewRun.run(number: number, head: arguments[2], base: arguments[3], tier: arguments[4],
+                                             in: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+                                             out: URL(fileURLWithPath: out), runner: ProcessRunner())
+        exit(status)
     case "prices":
         guard arguments == ["prices", "refresh"] else { fail(usage) }
         do {

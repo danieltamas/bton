@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**The docs tier's review ships with Bton.** 0.15.0 pointed the team example at `scripts/docs-review.sh`, a script every team would have had to write, and would have written the same way. It is now `bton docs-review {number} {head} {base} {tier}`, a subcommand of the command-line tool every Mac already has beside the app: every changed file must be documentation under the tier's globs, non-empty UTF-8, with no secret-shaped string, no invisible character and no relative link to a file the PR does not have; any finding is `changes`, one line each, none is `approve`, and the review says it is a policy check, not a judgment. `bton` in a flow's command resolves to the tool inside the app bundle first, so a stale copy on PATH never runs it and no team types a path. A head that cannot be fetched is "unavailable here" and retried; bad arguments fail the job with the reason. A team with its own policy points `command` at its script instead, same contract. Update `.bton/flow.json` from the example; there is no script to write.
+
 ## 0.15.1 (2026-10-29)
 
 **Every press that waits shows it, by construction.** Retry, Stop, Take, Draft reply, Run now, Run next, Release, Build the registry, I've logged in, Prepare, Download and Check GitHub now dim the moment they are pressed and stay so until the action returns, with a word where the product has one (Taking..., Starting..., Loading from GitHub...); a second press meanwhile is nothing. Load more, Take and Create issue each had this by hand; now every button that awaits is built on one component that holds the press in the app's state, and a test refuses a button closure that starts a task of its own, so the next such action gets its state with the button.
