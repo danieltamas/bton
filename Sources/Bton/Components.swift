@@ -559,9 +559,7 @@ struct Bubble: View {
     var accented = false
 
     var body: some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(accented ? Theme.textPrimary : Theme.textSecondary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+        MarkdownView(text: text, tone: accented ? Theme.textPrimary : Theme.textSecondary)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(accented ? Theme.mint.opacity(0.12) : Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

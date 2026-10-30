@@ -25,6 +25,12 @@ enum DemoShots {
         try write(panel(.pullRequests), to: directory.appendingPathComponent("footer-starring.png"))
         store.showStarOffer(false)
         try write(panel(.issues), to: directory.appendingPathComponent("issues.png"))
+        store.readingDraft = snapshot.issueAsks[1]
+        try write(panel(.issues), to: directory.appendingPathComponent("draft.png"))
+        store.viewingIssue = snapshot.issueAsks[1]
+        try write(panel(.issues), to: directory.appendingPathComponent("issue.png"))
+        store.viewingIssue = nil
+        store.readingDraft = nil
         store.demoReplies = [1: .questions("Should the CSV sit beside the PDF export or replace it?")]
         let started = NewIssueSession(repo: repo)
         started.turns = [.init(text: "Let customers download their invoices as a CSV file.", round: 1)]
@@ -192,7 +198,7 @@ enum DemoShots {
                      askedAt: now.addingTimeInterval(-34 * 60), commentID: "demo-388"),
             IssueAsk(repo: repo, number: 402, title: "Webhook retries: which backoff, and who owns the dead-letter queue?",
                      url: URL(string: "https://github.com/\(repo)/issues/402")!, asker: "jonas",
-                     askedAt: now.addingTimeInterval(-6 * 60), commentID: "demo-402", handoff: true),
+                     askedAt: now.addingTimeInterval(-6 * 60), commentID: "demo-402", handoff: true, thread: webhookThread),
             IssueAsk(repo: "harbor/api", number: 77, title: "Rate limits for the public orders endpoint: per key or per IP?",
                      url: URL(string: "https://github.com/harbor/api/issues/77")!, asker: "lee",
                      askedAt: now.addingTimeInterval(-2 * 3600), commentID: "demo-77"),
@@ -213,15 +219,47 @@ enum DemoShots {
         return snapshot
     }
 
+    /// Issue 402 as a teammate wrote it, with the comment that asks: the README's issue screen.
+    private static var webhookThread: [IssueComment] {
+        let comment = { (id: String, author: String, body: String, minutes: Double) in
+            IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: body,
+                         createdAt: now.addingTimeInterval(-minutes * 60), url: nil)
+        }
+        return [
+            comment("body", "lee", """
+                A webhook that fails once is dropped today. Stripe and Shopify both retry; we should too.
+
+                ## Proposal
+                - Retry **three times** with a growing delay: 1 min, 10 min, 1 hour.
+                - A delivery still failing after that goes to a dead-letter queue, kept 7 days.
+                - `POST /webhooks/{id}/redeliver` replays one by hand.
+
+                ## Decisions
+                | # | Decision | Who | Date |
+                |---|----------|-----|------|
+                | D-1 | Retries live in the worker, not the API | lee | 2026-10-27 |
+
+                > The delay schedule copies Stripe's first three attempts.
+                """, 3 * 24 * 60),
+            comment("demo-402-1", "jonas", "Agreed on three retries. The dead-letter queue needs an owner before I start.", 48 * 60),
+            comment("demo-402", "jonas", "@dani which backoff do you want, and who owns the dead-letter queue? `bton handoff`", 6),
+        ]
+    }
+
     private static var triage: [TriageIssue] {
         let issue = { (number: Int, title: String, labels: [String], body: String, days: Double) in
             TriageIssue(repo: repo, number: number, title: title, url: URL(string: "https://github.com/\(repo)/issues/\(number)")!,
                         createdAt: now.addingTimeInterval(-days * 86400), body: body, labels: labels)
         }
         return [
-            issue(421, "Saved cards fail to charge after a currency switch", [],
-                  "Customers who switch currency in the cart and pay with a saved card get a generic error, and the order stays unpaid. "
-                      + "Reproduced on staging with EUR to RON. The payment intent is created in the old currency.", 1),
+            issue(421, "Saved cards fail to charge after a currency switch", [], """
+                Customers who switch currency in the cart and pay with a saved card get a generic error, and the order stays unpaid.
+
+                **Reproduced** on staging with EUR to RON:
+                1. Add an item, switch the cart to RON.
+                2. Pay with a saved card.
+                3. The payment intent is created in the old currency, so `charge.failed` comes back.
+                """, 1),
             issue(417, "Order confirmation email shows the wrong delivery date", ["priority:medium", "stage:triage"],
                   "The date uses the warehouse time zone, not the customer's.", 4),
             issue(399, "Dark mode: low contrast on the cart's discount banner", ["stage:triage"],

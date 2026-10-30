@@ -183,10 +183,8 @@ struct TriageView: View {
             .padding(.horizontal, 14)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(issue.body.trimmingCharacters(in: .whitespacesAndNewlines).prefix(900))
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(10)
+                    MarkdownView(text: issue.body, tone: Theme.textPrimary)
+                        .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     TriageQuestions(answers: $answers)

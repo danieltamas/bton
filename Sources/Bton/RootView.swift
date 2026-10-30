@@ -288,6 +288,7 @@ struct RootView: View {
             tab = item
             store.watchingJob = nil
             store.readingDraft = nil
+            store.viewingIssue = nil
             store.triaging = nil
             store.composing = nil
             store.viewingRepo = nil
@@ -364,7 +365,11 @@ struct RootView: View {
 
     @ViewBuilder private var content: some View {
         let showRepo = store.repos.count > 1
-        if let ask = store.readingDraft {
+        if let ask = store.viewingIssue {
+            IssueView(ask: ask) { withAnimation(Motion.spring) { store.viewingIssue = nil } }
+                .id(ask.id)
+                .transition(.push)
+        } else if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
                 .transition(.push)
         } else if let session = store.composing {

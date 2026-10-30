@@ -316,6 +316,9 @@ struct DraftView: View {
                     Text(ask.title).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                PillButton(title: "View issue", symbol: "doc.text", prominent: false) {
+                    withAnimation(Motion.spring) { store.viewingIssue = ask }
+                }
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(ask.url) }
             }
             .padding(.horizontal, 14)
@@ -359,25 +362,19 @@ struct DraftView: View {
         .onChange(of: text) { store.draftEdits[ask.notice] = text }
     }
 
-    /// The issue body and its comments, oldest first, the asking one tinted and scrolled to; a
-    /// thread longer than the sync reads (its last 20 comments) is whole on GitHub.
+    /// The issue's comments, oldest first, the asking one tinted and scrolled to; the body stays
+    /// behind View issue unless it is the ask. A thread longer than the sync reads (its last 20
+    /// comments) is whole on GitHub.
     private var thread: some View {
         // The store's copy grows with the sync; a newer ask on the issue keeps the opened one's.
         let entries = (store.issueAsks.first { $0.id == ask.id && $0.commentID == ask.commentID } ?? ask).thread
+            .filter { $0.id != "body" || ask.commentID == "body" }
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 4) {
-                                Text(entry.author ?? "ghost").font(.meta.weight(.medium)).foregroundStyle(Theme.textSecondary)
-                                Text(entry.id == "body" ? "opened it" : "·").font(.meta).foregroundStyle(Theme.textTertiary)
-                                RelativeTime(date: entry.createdAt) { "\($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
-                            }
-                            .padding(.horizontal, 4)
-                            Bubble(text: entry.body, accented: entry.id == ask.commentID)
-                        }
-                        .id(entry.id == ask.commentID ? Self.askingAnchor : nil)
+                        ThreadEntry(entry: entry, accented: entry.id == ask.commentID)
+                            .id(entry.id == ask.commentID ? Self.askingAnchor : nil)
                     }
                 }
                 .padding(.horizontal, 14)

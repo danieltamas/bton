@@ -37,6 +37,8 @@ final class AppStore {
     var watchingJob: UUID?
     /// The issue ask whose drafted reply the window shows in place of its list.
     var readingDraft: IssueAsk?
+    /// The issue read in full from its draft (View issue); nil shows the draft again.
+    var viewingIssue: IssueAsk?
     /// Questions put to me on open issues, newest first.
     private(set) var issueAsks: [IssueAsk] = []
     private(set) var triage: [TriageIssue] = []
@@ -385,6 +387,7 @@ final class AppStore {
         withAnimation(Motion.spring) {
             watchingJob = nil
             readingDraft = nil
+            viewingIssue = nil
             triaging = nil
             composing = nil
             viewingRepo = slug
