@@ -19,14 +19,15 @@ struct PullRequestList: View {
         } else if items.isEmpty && running.isEmpty {
             EmptyState(symbol: "checkmark.seal", title: "No open pull requests", detail: "New ones show here within a sync.")
         } else {
-            // A job on a PR of the list is that PR's row, working; only a job with no row (a
-            // schedule between PRs) gets a card of its own above the list.
-            let rowJob = { (pr: PullRequest) -> Job? in
-                running.first { $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" } ?? store.schedule(workingOn: pr)
+            // Every job on a PR of the list is that PR's row, working: the PR's own move and any
+            // schedule on it at the moment (the registry job merging the PR it opened). Only a
+            // job with no row, a schedule between PRs, gets a card of its own above the list.
+            let rowJobs = { (pr: PullRequest) -> [Job] in
+                running.filter { $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" } + store.schedules(workingOn: pr)
             }
-            let loose = running.filter { job in !items.contains { rowJob($0)?.id == job.id } }
+            let loose = running.filter { job in !items.contains { rowJobs($0).contains { $0.id == job.id } } }
             RowStack(items: ordered) { pr in
-                PullRequestRow(pr: pr, showRepo: showRepo, me: me, job: rowJob(pr))
+                PullRequestRow(pr: pr, showRepo: showRepo, me: me, jobs: rowJobs(pr))
             } header: {
                 if !loose.isEmpty { ActiveStrip(jobs: loose, schedules: schedules).padding(.bottom, 8) }
             }
@@ -48,8 +49,10 @@ private struct PullRequestRow: View {
     let pr: PullRequest
     let showRepo: Bool
     let me: String?
-    /// This Mac's agent working the PR now: the row opens its session while it does.
-    let job: Job?
+    /// This Mac's agents working the PR now, the PR's own move first: the row opens the first
+    /// one's session, each working line its own.
+    let jobs: [Job]
+    private var job: Job? { jobs.first }
 
     var body: some View {
         let moveColor = pr.move.map { Theme.color(forMove: $0.name) }
@@ -143,7 +146,9 @@ private struct PullRequestRow: View {
                     .fixedSize()
                     .layoutPriority(2)
                 }
-                if let job { WorkingLine(job: job) }
+                ForEach(jobs) { job in
+                    WorkingLine(job: job) { withAnimation(Motion.spring) { store.watchingJob = job.id } }
+                }
                 // The card's full width, so the reason never squeezes the title into a sliver.
                 if let failed, let detail = failed.job.detail {
                     ReportLine(text: "Last \(failed.move) on this head stopped: \(detail)", symbol: "exclamationmark.triangle",
@@ -187,29 +192,37 @@ private struct PullRequestRow: View {
 }
 
 /// Starts a move of mine at once, again if it failed on this head.
-/// Under a PR an agent works here: what it does, for how long, and that the row's click watches it.
+/// Under a PR an agent works here: what it does, for how long, and a click that watches it. A
+/// second line is a second job on the same PR, a schedule's, with its own session.
 private struct WorkingLine: View {
     let job: Job
+    let action: () -> Void
 
     var body: some View {
         let color = Theme.color(for: .running)
-        let verb = switch job.key.move {
-        case "review": "reviewing it"
-        case "fix": "fixing it"
-        case "merge": "merging it"
-        case "resolve": "resolving its conflicts"
-        default: "working on it"
+        let who = (job.agent ?? "The agent").capitalized
+        let doing = switch job.key.move {
+        case "review": "\(who) is reviewing it"
+        case "fix": "\(who) is fixing it"
+        case "merge": "\(who) is merging it"
+        case "resolve": "\(who) is resolving its conflicts"
+        case "schedule": "\(who)'s scheduled run is on it"
+        default: "\(who) is working on it"
         }
-        HStack(spacing: 6) {
-            PulseDot(color: color)
-            Text("\((job.agent ?? "The agent").capitalized) is \(verb) · watch").font(.meta).foregroundStyle(color).lineLimit(1)
-            Spacer(minLength: 4)
-            Text(job.startedAt, style: .timer).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
-            Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textTertiary)
+        Button(action: action) {
+            HStack(spacing: 6) {
+                PulseDot(color: color)
+                Text("\(doing) · watch").font(.meta).foregroundStyle(color).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(job.startedAt, style: .timer).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textTertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .buttonStyle(PressStyle())
+        .help("Watch this job's session")
     }
 }
 

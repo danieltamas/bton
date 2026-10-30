@@ -532,8 +532,11 @@ final class AppStore {
     }
 
     /// The running schedule job working on the PR, if any.
-    func schedule(workingOn pr: PullRequest) -> Job? {
-        jobs.first { $0.status == .running && $0.key.repo == pr.repo && work.current[$0.id] == pr.number }
+    func schedule(workingOn pr: PullRequest) -> Job? { schedules(workingOn: pr).first }
+
+    /// Every running schedule whose session is on the PR now; each is a working line on its row.
+    func schedules(workingOn pr: PullRequest) -> [Job] {
+        jobs.filter { $0.status == .running && $0.key.repo == pr.repo && work.current[$0.id] == pr.number }
     }
 
     func waitingReason(repo: String, item: String) -> String? { waiting["\(repo.lowercased())#\(item)"] }
