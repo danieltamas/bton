@@ -154,6 +154,13 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
   taker's after a Take it. A person who wants the next round too requests their own review again
   on GitHub. Use `reviewer` where the team reads "assignee" as "owns the PR" rather than "reviews
   it".
+- `approver`: whoever wrote the latest counting review or decision on the PR, whatever its
+  verdict; nobody while there is none. Made for the merge: GitHub ends a reviewer's request the
+  moment they submit a review, so a `reviewer` merge move falls back to the rotation right after
+  the approval, which is the pick's Mac, not the approver's. With `"move": "merge",
+  "when": ["approved_current_head"], "who": "approver"` the approval and the merge are one
+  person's, on every Mac, as "merge on approve, by whoever approved" says. Never taken: Take it
+  changes an assignment, and an approval is nobody's to reassign.
 - any other string: that login.
 
 A move is **mine** when its owner equals this Mac's `gh` login, ignoring case.
@@ -177,7 +184,7 @@ move here. Every Mac then reads the move as this one's; a teammate's Bton that r
 PR just before and is already starting the move may still run it first, and then this Mac's start
 finds the move done. A repo with **Take teammates' moves automatically** on (Settings > Repos, needs
 "Start the flow's moves"; `takeMoves` in the config) does this on its own each sync for every move Take it could take, at most two PRs a sync,
-once per PR, owner and head, and without `BTON_PRESSED`. It is not offered when the move
+once per PR, owner, move and head, and without `BTON_PRESSED`. It is not offered when the move
 would then be one the author can't clear, nor for an `author` or named move, which no assignment
 changes.
 

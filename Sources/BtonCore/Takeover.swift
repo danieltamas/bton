@@ -84,19 +84,21 @@ extension Engine {
     /// At most this many PRs are taken per sync: a flow change must not reassign a whole queue at once.
     static let autoTakeLimit = 2
 
-    /// The PRs whose move Take it could take, not yet tried at their owner and head.
+    /// The PRs whose move Take it could take, not yet tried at their owner, move and head.
     static func autoTakeable(_ pullRequests: [PullRequest], flow: Flow, me: String, repo: String, tried: Set<String>) -> [PullRequest] {
         pullRequests.filter { pr in
             FlowEngine.takeover(of: pr, flow: flow, me: me) != nil && !tried.contains(autoTakeKey(pr, repo: repo))
         }
     }
 
+    /// Per PR, owner, move and head: a review taken at a head must not spend the merge that
+    /// follows the approval at the same head, from the same rotation pick.
     static func autoTakeKey(_ pr: PullRequest, repo: String) -> String {
-        "\(pick(repo: repo, item: "pr-\(pr.number)"))@\(pr.move?.owner?.lowercased() ?? "")@\(pr.headSha)"
+        "\(pick(repo: repo, item: "pr-\(pr.number)"))@\(pr.move?.owner?.lowercased() ?? "")@\(pr.move?.name ?? "")@\(pr.headSha)"
     }
 
     /// Takes the teammates' moves a repo with `takeMoves` leaves waiting; a refusal (changed, busy)
-    /// is logged and not retried on this owner and head.
+    /// is logged and not retried on this owner, move and head.
     func autoTake(_ pullRequests: [PullRequest], flow: Flow, repo: String, me: String) async {
         for pr in Self.autoTakeable(pullRequests, flow: flow, me: me, repo: repo, tried: autoTaken).prefix(Self.autoTakeLimit) {
             autoTaken.insert(Self.autoTakeKey(pr, repo: repo))

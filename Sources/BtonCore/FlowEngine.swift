@@ -255,13 +255,16 @@ public enum FlowEngine {
     }
 
     /// `author`, `assignee` (the first assignee), `reviewer` (the first requested reviewer), each
-    /// of the last two with the rotation when the field is empty, or a literal login.
+    /// of the last two with the rotation when the field is empty, `approver` (whoever wrote the
+    /// latest counting review or decision: GitHub ends a reviewer's request once they review, so
+    /// "merge, by whoever approved" cannot be said with `reviewer`), or a literal login.
     static func resolve(_ who: String?, pr: PullRequest, flow: Flow) -> (owner: String?, fromRotation: Bool) {
         switch who {
         case nil: return (nil, false)
         case "author": return (pr.author, false)
         case "assignee": return pr.assignees.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
         case "reviewer": return pr.requestedReviewers.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
+        case "approver": return (reviews(of: pr, flow: flow).last?.author, false)
         case let login?: return (login, false)
         }
     }
