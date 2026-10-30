@@ -3,10 +3,12 @@ import Foundation
 /// Where a PR's job runs.
 enum Worktrees {
     /// The clone's existing worktree for the PR's branch (a team's own worktree script may make
-    /// those) when it is clean at the head, else `.worktrees/bton-pr-<n>` detached at the PR
-    /// head. The head is fetched from `refs/pull/<n>/head`, so forks and unpushed local branches
-    /// make no difference.
+    /// those) when it is clean at the head and no other live agent has claimed it, else
+    /// `.worktrees/bton-pr-<n>` detached at the PR head. `claimedBy` is what `repo-sync check`
+    /// says of a tree, nil when it is free. The head is fetched from `refs/pull/<n>/head`, so
+    /// forks and unpushed local branches make no difference.
     static func prepare(clone: URL, pr: PullRequest, base: String, ghPath: String, runner: ProcessRunner,
+                        claimedBy: @Sendable (URL) async -> String? = { _ in nil },
                         note: @Sendable (String) -> Void = { _ in }) async throws -> URL {
         try await git(["fetch", "--quiet", "origin", "+refs/pull/\(pr.number)/head:refs/bton/pull/\(pr.number)",
                        "+refs/heads/\(base):refs/remotes/origin/\(base)"], in: clone, ghPath: ghPath, runner: runner)
@@ -16,7 +18,13 @@ enum Worktrees {
         if let path = worktree(onBranch: pr.headRef, in: listing).map({ URL(fileURLWithPath: $0, isDirectory: true) }),
            FileManager.default.fileExists(atPath: path.path),
            try await cleanHead(path, ghPath: ghPath, runner: runner) == pr.headSha {
-            return path
+            // The author's session may still hold the tree it pushed from: a review of the head
+            // needs no one's tree, so it takes its own rather than fail on the claim.
+            if let holder = await claimedBy(path) {
+                note("\(path.path) is the branch's own worktree and another live agent holds it; running in .worktrees/bton-pr-\(pr.number) instead: \(holder)")
+            } else {
+                return path
+            }
         }
         return try await detached(clone.appendingPathComponent(".worktrees/bton-pr-\(pr.number)", isDirectory: true),
                                   at: pr.headSha, base: "refs/remotes/origin/\(base)", clone: clone, ghPath: ghPath,

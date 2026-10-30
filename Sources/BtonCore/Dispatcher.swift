@@ -231,6 +231,7 @@ actor Dispatcher {
             case let .pullRequest(pr):
                 base = flow?.base ?? pr.baseRef
                 worktree = try await Worktrees.prepare(clone: clone, pr: pr, base: base, ghPath: github.ghPath, runner: runner,
+                                                       claimedBy: { await self.claimedByAnotherAgent($0) },
                                                        note: { [jobs, id = job.id] in jobs.note(id, $0) })
             case let .branch(branch):
                 base = branch
