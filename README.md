@@ -111,7 +111,9 @@ where your flow says a person decides.
       <b>Questions on issues, and handoffs</b><br>
       When a teammate or their agent mentions you on an issue, it counts in what is waiting on you.
       Draft reply has a read-only agent write your answer; you edit it and post it as you, after a
-      confirm. <code>bton handoff</code> lets an agent ask a teammate directly.
+      confirm. With <code>decide</code> in the flow, your own Bton answers them in your place while
+      you are away, all but the issues the flow excepts. <code>bton handoff</code> lets an agent ask a
+      teammate directly.
     </td>
     <td width="50%" valign="top">
       <b>Find any PR, and know why it failed</b><br>

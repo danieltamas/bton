@@ -281,6 +281,11 @@ public actor Engine {
                         }
                         // An unread repo keeps the press for the next sync.
                         if issuesReadThisTick.contains(read.repo.slug.lowercased()) { taken[read.repo.slug.lowercased()] = nil }
+                        // The owner's Bton answers what the team asks the owner, after the PRs and the intake.
+                        if read.repo.startsMoves {
+                            pending += decideCandidates(repo: read.repo.slug, flow: flow, defaultBranch: read.repo.branch ?? read.defaultBranch,
+                                                        me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
+                        }
                     }
                     // Schedules need no flow: they are this Mac's own, like its agents. They start from
                     // the branch PRs merge into, which the owner picks per repo.

@@ -221,7 +221,7 @@ extension GitHubClient {
     static let issueFields = """
         number title url createdAt body authorAssociation
         author { login }
-        labels(first: 30) { nodes { name } }
+        labels(first: 100) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
     """

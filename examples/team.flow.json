@@ -11,6 +11,7 @@
   },
   "fixed": "## Fixed:",
   "decision": { "heading": "## Decision:", "move": "decide", "by": ["lead-dev"] },
+  "decide": { "by": ["lead-dev"], "except": ["high-risk"] },
   "reviewers": ["lead-dev", "dev-b", "dev-c"],
   "moves": [
     { "move": "decide", "when": ["label:turn:lead"], "who": "lead-dev" },

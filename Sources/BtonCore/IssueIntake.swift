@@ -279,6 +279,16 @@ extension GitHubClient {
         try Self.decodeIssueNow(try await gh(["issue", "view", String(number), "--repo", repo, "--json", "state,labels,assignees"]))
     }
 
+    /// The issue's comments as they are now, oldest first.
+    public func issueComments(repo: String, number: Int) async throws -> [IssueComment] {
+        try IssueDecisions.decodeComments(try await gh(["issue", "view", String(number), "--repo", repo, "--json", "comments"]))
+    }
+
+    /// The issue's state, labels, body and comments as they are now.
+    public func issueLive(repo: String, number: Int) async throws -> IssueDecisions.Live {
+        try IssueDecisions.decodeLive(try await gh(["issue", "view", String(number), "--repo", repo, "--json", "state,labels,body,comments"]))
+    }
+
     static func decodeIssueNow(_ data: Data) throws -> IssueNow {
         struct Name: Decodable { let name: String }
         struct Login: Decodable { let login: String }

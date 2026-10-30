@@ -115,6 +115,22 @@ extension Engine {
         return made
     }
 
+    /// The decide jobs of the asks this repo's owner is away from: one per asking comment, when the
+    /// repo starts its moves, from the issues as read this tick. An ask already decided (or being
+    /// decided) waits for the sync that reads the decision and clears it; a failed one runs again on Retry.
+    func decideCandidates(repo: String, flow: Flow, defaultBranch: String, me: String, agents: [String: AgentTemplate]) -> [DispatchCandidate] {
+        guard flow.decide != nil, issuesReadThisTick.contains(repo.lowercased()) else { return [] }
+        let issues = openIssues[repo.lowercased()] ?? []
+        let all = jobs.all()
+        let ran = Set(all.filter { $0.retry != true }.map(\.key))
+        return IssueAsks.asks(issues, me: me).compactMap { ask in
+            guard let issue = issues.first(where: { $0.number == ask.number }),
+                  let candidate = IssueDecisions.candidate(ask: ask, issue: issue, flow: flow, agents: agents, defaultBranch: defaultBranch, me: me),
+                  !ran.contains(candidate.key) else { return nil }
+            return candidate
+        }
+    }
+
     /// Asks the agent for the next turn of a new issue, first in line at the next sync.
     public func requestCompose(_ request: NewIssues.Request) {
         composeRequests.removeAll { $0.key == request.key }

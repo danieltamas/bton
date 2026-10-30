@@ -18,6 +18,8 @@ public struct Flow: Decodable, Sendable {
     public let caps: Caps?
     public let stale: Stale?
     public let decision: Decision?
+    /// Who answers an issue's question to the owner when the owner is away (docs/FLOW.md "Deciding issues").
+    public let decide: Decide?
     /// How `from` reaches `to` (develop to main): the owner's release move, plan and predicates
     /// in docs/FLOW.md "Release". Read here so the repo page can tell "in develop" from "live".
     public let release: Release?
@@ -48,6 +50,19 @@ public struct Flow: Decodable, Sendable {
         public let by: [String]
     }
 
+    /// An issue's open question to the owner is decided by the owner's own Bton: the agent posts
+    /// the ruling as the owner's comment and moves the issue on as the repo's process says.
+    public struct Decide: Decodable, Sendable {
+        /// The logins whose Bton decides; every other Bton leaves the ask alone.
+        public let by: [String]
+        public let agent: String?
+        public let prompt: String?
+        public let timeoutMinutes: Int?
+        /// Words that keep an issue for the owner in person: one of its labels, or a whole word of
+        /// its body (`high-risk`).
+        public let except: [String]?
+    }
+
     /// nil is a repo without a flow file. Anything that is not a valid version 1 flow is never
     /// dispatched, but the two cases read differently in the Repos panel.
     public static func load(_ data: Data?) -> FlowStatus {
@@ -61,6 +76,9 @@ public struct Flow: Decodable, Sendable {
             if let heading = flow.decision?.heading,
                heading.isEmpty || flow.allReviewHeadings.contains(where: { $0.hasPrefix(heading) || heading.hasPrefix($0) }) {
                 return .invalid("decision.heading \(heading) overlaps a review heading")
+            }
+            if let decide = flow.decide, decide.by.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                return .invalid("decide.by names nobody")
             }
             for (tier, globs) in flow.tier.paths ?? [:] {
                 guard flow.tier.values.contains(tier) else { return .invalid("tier.paths.\(tier) is not one of tier.values") }

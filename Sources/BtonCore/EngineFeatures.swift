@@ -161,9 +161,9 @@ extension Engine {
 }
 
 extension Engine {
-    /// The moves that get no feature context: the one that builds the registry, and the drafts,
-    /// which read the code map instead.
-    static let movesWithoutContext: Set = [FeatureJob.move, NewIssues.move, IssueDrafts.move]
+    /// The moves that get no feature context: the one that builds the registry, and the drafts
+    /// and decisions, which read the code map instead.
+    static let movesWithoutContext: Set = [FeatureJob.move, NewIssues.move, IssueDrafts.move, IssueDecisions.move]
 
     /// The candidate with the registry's knowledge of its work attached, for an agent job of a
     /// repo whose registry loads. The prompt gains Bton's line naming the file and, for a job that

@@ -143,6 +143,16 @@ actor Dispatcher {
                 return .busy
             }
         }
+        // Under the lease, the issue as it is now: a decision in the owner's place does not start on
+        // an issue closed, excepted or commented on since the read, nor on one that cannot be read.
+        if let plan = candidate.decide {
+            let live = try? await github.issueLive(repo: candidate.key.repo, number: plan.number)
+            if let reason = live.map({ IssueDecisions.refusal($0, plan: plan) }) ?? "the issue could not be read again" {
+                log("\(candidate.key): not decided, \(reason)")
+                try? await leases.release(lease, ran: false)
+                return .busy
+            }
+        }
         var job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         job.pressed = candidate.pressed ? true : nil
@@ -466,6 +476,11 @@ actor Dispatcher {
             if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
+        if job.key.move == IssueDecisions.move, job.key.item.hasPrefix("issue-") {
+            let outcome = await decideOutcome(of: job)
+            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            return await finish(job, status: outcome.status, detail: outcome.detail)
+        }
         let output = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
         if job.key.move == Supervision.move {
             job.verdict = Supervision.verdict(fromFinalMessage: output)
@@ -723,5 +738,19 @@ actor Dispatcher {
     private func exitStatus(_ id: UUID, second: Bool = false) -> Int32? {
         (try? String(contentsOf: second ? jobs.secondExitURL(id) : jobs.exitURL(id), encoding: .utf8))
             .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+}
+
+extension Dispatcher {
+    /// A decision counts as posted when the owner has a comment on the issue since the job started;
+    /// otherwise the job is done but the ask is the owner's, with the agent's last line as the reason.
+    /// A GitHub that cannot be read back is reported the same way, never as a decision.
+    func decideOutcome(of job: Job) async -> (status: Job.Status, detail: String?) {
+        let report = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
+        guard let number = Int(job.key.item.dropFirst("issue-".count)),
+              let me = try? await github.viewer(),
+              let comments = try? await github.issueComments(repo: job.key.repo, number: number)
+        else { return (.succeeded, "left to you: the issue could not be read back; check it on GitHub") }
+        return IssueDecisions.outcome(comments: comments, me: me, since: job.startedAt, report: report)
     }
 }

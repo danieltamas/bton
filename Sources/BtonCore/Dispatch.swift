@@ -44,6 +44,8 @@ public struct DispatchCandidate: Sendable {
     public var secondPrompt: String?
     /// Tools denied to this job's Claude on top of Bton's own.
     public var denied: [String] = []
+    /// A decision in the owner's place: checked again on the issue under the lease.
+    public var decide: IssueDecisions.Plan?
     /// Files written to a Claude job's scratch directory before it starts, by name: text the agent
     /// reads as data, kept out of its prompt.
     public var attachments: [String: String] = [:]

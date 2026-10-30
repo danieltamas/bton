@@ -11,6 +11,12 @@ extension AppStore {
         }
     }
 
+    /// Bton's decision on the ask, when the repo's flow lets this Mac decide in my place: one job
+    /// per asking comment, the newest if it ran again.
+    func decision(for ask: IssueAsk) -> Job? {
+        jobs.first { $0.key == IssueDecisions.key(for: ask) }
+    }
+
     /// Why Draft reply cannot start on this Mac, or nil when it can.
     var draftBlocked: String? {
         agents[IssueDrafts.defaultAgent]?.argv.first.map(AgentHardening.isClaude) == true
@@ -47,7 +53,8 @@ extension AppStore {
 }
 
 extension Job {
-    var isIssueDraft: Bool { key.move == IssueDrafts.move && key.item.hasPrefix("issue-") }
+    /// A job on an issue's thread rather than on a PR: a draft of my reply, or a decision in my place.
+    var isIssueDraft: Bool { (key.move == IssueDrafts.move || key.move == IssueDecisions.move) && key.item.hasPrefix("issue-") }
 }
 
 /// What the Issues tab lists: questions put to me, then the issues ready for anyone to take.
@@ -216,6 +223,7 @@ private struct IssueAskRow: View {
 
     var body: some View {
         let job = store.draft(for: ask)
+        let decision = store.decision(for: ask)
         HoverCard(accent: Theme.color(forStage: "spec"), action: { NSWorkspace.shared.open(ask.url) }) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -238,6 +246,15 @@ private struct IssueAskRow: View {
                     if store.postedAsks.contains(ask.notice) {
                         Text("Reply posted. This clears when the next sync reads it.")
                             .font(.meta).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true)
+                    } else if let decision, decision.status == .succeeded, decision.detail == nil {
+                        Text("Bton decided this in your place; the comment on the issue says what. This clears when the next sync reads it.")
+                            .font(.meta).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true)
+                    } else if let decision, decision.status == .succeeded, let detail = decision.detail {
+                        Text("Bton \(detail).")
+                            .font(.meta).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    } else if let decision, decision.status == .failed || decision.status == .cancelled {
+                        Text("Decision \(decision.status.rawValue)\(decision.detail.map { ": \($0)" } ?? "").")
+                            .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
                     } else if let job, job.status == .succeeded {
                         Text("Draft ready: read it, edit it if you like, and post it from View draft.")
                             .font(.meta).foregroundStyle(Theme.mint).fixedSize(horizontal: false, vertical: true)
@@ -249,19 +266,34 @@ private struct IssueAskRow: View {
                 .layoutPriority(1)
                 Spacer(minLength: 4)
                 // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
-                action(job).fixedSize().layoutPriority(2)
+                action(job, decision: decision).fixedSize().layoutPriority(2)
             }
         }
         // Amber, hatched: an existing issue that waits for your reply, not a ready one or a new draft.
         .hatched(Theme.color(forStage: "spec"))
         .contextMenu {
             if let job { Button("Watch the Draft") { store.watchingJob = job.id } }
+            if let decision { Button("Watch the Decision") { store.watchingJob = decision.id } }
             Button("Open on GitHub") { NSWorkspace.shared.open(ask.url) }
         }
     }
 
-    @ViewBuilder private func action(_ job: Job?) -> some View {
-        if let job, job.status == .running {
+    /// Bton's own decision comes first: while it runs or once it is posted there is nothing to draft,
+    /// and a failed one gets its Retry; Draft reply stays for the asks the flow leaves to me.
+    @ViewBuilder private func action(_ job: Job?, decision: Job?) -> some View {
+        if let decision, decision.status == .running {
+            Button { withAnimation(Motion.spring) { store.watchingJob = decision.id } } label: {
+                HStack(spacing: 5) {
+                    PulseDot(color: Theme.color(for: .running))
+                    Text("Deciding...").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.color(for: .running))
+                }
+            }
+            .buttonStyle(PressStyle())
+            .help("Watch Bton decide in your place")
+        } else if let decision, decision.status == .succeeded, decision.detail == nil {
+            PillButton(title: "Decided", symbol: "checkmark.seal", prominent: false) { NSWorkspace.shared.open(ask.url) }
+                .help("Read the decision on GitHub")
+        } else if let job, job.status == .running {
             Button { withAnimation(Motion.spring) { store.watchingJob = job.id } } label: {
                 HStack(spacing: 5) {
                     PulseDot(color: Theme.color(for: .running))
@@ -274,6 +306,9 @@ private struct IssueAskRow: View {
             PillButton(title: "View draft", symbol: "text.bubble") { withAnimation(Motion.spring) { store.readingDraft = ask } }
         } else if store.isNext(repo: ask.repo, item: "issue-\(ask.number)") {
             StartingLabel(repo: ask.repo)
+        } else if let decision, store.canRetry(decision) {
+            AsyncPillButton(title: "Retry decision", symbol: "arrow.clockwise", id: "retry:\(decision.id)") { await store.retry(decision) }
+                .help("Decide again, on the same question")
         } else if let job {
             if store.canRetry(job) {
                 AsyncPillButton(title: "Retry draft", symbol: "arrow.clockwise", disabled: store.draftBlocked != nil,

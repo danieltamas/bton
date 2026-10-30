@@ -26,6 +26,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
 | `decision` | Optional `{ "heading", "move", "by" }`: a ruling that ends a review loop (below). |
+| `decide` | Optional `{ "by", "agent"?, "prompt"?, "timeoutMinutes"?, "except"? }`: the Bton of a login in `by` decides, in their place, the questions put to them on issues (below). |
 | `release` | Optional `{ "from", "to", "who", "when", "blockedBy"?, "checks"?, "merge"?, "timeoutMinutes"? }`: how `from` (develop) is released to `to` (main). `when` is a list of predicates of which the first match makes a release due, with its reason on the page and in the footer (`ahead_commits:N` -> "N commits ahead", `ahead_days:N` -> "N days ahead", counted from the oldest commit `to` lacks, `features_waiting:N` -> "N features waiting", the registry's features in develop); `blockedBy` any match blocks it (`pr_in_review_on_paths:<glob>`: an open, non-draft PR into `from` touching the glob; `release_pr_open` is implied and only keeps a second release PR from opening, never the merge of the open one); `who` is the login whose Bton opens and merges it, everyone else sees the state; `checks` are argv run in a worktree at the release PR's head (the `from` tip) before the merge, each stopped at `timeoutMinutes` (40 by default), failing closed; `merge` is `merge-commit` (default: `gh pr merge <n> --merge --match-head-commit <head>`) or `fast-forward` (`git push origin <head>:refs/heads/<to>`, refused when `to` moved). When due (or on the owner's Release press on the repo's page, which skips `when` but not `blockedBy`), Bton opens the PR `from -> to` titled `Release <from> -> <to>: <n> features` with the release notes from the registry; the open PR merges on the press, or on its own when the repo starts its moves and the release is still due. The release PR gets no flow move. With a `release` section the repo page tells a feature "in develop" from one "live" on `to`. |
 
 `who`, `dispatch.<move>.agent` and `dispatch.<move>.prompt` take either one value or an object
@@ -378,3 +379,49 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   plus the 50 newest at each of `stage:ready` and `stage:in-progress`; more ready issues than that
   and the oldest are not seen. Load more in the Triage tab makes the read one page (50) longer, up
   to 10 pages, and the search in the issue tabs asks GitHub across all open issues, display only. Retry (the owner's press) does not wait for the caps.
+
+## Deciding issues
+
+A team's issues wait on their owner more than on anyone: a question in a comment, a hand-back to
+`stage:spec`, a `bton handoff`. The Issues tab shows these asks with Draft reply, which writes the
+answer for the owner to post. With `decide`, the owner's own Bton answers them, so the team is not
+blocked while the owner is away:
+
+```json
+"decide": { "by": ["lead-dev"], "except": ["high-risk"] }
+```
+
+- **Who.** Only a Bton signed in as one of `by` decides, and only in a repo that starts its moves
+  (Settings > Repos). Everyone else's Bton shows the ask as before. `agent` must be a Claude Code
+  agent (Settings > Agents): the denied tools below are its settings, and another agent would
+  run with none.
+- **Which asks.** The ones the Issues tab lists for the owner: the newest comment or the body of an
+  open issue asks them, and its author has write access. An issue is skipped when one of `except`
+  is a label of the issue (whole, or the value after a `:`, so `tier:high-risk` matches) or a word
+  in its body: lexito's high-risk issues keep the owner's own ruling and get a draft only. The read
+  carries an issue's first 100 labels, so one with that many is excepted too. Under the lease, before
+  the agent starts, Bton reads the issue again (state, labels, body, comments) and does not decide
+  one closed or excepted since, nor one with a comment after the ask: the owner's answer, or a
+  newer ask, which the next sync reads and keys anew.
+- **One run per ask.** The job's key is the asking comment, so a decided ask is not decided again;
+  a new comment that asks the owner something else runs it again. The ask stays in the tab, marked
+  "Bton decided", until the sync reads the owner's comment and clears it. Decided means a comment
+  of the owner's on the issue since the job started: an agent that exits without one (the question
+  needs a fact only the owner knows) leaves the ask to the owner, with its last line as the reason,
+  and Draft reply stays. A job that fails leaves the ask with Retry decision.
+- **What the agent does.** `agent` (default `claude`) runs in a worktree at the default branch with
+  the issue and its comments in a file, never in the prompt. It decides the newest open question to
+  the owner: where they must choose, it picks one option with the reason and what would have changed
+  it, and answers the rest plainly. It records the ruling the way the repo's process says the owner
+  does: one comment whose first line starts with `decision.heading` (`## Decision:` when the flow
+  has none), the row in the issue's Decisions table, the labels the process sets once a question is
+  decided (its label script if it has one). The comment ends with one line saying Bton decided this
+  for the owner and a comment from the owner overrules it. It never closes the issue, touches another
+  issue or a PR, or assigns anyone, and when the question needs a fact only the owner knows it posts
+  nothing and says so in its report. The never is enforced where a tool can be named, not only
+  asked: the job's Claude is denied `gh issue close|reopen|delete|transfer|lock|pin|develop|create`,
+  every `gh pr` and `gh repo` command and `git push`, on top of Bton's own list; editing another
+  issue by number is asked of it, not denied. `prompt` replaces this with the team's own text; `{issue}`,
+  `{repo}` and `{heading}` are filled in. `timeoutMinutes` defaults to 20.
+- **Overruling.** The decision is a comment under the owner's login, so the process reads it as the
+  owner's. The owner changes it by commenting: the next ask to them is decided from that thread.
