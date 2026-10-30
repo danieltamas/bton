@@ -295,7 +295,7 @@ struct SecondReviewerAcceptanceTests {
 
     // h
     @Test func playbookExplainsParallelSecondReviewer() {
-        #expect(PRPlaybook.version == 7)
+        #expect(PRPlaybook.version == 8)
         #expect(PRPlaybook.text(for: "review").contains("second reviewer"))
     }
 

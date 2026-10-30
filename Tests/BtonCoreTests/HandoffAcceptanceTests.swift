@@ -106,7 +106,7 @@ struct HandoffAcceptanceTests {
     }
 
     @Test func playbookVersionIsSeven() {
-        #expect(PRPlaybook.version == 7)
+        #expect(PRPlaybook.version == 8)
     }
 
     @Test func emptyInboxHasNoIssue() throws {

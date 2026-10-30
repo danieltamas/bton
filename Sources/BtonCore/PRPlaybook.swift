@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 7
+    public static let version = 8
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -65,7 +65,10 @@ public enum PRPlaybook {
     changed by anyone but this job's own verified push stops this job; a changed
     base requires affected checks to be refreshed.
     Never force-push, merge the PR, bypass gates or expand scope.
-    7. Stop when the requested outcome is evidenced. After two failed attempts at
+    7. Stop when the requested outcome is evidenced. A follow-up that one command of
+    yours settles within the allowed writes (a label to check or set, a comment, a
+    re-read) is done now and evidenced in the report, never left as a to-do for
+    the owner. After two failed attempts at
     the same approach, stop and report the blocker, evidence and next action.
     Missing access or required evidence is blocked, not success. Preserve existing
     changes; keep scratch outside the repo. Do not discard work merely to clean up.
