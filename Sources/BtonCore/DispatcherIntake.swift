@@ -24,8 +24,11 @@ extension Dispatcher {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: tree.path, isDirectory: &isDirectory)
         // A folder already there is someone's work on this issue: refused before the claim, so the
-        // issue stays free for them, and never made over.
-        if exists, !plan.resumes { throw DispatchError.worktree("\(plan.worktreePath) already exists; nothing was claimed or made over it") }
+        // issue stays free for them, and never made over. Unless nothing was done in it: an earlier
+        // run that handed the issue back left a clean tree at the base, and work starts there as well.
+        if exists, !plan.resumes, try await !isEmptyTree(tree, base: plan.base) {
+            throw DispatchError.worktree("\(plan.worktreePath) already exists; nothing was claimed or made over it")
+        }
         if !plan.resumes {
             for command in plan.claim {
                 let status = try await runLogged(command, in: clone, job: job.id, environment: environment, timeout: Self.intakeStep)
@@ -39,7 +42,7 @@ extension Dispatcher {
             guard isDirectory.boolValue, FileManager.default.fileExists(atPath: tree.appendingPathComponent(".git").path) else {
                 throw DispatchError.worktree("\(plan.worktreePath) exists but is not a worktree; remove it and retry")
             }
-            jobs.note(job.id, "reusing \(plan.worktreePath)")
+            jobs.note(job.id, plan.resumes ? "reusing \(plan.worktreePath)" : "reusing \(plan.worktreePath), left empty by an earlier run")
             return tree
         }
         let status = try await runLogged(plan.worktree, in: clone, job: job.id, environment: environment, timeout: timeout)
@@ -48,6 +51,16 @@ extension Dispatcher {
             throw DispatchError.worktree("`\(plan.worktree.joined(separator: " "))` made no worktree at \(plan.worktreePath)")
         }
         return tree
+    }
+
+    /// A worktree with nothing in it: no uncommitted change and no commit beyond `origin/<base>`.
+    /// Anything that does not read as such (a dirty tree, a commit, a failed git) is someone's work.
+    private func isEmptyTree(_ tree: URL, base: String) async throws -> Bool {
+        guard FileManager.default.fileExists(atPath: tree.appendingPathComponent(".git").path) else { return false }
+        let status = try await runner.run("/usr/bin/git", ["status", "--porcelain"], in: tree, timeout: .seconds(30))
+        guard status.status == 0, status.stdout.isEmpty else { return false }
+        let ahead = try await runner.run("/usr/bin/git", ["rev-list", "--count", "origin/\(base)..HEAD"], in: tree, timeout: .seconds(30))
+        return ahead.status == 0 && (String(data: ahead.stdout, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == "0"
     }
 
     /// An intake job is done when its branch has a PR: that is the point where the repo's process

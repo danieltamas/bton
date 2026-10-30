@@ -115,7 +115,8 @@ private struct ReadyIssueRow: View {
     let showRepo: Bool
 
     var body: some View {
-        let job = store.jobs.first { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" }
+        // The newest job on the issue, whatever round it ran under: a comment during the run moves the round on.
+        let job = IssueIntake.latestJob(for: issue.number, repo: issue.repo, jobs: store.jobs)
         // The bar, the stage chip and "Working..." are one color: the issue's stage.
         HoverCard(accent: Theme.color(forStage: stale ? "spec" : issue.stage ?? "in-progress"), action: { NSWorkspace.shared.open(issue.url) }) {
             HStack(alignment: .top, spacing: 10) {
@@ -173,12 +174,16 @@ private struct ReadyIssueRow: View {
 
     /// In progress means an agent or a person started it and holds it: with no assignee and no job of mine, nobody does.
     private var stale: Bool {
-        issue.stage == "in-progress" && issue.assignees.isEmpty
-            && !store.jobs.contains { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" }
+        issue.stage == "in-progress" && issue.assignees.isEmpty && IssueIntake.latestJob(for: issue.number, repo: issue.repo, jobs: store.jobs) == nil
     }
 
-    /// Free and ready, with no job of mine on it: the owner may start it without waiting for a sync that starts moves.
-    private var canTake: Bool { issue.isReady && issue.assignees.isEmpty && !store.jobs.contains { $0.key.move == IssueIntake.move && $0.key.repo == issue.repo && $0.key.item == "issue-\(issue.number)" } }
+    /// Free and ready, with no job of mine on this round of it (an older round's job is spent) and
+    /// none running: the owner may start it without waiting for a sync that starts moves.
+    private var canTake: Bool {
+        issue.isReady && issue.assignees.isEmpty
+            && !store.jobs.contains { $0.key == IssueIntake.key(repo: issue.repo, number: issue.number, round: issue.round) }
+            && IssueIntake.latestJob(for: issue.number, repo: issue.repo, jobs: store.jobs)?.status != .running
+    }
 
     @ViewBuilder private func action(_ job: Job?) -> some View {
         if let job, job.status == .running {

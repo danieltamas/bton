@@ -334,7 +334,12 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   the clone, so the issue leaves the search before the lease is released (a claim that fails stops
   the job before any worktree), then `worktree` in the clone, and starts `agent` in `worktreePath`
   with `prompt`. A `worktreePath` that already exists is someone's work: the job fails and touches
-  nothing. `{issue}`, `{repo}`, `{base}` and `{type}` (the first of the issue's labels `type.labels`
+  nothing, unless the tree is empty (no uncommitted change, no commit beyond `origin/<base>`), the
+  leftover of a run that handed the issue back, which is reused. The job's key carries the issue's
+  round, the time of its newest comment: an issue handed back (to `stage:spec`, with a comment
+  saying why) and set ready again after a ruling is new work, started again; one nobody wrote on
+  since its job ran is not. A retry runs under the failed job's own key, so a comment written
+  while the agent worked does not strand an issue that is already mine. `{issue}`, `{repo}`, `{base}` and `{type}` (the first of the issue's labels `type.labels`
   maps, else `type.default`) are the only substitutions; issue text never reaches an argv or the prompt.
   The feature context above applies: an issue the registry links gets its feature, and the agent is
   asked to write `Feature: <id>` in the PR body.

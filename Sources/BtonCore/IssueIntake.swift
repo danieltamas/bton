@@ -10,6 +10,8 @@ public struct ReadyIssue: Identifiable, Hashable, Sendable {
     public let createdAt: Date
     public let labels: [String]
     public let assignees: [String]
+    /// The round the issue is in (`IssueIntake.round(of:)`), so the app finds the job of this round.
+    public let round: String
 
     public var priority: String? { IssueTriage.label(withPrefix: IssueTriage.priorityPrefix, in: labels) }
     public var stage: String? { IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: labels) }
@@ -40,6 +42,13 @@ public enum IssueIntake {
     /// The order of the `priority:` labels when the flow names none.
     static let defaultPriority = ["priority:high", "priority:medium", "priority:low"]
 
+    /// The issue's round: the newest comment's time, whoever wrote it. A hand-back ("an open D-n
+    /// waits for Dani") and the ruling that answers it both arrive as comments, so an issue that
+    /// comes back to ready after one is new work, where the same key would never run again.
+    public static func round(of issue: OpenIssue) -> String {
+        issue.comments.map(\.createdAt).max().map { String(Int($0.timeIntervalSince1970)) } ?? ""
+    }
+
     public static func isReady(_ issue: OpenIssue) -> Bool {
         IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: issue.labels) == "ready"
     }
@@ -58,7 +67,7 @@ public enum IssueIntake {
         return (ordered(issues.filter(isReady), priority: order) + ordered(issues.filter { !isReady($0) && (isInProgress($0) || held.contains($0.number)) }, priority: order))
             .map {
                 ReadyIssue(repo: $0.repo, number: $0.number, title: $0.title, url: $0.url, createdAt: $0.createdAt,
-                           labels: $0.labels, assignees: $0.assignees)
+                           labels: $0.labels, assignees: $0.assignees, round: round(of: $0))
             }
     }
 
@@ -134,27 +143,36 @@ public enum IssueIntake {
               let terms = terms(intake.search, repo: repo),
               !jobs.contains(where: { $0.status == .running && $0.key.move == move && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame })
         else { return nil }
-        let retried = issues.first { issue in
-            issue.assignees.contains { $0.caseInsensitiveCompare(me) == .orderedSame }
-                && DispatchPlanner.isRetry(key(repo: repo, number: issue.number), jobs: jobs)
-        }
-        if let retried, let made = candidate(for: retried, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work) {
+        // A retry runs under the job's own key: a comment that arrived while the agent worked
+        // moved the issue's round on, and must not strand the issue that is already mine.
+        let retried = issues.lazy.compactMap { issue -> (OpenIssue, JobKey)? in
+            guard issue.assignees.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame }),
+                  let latest = latestJob(for: issue.number, repo: repo, jobs: jobs), DispatchPlanner.isRetry(latest.key, jobs: jobs)
+            else { return nil }
+            return (issue, latest.key)
+        }.first
+        if let (issue, key) = retried,
+           let made = candidate(for: issue, key: key, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work) {
             return made
         }
         // A repo that does not start its moves still finishes what was already begun, and takes nothing new.
         if resumeOnly { return nil }
         let ran = Set(jobs.filter { $0.retry != true }.map(\.key))
         if let requested,
-           let asked = issues.first(where: { $0.number == requested && eligible($0, terms: terms) && !ran.contains(key(repo: repo, number: $0.number)) }) {
-            return candidate(for: asked, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work)
+           let asked = issues.first(where: { $0.number == requested && eligible($0, terms: terms) && !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }) {
+            return candidate(for: asked, key: key(repo: repo, number: asked.number, round: round(of: asked)),
+                             intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work)
         }
         if let caps {
             let mine = pullRequests.filter { $0.author.caseInsensitiveCompare(me) == .orderedSame }.count
             guard mine < caps.openPullRequestsPerDeveloper, pullRequests.count < caps.openPullRequestsTeam else { return nil }
         }
         let taken = ordered(issues.filter { eligible($0, terms: terms) }, priority: intake.priority)
-            .first { !ran.contains(key(repo: repo, number: $0.number)) }
-        return taken.flatMap { candidate(for: $0, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work) }
+            .first { !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }
+        return taken.flatMap {
+            candidate(for: $0, key: key(repo: repo, number: $0.number, round: round(of: $0)),
+                      intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work)
+        }
     }
 
     /// An issue whose text an outsider wrote is not one an agent works from, like a PR's.
@@ -163,11 +181,17 @@ public enum IssueIntake {
             && terms.mismatch(labels: issue.labels, assignees: issue.assignees) == nil
     }
 
-    static func key(repo: String, number: Int) -> JobKey {
-        JobKey(repo: repo, item: "issue-\(number)", move: move, head: "")
+    public static func key(repo: String, number: Int, round: String) -> JobKey {
+        JobKey(repo: repo, item: "issue-\(number)", move: move, head: "", round: round)
     }
 
-    private static func candidate(for issue: OpenIssue, intake: Intake, terms: Terms, repo: String, base: String, me: String,
+    /// The issue's newest intake job on this Mac, whatever round it ran under.
+    public static func latestJob(for number: Int, repo: String, jobs: [Job]) -> Job? {
+        jobs.filter { $0.key.move == move && $0.key.item == "issue-\(number)" && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame }
+            .max { $0.startedAt < $1.startedAt }
+    }
+
+    private static func candidate(for issue: OpenIssue, key: JobKey, intake: Intake, terms: Terms, repo: String, base: String, me: String,
                                   resumes: Bool, work: AgentPick?) -> DispatchCandidate? {
         guard let type = type(of: issue.labels, rule: intake.type) else { return nil }
         let values = ["{repo}": repo, "{issue}": String(issue.number), "{base}": base, "{type}": type]
@@ -176,7 +200,7 @@ public enum IssueIntake {
                               worktree: intake.worktree.map(filling), worktreePath: filling(intake.worktreePath), resumes: resumes)
         guard isRelative(plan.worktreePath) else { return nil }
         var made = DispatchCandidate(target: .issue(plan), move: Move(name: move, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
-                                     key: key(repo: repo, number: issue.number), agent: work?.agent ?? intake.agent,
+                                     key: key, agent: work?.agent ?? intake.agent,
                                      prompt: filling(intake.prompt), command: nil, postComment: false,
                                      timeout: .seconds(60 * (intake.timeoutMinutes ?? 60)))
         made.model = work?.model
