@@ -290,14 +290,16 @@ private struct IssueAskRow: View {
     }
 }
 
-/// A drafted reply in place of the list: the issue's conversation above, so the edit has its
-/// context, then the reply to read, edit, and post as my comment, or copy.
+/// A drafted reply in place of the list: the reply as it will read on GitHub, to post as my
+/// comment or copy; Edit opens it as text with bold, italic, strike and underline at hand. The
+/// issue it answers is behind View issue.
 struct DraftView: View {
     @Environment(AppStore.self) private var store
-    /// The ask as opened; the thread is read from the store's copy, which a later sync extends.
     let ask: IssueAsk
     let close: () -> Void
     @State private var text = ""
+    @State private var editing = false
+    @State private var editor = MarkdownEditing()
     @State private var copied = false
     /// Post reply asks once more before it writes on GitHub under my name.
     @State private var confirming = false
@@ -322,37 +324,66 @@ struct DraftView: View {
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(ask.url) }
             }
             .padding(.horizontal, 14)
-            thread
-            TextEditor(text: $text)
-                .font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.never)
-                .padding(8)
-                .frame(height: 170)
-                .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal, 14)
-                .disabled(posting || posted)
+            Group {
+                if editing {
+                    MarkdownEditor(text: $text, editing: editor)
+                } else if text.isEmpty {
+                    Text(job == nil ? "No draft yet." : job?.status == .running ? "Bton is drafting the reply..." : "The draft is empty.")
+                        .font(.meta).foregroundStyle(Theme.textTertiary).padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    // A click anywhere on the drawn reply opens it for editing, as does Edit.
+                    ScrollView {
+                        MarkdownView(text: text, tone: Theme.textPrimary).padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if !posted && !posting { withAnimation(Motion.snappy) { editing = true } } }
+                    }
+                    .scrollIndicators(.never)
+                    .help(posted ? "" : "Click to edit the reply")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 14)
             if let problem { ProblemText(text: problem).padding(.horizontal, 14) }
             Text(posted ? "Posted as your comment. The ask clears when the next sync reads it."
-                 : "Edit it here if you like. Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own.")
+                 : "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own.")
                 .font(.meta).foregroundStyle(posted ? Theme.success : Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
             HStack(spacing: 8) {
-                if copied { Chip(text: "copied", symbol: "checkmark", color: Theme.success).transition(.opacity) }
+                if editing {
+                    ForEach(MarkdownEditing.Style.allCases, id: \.self) { style in
+                        IconButton(symbol: style.symbol, help: style.help, size: 24) { editor.toggle(style) }
+                    }
+                } else if copied {
+                    Chip(text: "copied", symbol: "checkmark", color: Theme.success).transition(.opacity)
+                }
                 Spacer()
-                PillButton(title: "Copy", symbol: "doc.on.doc", prominent: false) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    withAnimation(Motion.snappy) { copied = true }
+                // The confirmation keeps two pills, Cancel and Post as me: four pills are wider
+                // than the panel, and a footer that cannot shrink pushes the whole page out of it.
+                if !posted && !posting && !confirming {
+                    PillButton(title: editing ? "Done" : "Edit", symbol: editing ? "checkmark" : "pencil", prominent: false) {
+                        withAnimation(Motion.snappy) { editing.toggle() }
+                    }
                 }
-                if confirming {
-                    PillButton(title: "Cancel", symbol: "xmark", prominent: false) { withAnimation(Motion.snappy) { confirming = false } }
-                }
-                PillButton(title: posted ? "Posted" : posting ? "Posting..." : confirming ? "Post as \(store.me ?? "me")" : "Post reply",
-                           symbol: posted ? "checkmark" : "paperplane",
-                           disabled: posted || posting || job == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                    if confirming { post(job) } else { withAnimation(Motion.snappy) { confirming = true } }
+                if !editing {
+                    if !confirming {
+                        PillButton(title: "Copy", symbol: "doc.on.doc", prominent: false) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(text, forType: .string)
+                            withAnimation(Motion.snappy) { copied = true }
+                        }
+                    }
+                    if confirming {
+                        PillButton(title: "Cancel", symbol: "xmark", prominent: false) { withAnimation(Motion.snappy) { confirming = false } }
+                    }
+                    PillButton(title: posted ? "Posted" : posting ? "Posting..." : confirming ? "Post as \(store.me ?? "me")" : "Post reply",
+                               symbol: posted ? "checkmark" : "paperplane",
+                               disabled: posted || posting || job == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                        if confirming { post(job) } else { withAnimation(Motion.snappy) { confirming = true } }
+                    }
                 }
             }
             .padding(.horizontal, 14)
@@ -361,32 +392,6 @@ struct DraftView: View {
         .onAppear { text = store.draftEdits[ask.notice] ?? job.flatMap(store.draftText) ?? "" }
         .onChange(of: text) { store.draftEdits[ask.notice] = text }
     }
-
-    /// The issue's comments, oldest first, the asking one tinted and scrolled to; the body stays
-    /// behind View issue unless it is the ask. A thread longer than the sync reads (its last 20
-    /// comments) is whole on GitHub.
-    private var thread: some View {
-        // The store's copy grows with the sync; a newer ask on the issue keeps the opened one's.
-        let entries = (store.issueAsks.first { $0.id == ask.id && $0.commentID == ask.commentID } ?? ask).thread
-            .filter { $0.id != "body" || ask.commentID == "body" }
-        return ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                        ThreadEntry(entry: entry, accented: entry.id == ask.commentID)
-                            .id(entry.id == ask.commentID ? Self.askingAnchor : nil)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 2)
-            }
-            .scrollIndicators(.never)
-            .frame(maxHeight: .infinity)
-            .onAppear { proxy.scrollTo(Self.askingAnchor, anchor: .top) }
-        }
-    }
-
-    private static let askingAnchor = "asking"
 
     private func post(_ job: Job?) {
         guard let job else { return }

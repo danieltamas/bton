@@ -409,15 +409,7 @@ struct NewIssueView: View {
     /// Always in view under the issue, so the score and Create never scroll away.
     private var createBar: some View {
         let verdict = IssueTriage.verdict(session.answers)
-        return HStack(spacing: 8) {
-            if let verdict {
-                Text("Score \(verdict.score) of \(IssueTriage.maxScore)").font(.meta).foregroundStyle(Theme.mint).lineLimit(1)
-                PriorityChip(priority: verdict.priority)
-                StageChip(stage: verdict.stage)
-            } else {
-                Text("Answer all three to score it").font(.meta).foregroundStyle(Theme.textTertiary)
-            }
-            Spacer()
+        return TriageSteps(answers: $session.answers) {
             AsyncPillButton(title: session.creating ? "Creating..." : "Create issue", runningTitle: "Creating...", symbol: "plus.circle",
                             disabled: verdict == nil || session.creating || session.title.trimmingCharacters(in: .whitespaces).isEmpty
                                 || session.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -436,9 +428,6 @@ struct NewIssueView: View {
                 .scrollContentBackground(.hidden)
                 .padding(6).frame(height: 190)
                 .background(Theme.core, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            Text("Priority and stage, scored as in Triage, so the issue is created with both:")
-                .font(.meta).foregroundStyle(Theme.textTertiary)
-            TriageQuestions(answers: $session.answers)
         }
     }
 

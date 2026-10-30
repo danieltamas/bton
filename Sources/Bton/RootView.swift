@@ -37,6 +37,9 @@ struct RootView: View {
         _tab = State(initialValue: tab)
     }
 
+    static let width: CGFloat = 404
+    /// The issue viewer is on screen: set after it mounts, cleared before it leaves, so both slide.
+    @State private var issueShown = false
     /// Room for four PR rows, short of the screen under the menu bar on a small display.
     private static var height: CGFloat { min(780, (NSScreen.main?.visibleFrame.height ?? 820) - 40) }
 
@@ -57,7 +60,7 @@ struct RootView: View {
                 .animation(Motion.spring, value: store.composing?.id)
             PanelFooter()
         }
-        .frame(width: 404, height: Self.height)
+        .frame(width: Self.width, height: Self.height)
         .background(Backdrop())
         .background(WindowVisibility(visible: $visible))
         .environment(\.panelVisible, visible)
@@ -363,13 +366,45 @@ struct RootView: View {
         }
     }
 
+    /// The issue viewer is one level deeper than a draft or a triage. Both pages move by offset,
+    /// not by a transition: the page it covers stays mounted and slides left as the viewer comes
+    /// in from the right, back from the left as it goes out to the right. A transition on the
+    /// covered page would be fixed at its last render and leave the wrong way, and the selectable
+    /// text of the viewer does not follow a move transition: it appeared in place while its box
+    /// slid in.
     @ViewBuilder private var content: some View {
+        // A screenshot is one render: the demo shows the viewer where it ends up.
+        let shown = store.isDemo ? store.viewingIssue != nil : issueShown
+        ZStack {
+            pages
+                .offset(x: shown ? -Self.width : 0)
+                .opacity(shown ? 0 : 1)
+                .disabled(shown)
+                .accessibilityHidden(shown)
+            if let ask = store.viewingIssue {
+                IssueView(ask: ask, close: closeIssue)
+                    .id(ask.id)
+                    .offset(x: shown ? 0 : Self.width)
+                    .opacity(shown ? 1 : 0)
+                    .transition(.identity)
+                    .onAppear { withAnimation(Motion.spring) { issueShown = true } }
+                    .onDisappear { issueShown = false }
+            }
+        }
+    }
+
+    /// The viewer slides out first; it leaves the tree once it is off screen.
+    private func closeIssue() {
+        withAnimation(Motion.spring) { issueShown = false }
+        Task {
+            try? await Task.sleep(for: .milliseconds(420))
+            store.viewingIssue = nil
+        }
+    }
+
+    @ViewBuilder private var pages: some View {
         let showRepo = store.repos.count > 1
-        if let ask = store.viewingIssue {
-            IssueView(ask: ask) { withAnimation(Motion.spring) { store.viewingIssue = nil } }
-                .id(ask.id)
-                .transition(.push)
-        } else if let ask = store.readingDraft {
+        if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
                 .transition(.push)
         } else if let session = store.composing {

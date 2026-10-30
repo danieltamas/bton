@@ -26,11 +26,24 @@ enum DemoShots {
         store.showStarOffer(false)
         try write(panel(.issues), to: directory.appendingPathComponent("issues.png"))
         store.readingDraft = snapshot.issueAsks[1]
+        store.draftEdits[snapshot.issueAsks[1].notice] = """
+            Three retries with a growing delay, as proposed: 1 min, 10 min, 1 hour. That copies Stripe's first \
+            three attempts, and nobody has asked for more.
+
+            **Dead-letter queue:** the payments team owns it. They already watch the `webhooks` dashboard, and a \
+            delivery that fails three times is a payments problem before it is anything else.
+
+            - [ ] `POST /webhooks/{id}/redeliver` needs the `admin` scope
+            - [ ] the queue keeps a delivery for 7 days, then drops it with a log line
+
+            ~~Weekly digest of the queue~~: not now, a dashboard tile is enough.
+            """
         try write(panel(.issues), to: directory.appendingPathComponent("draft.png"))
         store.viewingIssue = snapshot.issueAsks[1]
         try write(panel(.issues), to: directory.appendingPathComponent("issue.png"))
         store.viewingIssue = nil
         store.readingDraft = nil
+        store.draftEdits = [:]
         store.demoReplies = [1: .questions("Should the CSV sit beside the PDF export or replace it?")]
         let started = NewIssueSession(repo: repo)
         started.turns = [.init(text: "Let customers download their invoices as a CSV file.", round: 1)]

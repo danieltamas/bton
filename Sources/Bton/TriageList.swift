@@ -187,26 +187,12 @@ struct TriageView: View {
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    TriageQuestions(answers: $answers)
                 }
                 .padding(.horizontal, 14)
             }
             .scrollIndicators(.never)
             if let problem { ProblemText(text: problem).padding(.horizontal, 14) }
-            HStack(spacing: 8) {
-                if let verdict {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Score \(verdict.score) of \(IssueTriage.maxScore)")
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.mint)
-                        HStack(spacing: 6) {
-                            PriorityChip(priority: verdict.priority)
-                            StageChip(stage: verdict.stage)
-                        }
-                    }
-                } else {
-                    Text("Answer all three to score it").font(.meta).foregroundStyle(Theme.textTertiary)
-                }
-                Spacer()
+            TriageSteps(answers: $answers) {
                 PillButton(title: applying ? "Applying..." : "Apply", symbol: "checkmark", disabled: verdict == nil || applying) {
                     if let verdict { apply(verdict) }
                 }
@@ -231,13 +217,69 @@ struct TriageView: View {
     }
 }
 
-/// The three scored questions, answered with a click; shared by triage and a new issue.
-struct TriageQuestions: View {
+/// The three scored questions as steps under the issue: a numbered circle each, filled once it
+/// is answered. A click opens the question and its options over the step; a choice closes it,
+/// and a click on an answered step opens it again to change the answer. The issue's text keeps
+/// the screen. One row: the steps and the next question on the left, the score above the
+/// screen's action on the right. Shared by triage and a new issue.
+struct TriageSteps<Action: View>: View {
     @Binding var answers: [Int?]
+    @ViewBuilder let action: () -> Action
+    @State private var open: Int?
 
     var body: some View {
-        ForEach(Array(IssueTriage.questions.enumerated()), id: \.offset) { index, question in
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 0) {
+                    ForEach(Array(IssueTriage.questions.enumerated()), id: \.offset) { index, question in
+                        if index > 0 {
+                            Rectangle().fill(answers[index - 1] != nil ? Theme.mint : Theme.hairline).frame(width: 18, height: 1)
+                        }
+                        step(index, question: question)
+                    }
+                }
+                if let next = answers.firstIndex(where: { $0 == nil }) {
+                    Text(IssueTriage.questions[next].text).font(.meta).foregroundStyle(Theme.textTertiary)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 8) {
+                if let verdict = IssueTriage.verdict(answers) {
+                    Text("Score \(verdict.score) of \(IssueTriage.maxScore)")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.mint)
+                    HStack(spacing: 6) {
+                        PriorityChip(priority: verdict.priority)
+                        StageChip(stage: verdict.stage)
+                    }
+                }
+                action()
+            }
+        }
+    }
+
+    /// The first unanswered step is the one to take next; the chosen option names an answered one.
+    private func step(_ index: Int, question: TriageQuestion) -> some View {
+        let answer = answers[index]
+        let next = answer == nil && answers.prefix(index).allSatisfy { $0 != nil }
+        return Button { open = open == index ? nil : index } label: {
+            ZStack {
+                Circle().fill(answer != nil ? Theme.mint : Theme.core)
+                Circle().strokeBorder(answer != nil || next ? Theme.mint : Theme.hairline, lineWidth: next ? 1.5 : 1)
+                if answer != nil {
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.canvas)
+                } else {
+                    Text("\(index + 1)").font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(next ? Theme.mint : Theme.textSecondary)
+                }
+            }
+            .frame(width: 26, height: 26)
+            .contentShape(Circle())
+        }
+        .buttonStyle(PressStyle())
+        .help(answer.map { "\(question.text) \(question.options[$0].label)" } ?? question.text)
+        .popover(isPresented: Binding(get: { open == index }, set: { open = $0 ? index : nil }), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(index + 1). \(question.text)").font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
@@ -245,10 +287,12 @@ struct TriageQuestions: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(Array(question.options.enumerated()), id: \.offset) { choice, option in
-                    Button { withAnimation(Motion.snappy) { answers[index] = choice } } label: {
+                    Button {
+                        withAnimation(Motion.snappy) { answers[index] = choice }
+                        open = nil
+                    } label: {
                         HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: answers[index] == choice ? "largecircle.fill.circle" : "circle")
-                                .padding(.top, 1)
+                            Image(systemName: answer == choice ? "largecircle.fill.circle" : "circle").padding(.top, 1)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(option.label).fixedSize(horizontal: false, vertical: true)
                                 if !option.hint.isEmpty {
@@ -259,12 +303,14 @@ struct TriageQuestions: View {
                             Spacer(minLength: 0)
                         }
                         .font(.system(size: 11.5))
-                        .foregroundStyle(answers[index] == choice ? Theme.mint : Theme.textSecondary)
+                        .foregroundStyle(answer == choice ? Theme.mint : Theme.textSecondary)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(PressStyle())
                 }
             }
+            .padding(12)
+            .frame(width: 320)
         }
     }
 }

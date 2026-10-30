@@ -9,6 +9,11 @@ UI:
   from a button and a popover.
 - A choice that belongs to the screen's title (which repo the new issue goes in) sits under the
   title, not in a block of its own with the same value repeated elsewhere.
+- One direction for depth: a page one level deeper comes in from the right and leaves to the
+  right (`.transition(.push)`); the page it covers goes out to the left and comes back from the
+  left (`.pushed`, or the offset in `RootView.content` when the covered page is itself a pushed
+  page: a transition set on a mid page is fixed at its last render and would leave the wrong way).
+  Check both directions in the built app before calling a new page done.
 
 Several agents in this repo (enforced by `scripts/hooks`, activated once per clone with
 `git config core.hooksPath scripts/hooks`; run that first thing if `git config core.hooksPath`

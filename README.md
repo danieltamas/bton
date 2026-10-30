@@ -185,7 +185,7 @@ only place the conversation lives.
 The Triage tab lists open issues that are not `stage:ready`, in progress or in review. The Issues tab lists the ones
 that are ready, taken or not: a repo whose flow has `intake` and that starts its moves has a Bton take the most
 urgent unassigned one (see `docs/FLOW.md`), so assign yourself to an issue you want to do by hand. Click one and
-answer three questions. No agent runs, so it opens instantly.
+answer three questions, each a step under the issue that opens its options. No agent runs, so it opens instantly.
 
 <table>
   <tr>
@@ -229,7 +229,7 @@ are satisfied.
 </table>
 
 When the agent has written the issue, the title and body are editable. The same three questions as
-in Triage sit under it, so the issue is created with its `priority:` and `stage:` labels already
+in Triage are the steps under it, so the issue is created with its `priority:` and `stage:` labels already
 set, and does not come back to Triage. **Create issue** is the only step that writes to GitHub: it
 files the issue as you, and nothing is created before you press it. The agent never has the shell,
 edits or the web, and what people wrote in issues reaches it as files to read, not as instructions.
