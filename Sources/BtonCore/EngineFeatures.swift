@@ -115,7 +115,9 @@ extension Engine {
                        base: String, hasRelease: Bool) -> FeatureReport {
         var report = FeatureReport(repo: repo, registry: .ready(registry), hasRelease: hasRelease)
         for feature in registry.features {
-            report.standings[feature.id] = FeatureStatuses.standing(of: feature, facts: facts, git: git, base: base, hasRelease: hasRelease)
+            let areaPaths = registry.areas.first { $0.id == feature.area }?.paths ?? []
+            report.standings[feature.id] = FeatureStatuses.standing(of: feature, facts: facts, git: git, base: base,
+                                                                    hasRelease: hasRelease, areaPaths: areaPaths)
         }
         report.unreleasedSince = git.unreleasedSince
         report.aheadCommits = git.aheadCommits

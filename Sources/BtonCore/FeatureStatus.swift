@@ -49,14 +49,20 @@ public enum FeatureStatuses {
     public static let specLabel = "stage:spec"
 
     /// The spec's table, top down; `hasRelease` false means merges into the base count only when
-    /// the base is the release branch itself, so "in develop" never applies.
+    /// the base is the release branch itself, so "in develop" never applies. `areaPaths` are the
+    /// feature's area's, the code a feature without paths of its own is measured against.
     public static func standing(of feature: FeatureRegistry.Feature, facts: FeatureFacts, git: FeatureGit,
-                                base: String, hasRelease: Bool) -> FeatureStanding {
+                                base: String, hasRelease: Bool, areaPaths: [String] = []) -> FeatureStanding {
         // A number linked twice (title and body) is one issue or PR; by number, so two PRs
         // merged in the same release resolve the same way every sync.
-        let prs = Set(feature.prs.map(\.number)).sorted().compactMap { facts.pullRequests[$0] }
+        let linked = Set(feature.prs.map(\.number)).sorted().compactMap { facts.pullRequests[$0] }
         let issues = Set(feature.issues.map(\.number)).sorted().compactMap { facts.issues[$0] }
+        // A plan or a doc merged for the feature is one of its changes, but not the feature
+        // built: on lexito the plan PR of an open issue showed the feature live.
+        let paths = feature.paths.isEmpty ? areaPaths : feature.paths
+        let prs = linked.filter { isCode($0, paths: paths) }
         let merged = prs.filter { $0.state == "MERGED" }
+        let allMerged = linked.filter { $0.state == "MERGED" }
         let live = merged.compactMap { pr in pr.mergeCommit.flatMap { git.releasedAt[$0] }.map { (pr.number, $0) } }
             .min { $0.1 < $1.1 }
         let inDevelop = hasRelease
@@ -73,7 +79,7 @@ public enum FeatureStatuses {
             ?? (feature.firstSeen.flatMap(Self.day), nil)
 
         var timeline: [FeatureStanding.Event] = []
-        if idea.0 != nil || idea.1 != nil || !issues.isEmpty || !prs.isEmpty {
+        if idea.0 != nil || idea.1 != nil || !issues.isEmpty || !linked.isEmpty {
             timeline.append(.init(status: .idea, at: idea.0, number: idea.1))
         }
         if let spec { timeline.append(.init(status: .spec, at: spec.1, number: spec.0)) }
@@ -100,7 +106,17 @@ public enum FeatureStatuses {
         }
         return FeatureStanding(status: status, timeline: timeline, openIssues: open.count,
                                openPullRequests: openPRs.count,
-                               changes: merged.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }.map(\.number))
+                               changes: allMerged.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }.map(\.number))
+    }
+
+    /// A PR is the feature's code unless every file it changes is Markdown: a plan under
+    /// `jobs/`, a doc, a log entry. The feature's paths can still claim such a file (a feature
+    /// of the team's process is made of docs). Files not read leave the PR counting as it
+    /// always did. The feature's globs alone would be too narrow a measure: on lexito most
+    /// features' code sits outside the few paths the registry lists for them.
+    static func isCode(_ pr: FeatureFacts.PullRequestFact, paths: [String]) -> Bool {
+        guard let files = pr.files, !files.isEmpty else { return true }
+        return files.contains { file in !file.lowercased().hasSuffix(".md") || paths.contains { PathGlob.matches($0, file) } }
     }
 
     /// The open issue that carried the label first, with when it got it (its creation when the

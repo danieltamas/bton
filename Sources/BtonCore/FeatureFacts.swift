@@ -30,11 +30,15 @@ public struct FeatureFacts: Sendable, Equatable {
         public let baseRef: String
         /// Contributor text: shown on the page, never put in a prompt or a command.
         public let title: String
+        /// The paths the PR changes, its first 100; nil when the facts were read without them.
+        /// A PR that touches none of a feature's code is a plan or a doc, not the feature built.
+        public let files: [String]?
 
         public init(number: Int, state: String, createdAt: Date, mergedAt: Date?, mergeCommit: String?, baseRef: String,
-                    title: String = "") {
+                    title: String = "", files: [String]? = nil) {
             self.number = number
             self.title = title
+            self.files = files
             self.state = state
             self.createdAt = createdAt
             self.mergedAt = mergedAt
@@ -61,7 +65,8 @@ public struct FeatureFacts: Sendable, Equatable {
           __typename
           ... on Issue { number issueState: state createdAt labels(first: 30) { nodes { name } } \
         timelineItems(itemTypes: [LABELED_EVENT], last: 30) { nodes { ... on LabeledEvent { createdAt label { name } } } } }
-          ... on PullRequest { number prState: state createdAt mergedAt baseRefName title mergeCommit { oid } }
+          ... on PullRequest { number prState: state createdAt mergedAt baseRefName title mergeCommit { oid } \
+        files(first: 100) { nodes { path } } }
         """
         let aliases = numbers.map { "    n\($0): issueOrPullRequest(number: \($0)) {\n\(fields)\n    }" }
         return """
@@ -86,7 +91,7 @@ public struct FeatureFacts: Sendable, Equatable {
             var state: String { issueState ?? prState ?? plainState ?? "" }
 
             enum CodingKeys: String, CodingKey {
-                case __typename, number, issueState, prState, createdAt, mergedAt, baseRefName, mergeCommit, labels, timelineItems, title
+                case __typename, number, issueState, prState, createdAt, mergedAt, baseRefName, mergeCommit, labels, timelineItems, title, files
                 case plainState = "state"
             }
             let createdAt: Date
@@ -96,7 +101,9 @@ public struct FeatureFacts: Sendable, Equatable {
             let mergeCommit: Commit?
             let labels: Nodes<Label>?
             let timelineItems: Nodes<Event>?
+            let files: Nodes<File>?
         }
+        struct File: Decodable { let path: String }
         struct Nodes<Element: Decodable>: Decodable { let nodes: [Element] }
         struct Label: Decodable { let name: String }
         struct Commit: Decodable { let oid: String }
@@ -133,7 +140,8 @@ public struct FeatureFacts: Sendable, Equatable {
             case "PullRequest":
                 facts.pullRequests[node.number] = PullRequestFact(number: node.number, state: node.state, createdAt: node.createdAt,
                                                                   mergedAt: node.mergedAt, mergeCommit: node.mergeCommit?.oid,
-                                                                  baseRef: node.baseRefName ?? "", title: node.title ?? "")
+                                                                  baseRef: node.baseRefName ?? "", title: node.title ?? "",
+                                                                  files: node.files?.nodes.map(\.path))
             default: continue
             }
         }
