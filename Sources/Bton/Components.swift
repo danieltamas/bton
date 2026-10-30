@@ -88,10 +88,16 @@ struct Chip: View {
     var symbol: String?
     var color: Color = Theme.neutral
     var style: Style = .tinted
+    /// A chip whose label is on its way to GitHub spins where its symbol goes.
+    var loading = false
 
     var body: some View {
         HStack(spacing: 4) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 8.5, weight: .semibold)) }
+            if loading {
+                ProgressView().controlSize(.mini).scaleEffect(0.6).frame(width: 9, height: 9).tint(color)
+            } else if let symbol {
+                Image(systemName: symbol).font(.system(size: 8.5, weight: .semibold))
+            }
             Text(text).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
         }
         // A control's label never wraps or truncates: the content around it yields instead.
@@ -107,6 +113,8 @@ struct Chip: View {
             case .dashed: Capsule().strokeBorder(color.opacity(0.7), style: StrokeStyle(lineWidth: 0.9, dash: [2.5, 2]))
             }
         }
+        // A chip in a button is pressed anywhere on its capsule, not only on its text.
+        .contentShape(Capsule())
     }
 }
 
@@ -115,7 +123,7 @@ struct PriorityChip: View {
     let priority: String?
 
     var body: some View {
-        Chip(text: priority.map { "priority \($0)" } ?? "no priority", color: Theme.color(forPriority: priority),
+        Chip(text: priority.map { "priority:\($0)" } ?? "no priority", color: Theme.color(forPriority: priority),
              style: priority == nil ? .dashed : .outline)
     }
 }
@@ -125,7 +133,7 @@ struct StageChip: View {
     let stage: String?
 
     var body: some View {
-        Chip(text: stage?.replacingOccurrences(of: "-", with: " ") ?? "no stage", color: Theme.color(forStage: stage),
+        Chip(text: stage.map { "stage:\($0)" } ?? "no stage", color: Theme.color(forStage: stage),
              style: stage == nil ? .dashed : .outline)
     }
 }

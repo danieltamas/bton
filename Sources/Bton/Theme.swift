@@ -105,6 +105,18 @@ enum Theme {
         }
     }
 
+    /// A label's hue: the priority and stage hues Bton draws everywhere, GitHub's own colour for
+    /// any other label, neutral when GitHub gave none.
+    static func color(forLabel name: String, hex: String) -> Color {
+        switch RepoLabels.family(of: name) {
+        case IssueTriage.priorityPrefix: return color(forPriority: String(name.dropFirst(IssueTriage.priorityPrefix.count)).lowercased())
+        case IssueTriage.stagePrefix: return color(forStage: String(name.dropFirst(IssueTriage.stagePrefix.count)).lowercased())
+        default:
+            guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return neutral }
+            return Color(hex: value)
+        }
+    }
+
     static func color(for status: Job.Status) -> Color {
         switch status {
         case .running: hue(0x4C8DFF, light: 0x2A6DE1)

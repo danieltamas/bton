@@ -441,6 +441,47 @@ final class AppStore {
     }
 
     /// One engine tick: read every repo, dispatch this Mac's moves, publish the result.
+    /// The repo's labels for the Triage tab's picker: today's from `labels.json`, else GitHub's,
+    /// remembered for a day.
+    func repoLabels(_ repo: String) async throws -> [RepoLabel] {
+        let now = Date()
+        if let fresh = RepoLabels.load(home: home).fresh(repo, now: now) { return fresh }
+        guard let github else { throw CocoaError(.fileNoSuchFile) }
+        let labels = try await github.repoLabels(repo: repo)
+        try? RepoLabels.remember(labels, repo: repo, now: now, home: home)
+        return labels
+    }
+
+    /// The label edit on its way to GitHub for an issue of the Triage tab, by issue id: its chips
+    /// spin on the issue's page, and a second edit or Apply on the same issue waits for it. Owned
+    /// here, not by the page, so an edit outlives a page closed and reopened under it.
+    private(set) var labelEdits: [String: PendingLabels] = [:]
+
+    struct PendingLabels: Hashable {
+        let add: [String]
+        let remove: [String]
+    }
+
+    /// One label edit on an issue of the Triage tab, posted to GitHub and then shown on its row
+    /// and its open page. An issue the edit settles (stage:ready) leaves the tab at once, its
+    /// page closes, and a sync follows. Nothing is sent while another edit of the issue is out.
+    func editLabels(_ edit: (add: [String], remove: [String]), on issue: TriageIssue) async throws {
+        guard labelEdits[issue.id] == nil else { return }
+        labelEdits[issue.id] = PendingLabels(add: edit.add, remove: edit.remove)
+        defer { labelEdits[issue.id] = nil }
+        guard let github else { throw CocoaError(.fileNoSuchFile) }
+        try await github.editIssueLabels(add: edit.add, remove: edit.remove, repo: issue.repo, number: issue.number)
+        let changed = issue.with(labels: RepoLabels.apply(edit, to: issue.labels))
+        if changed.isSettled {
+            triage.removeAll { $0.id == issue.id }
+            if triaging?.id == issue.id { withAnimation(Motion.spring) { triaging = nil } }
+            await refresh()
+        } else {
+            triage = IssueTriage.ordered(triage.map { $0.id == issue.id ? changed : $0 })
+            if triaging?.id == issue.id { triaging = changed }
+        }
+    }
+
     func refresh() async {
         guard !isRefreshing else {
             refreshAgain = true

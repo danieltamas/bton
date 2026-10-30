@@ -23,6 +23,14 @@ public struct TriageIssue: Identifiable, Hashable, Sendable {
 
     public var priority: String? { IssueTriage.label(withPrefix: IssueTriage.priorityPrefix, in: labels) }
     public var stage: String? { IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: labels) }
+
+    /// The same issue holding `labels`: what one label edit from the Triage tab leaves.
+    public func with(labels: [String]) -> TriageIssue {
+        TriageIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, body: body, labels: labels)
+    }
+
+    /// True once the stage says an agent or a PR owns the issue: it leaves the Triage tab.
+    public var isSettled: Bool { stage.map(IssueTriage.settledStages.contains) == true }
 }
 
 public struct TriageQuestion: Hashable, Sendable {
@@ -115,9 +123,9 @@ public enum IssueTriage {
     public static func pending(_ issues: [OpenIssue]) -> [TriageIssue] {
         ordered(issues.compactMap { issue -> TriageIssue? in
             let labels = issue.labels
-            guard label(withPrefix: stagePrefix, in: labels).map(settledStages.contains) != true else { return nil }
-            return TriageIssue(repo: issue.repo, number: issue.number, title: issue.title, url: issue.url,
-                               createdAt: issue.createdAt, body: issue.body, labels: labels)
+            let row = TriageIssue(repo: issue.repo, number: issue.number, title: issue.title, url: issue.url,
+                                  createdAt: issue.createdAt, body: issue.body, labels: labels)
+            return row.isSettled ? nil : row
         })
     }
 

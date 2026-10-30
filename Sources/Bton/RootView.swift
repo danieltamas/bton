@@ -149,8 +149,10 @@ struct RootView: View {
 
     // MARK: bento
 
-    /// The big tile: how many PRs wait on me for a step an agent cannot take (a review I owe, a
-    /// PR of mine to fix or merge). Without a flow on any repo nobody's move is known, so it says that.
+    /// One row of three tiles, each a line under its eyebrow: how many PRs and issues wait on me
+    /// for a step an agent cannot take (a review I owe, a PR of mine to fix or merge, a question)
+    /// with the moves beside the count, the agents running of the allowed, today's cost with the
+    /// week's. Without a flow on any repo nobody's move is known, so the first tile says that.
     private var bento: some View {
         HStack(spacing: 8) {
             let waiting = store.humanMovesForMe
@@ -158,32 +160,38 @@ struct RootView: View {
             // An issue that asks me needs no flow to count.
             let hasFlow = asked || store.flows.values.contains { $0.flow != nil }
             Bezel(glow: store.waitingOnMe == 0 ? nil : Theme.mint) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Eyebrow(text: "Waiting on you", color: store.waitingOnMe == 0 ? Theme.textTertiary : Theme.mint)
-                    Text(hasFlow ? "\(store.waitingOnMe)" : "–").font(.statValue).foregroundStyle(Theme.textPrimary)
-                        .contentTransition(.numericText())
-                    HStack(spacing: 4) {
+                        .lineLimit(1).fixedSize()
+                    // The count never gives way; the moves wrap under it when the tile is narrow.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(hasFlow ? "\(store.waitingOnMe)" : "–").font(.statSmall).foregroundStyle(Theme.textPrimary)
+                            .monospacedDigit().contentTransition(.numericText()).fixedSize().layoutPriority(1)
                         if store.lastRefresh == nil {
-                            Text("Reading GitHub...").font(.meta).foregroundStyle(Theme.textTertiary)
+                            Text("Reading GitHub...").font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(1)
                         } else if !hasFlow {
                             Text("No team flow yet: add .bton/flow.json to the branch PRs merge into (Settings → Repos).")
-                                .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
-                        } else if waiting.isEmpty && !asked {
-                            Text("No PR needs you to review, fix or merge it").font(.meta).foregroundStyle(Theme.textTertiary)
+                                .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(3)
                                 .fixedSize(horizontal: false, vertical: true)
+                        } else if waiting.isEmpty && !asked {
+                            Text("Nothing to review, fix or merge").font(.meta).foregroundStyle(Theme.textTertiary)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         } else {
-                            ForEach(Array(Set(waiting.compactMap(\.move?.name))).sorted(), id: \.self) { name in
-                                Chip(text: name, symbol: Theme.symbol(forMove: name), color: Theme.color(forMove: name))
-                            }
-                            if asked {
-                                Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint)
-                                    .onTapGesture { show(.issues) }
-                                    .pointingHandCursor()
+                            WrapLayout(spacing: 4) {
+                                ForEach(Array(Set(waiting.compactMap(\.move?.name))).sorted(), id: \.self) { name in
+                                    Chip(text: name, symbol: Theme.symbol(forMove: name), color: Theme.color(forMove: name))
+                                }
+                                if asked {
+                                    Chip(text: "reply", symbol: "questionmark.bubble", color: Theme.mint)
+                                        .onTapGesture { show(.issues) }
+                                        .pointingHandCursor()
+                                }
                             }
                         }
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity)
@@ -192,35 +200,42 @@ struct RootView: View {
             .pointingHandCursor()
             .help("PRs whose next step is yours and no agent of yours can take it, and issues that ask you something")
 
-            VStack(spacing: 8) {
-                smallTile(eyebrow: "Agents", value: "\(store.runningJobs)", suffix: "of \(store.maxAgents)",
-                          dot: store.runningJobs > 0 ? Theme.color(for: .running) : nil)
-                    .onTapGesture { show(.jobs) }
-                    .pointingHandCursor()
-                // The week sits on its own line, so neither figure is cut as costs grow.
-                smallTile(eyebrow: "Today", value: store.costToday.usd(), suffix: "week \(store.costThisWeek.usd(cents: false))", dot: nil)
-            }
-            .frame(width: 140)
+            // "1 of 4" is one line; the week sits under the day, so neither figure is cut as
+            // costs grow and the first tile keeps the width its eyebrow and chips need.
+            smallTile(eyebrow: "Agents", value: "\(store.runningJobs)", suffix: "of \(store.maxAgents)", stacked: false,
+                      dot: store.runningJobs > 0 ? Theme.color(for: .running) : nil)
+                .onTapGesture { show(.jobs) }
+                .pointingHandCursor()
+            smallTile(eyebrow: "Today", value: store.costToday.usd(), suffix: "week \(store.costThisWeek.usd(cents: false))",
+                      stacked: true, dot: nil)
         }
-        .frame(height: 140)
+        // The row is as tall as its tallest tile, and every tile fills it.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func smallTile(eyebrow: String, value: String, suffix: String, dot: Color?) -> some View {
+    /// A figure and what it is of under the eyebrow: on one line, or the second under the first.
+    private func smallTile(eyebrow: String, value: String, suffix: String, stacked: Bool, dot: Color?) -> some View {
         Bezel(radius: 14) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Eyebrow(text: eyebrow)
                     if let dot { PulseDot(color: dot) }
                 }
-                Text(value).font(.statSmall).foregroundStyle(Theme.textPrimary).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
-                Text(suffix).font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary).lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                let figure = Text(value).font(.statSmall).foregroundStyle(Theme.textPrimary).monospacedDigit()
+                    .lineLimit(1).contentTransition(.numericText())
+                let of = Text(suffix).font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                if stacked {
+                    VStack(alignment: .leading, spacing: 1) { figure; of }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) { figure; of }
+                }
             }
+            .fixedSize()
             .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.vertical, 9)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     // MARK: tabs

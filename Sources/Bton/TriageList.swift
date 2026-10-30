@@ -24,10 +24,7 @@ extension AppStore {
 
     /// Sets the issue's priority and stage from the answers, then syncs so it leaves the tab when it is ready.
     func applyTriage(_ verdict: TriageVerdict, to issue: TriageIssue) async throws {
-        guard let github else { throw CocoaError(.fileNoSuchFile) }
-        let edit = IssueTriage.edit(for: verdict, on: issue)
-        try await github.editIssueLabels(add: edit.add, remove: edit.remove, repo: issue.repo, number: issue.number)
-        await refresh()
+        try await editLabels(IssueTriage.edit(for: verdict, on: issue), on: issue)
     }
 }
 
@@ -166,16 +163,14 @@ struct TriageView: View {
 
     var body: some View {
         let verdict = IssueTriage.verdict(answers)
+        let editing = applying || store.labelEdits[issue.id] != nil
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 IconButton(symbol: "chevron.left", help: "Back to the list", action: close)
                     .keyboardShortcut(.cancelAction)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("#\(issue.number) \(issue.title)").font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
-                    HStack(spacing: 6) {
-                        PriorityChip(priority: issue.priority)
-                        StageChip(stage: issue.stage)
-                    }
+                    IssueLabelRow(issue: issue) { problem = $0 }
                 }
                 Spacer(minLength: 4)
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(issue.url) }
@@ -193,7 +188,7 @@ struct TriageView: View {
             .scrollIndicators(.never)
             if let problem { ProblemText(text: problem).padding(.horizontal, 14) }
             TriageSteps(answers: $answers) {
-                PillButton(title: applying ? "Applying..." : "Apply", symbol: "checkmark", disabled: verdict == nil || applying) {
+                PillButton(title: applying ? "Applying..." : "Apply", symbol: "checkmark", disabled: verdict == nil || editing) {
                     if let verdict { apply(verdict) }
                 }
             }
@@ -208,7 +203,7 @@ struct TriageView: View {
         Task {
             do {
                 try await store.applyTriage(verdict, to: issue)
-                close()
+                if store.triaging?.id == issue.id { close() }
             } catch {
                 problem = "Labels not set: \(error.localizedDescription)"
             }
