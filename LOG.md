@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.20.0 (2026-10-30)
 
 **A Codex job reads as a session.** A job run by Codex (lexito's quick-fix reviews) has no Claude transcript, so its panel was Codex's raw stream, the job's log, in one monospaced block: the prompt, the agent's words, every file it printed, all alike and none of it drawn, and after the job ended the report at the top followed by the same text again. Bton now reads that stream as it reads a Claude transcript: the prompt, what Codex says drawn as Markdown, each command on its line with its output under it, collapsed, and a thinking mark; it follows the job live. A job that leaves neither transcript nor Codex stream shows its output drawn as Markdown and Bton's log, named as such, in plain text under it, and an ended job's report is not shown a second time.
 
