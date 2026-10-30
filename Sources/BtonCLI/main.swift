@@ -60,8 +60,10 @@ do {
         guard arguments.count >= 2, BtonConfig.isRepoSlug(arguments[1]) else { fail(usage) }
         let repo = arguments[1]
         let github = try GitHubClient()
-        // The branch the app reads for a watched repo; the default branch otherwise.
-        let branch = try BtonConfig.loadOrCreate(home: BtonHome()).repos
+        // The branch the app reads for a watched repo; the default branch otherwise. A read: no
+        // config is no config, and nothing is created, so it runs from a sandbox that cannot
+        // write the home folder.
+        let branch = (try? JSONDecoder().decode(BtonConfig.self, from: Data(contentsOf: BtonHome().configURL)))?.repos
             .first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
         // --flow reads a local file instead of the watched branch's, to try a flow before it lands.
         let flowData: Data? = if let index = arguments.firstIndex(of: "--flow"), index + 1 < arguments.count {
