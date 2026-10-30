@@ -36,7 +36,11 @@ struct SessionView: View {
                     .padding(.bottom, 12)
                 }
                 .scrollIndicators(.never)
-                .onChange(of: entries.count) { withAnimation(Motion.snappy) { reader.scrollTo("end", anchor: .bottom) } }
+                // Follows the agent while it works; an ended job opens on its report, not past it.
+                .onChange(of: entries.count) {
+                    guard current.status == .running else { return }
+                    withAnimation(Motion.snappy) { reader.scrollTo("end", anchor: .bottom) }
+                }
             }
         }
         .task(id: job.id) { await follow() }
@@ -158,8 +162,8 @@ private struct EntryRow: View {
         case .prompt:
             bubble(label: "Prompt", color: Theme.color(forMove: "schedule"), text: entry.text, lines: 3)
         case .text:
-            Text(entry.text).font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            // The agent's own words are Markdown, in the session as in the report above it.
+            MarkdownView(text: entry.text, tone: Theme.textPrimary)
                 .padding(.vertical, 2)
         case .thinking:
             Label("thinking", systemImage: "ellipsis").font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
