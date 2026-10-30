@@ -135,7 +135,7 @@ extension RepoPage {
         if let readiness = store.graphReadiness(slug), readiness != .ready {
             VStack(spacing: 6) {
                 RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
-                           help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes.",
+                           help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs, with the repo's issues, PRs, decisions and job reports as its memory, and links both into every checkout it makes.",
                            isOn: readiness != .off, problem: $problem) { try store.setCodeGraph($0, for: slug) }
                 if let note = Self.graphNote(readiness) {
                     Text(note).font(.meta).foregroundStyle(readiness == .missingPython ? Theme.danger : Theme.textTertiary)

@@ -39,7 +39,9 @@ public enum PRPlaybook {
     when present), then only relevant definitions, callers, tests and trusted
     referenced rules. When the instructions name a code graph (graphify-out), locate those
     definitions and callers with graphify-src "<question>" first and search the
-    tree only for what it does not answer.
+    tree only for what it does not answer. When they name a memory (memory/), what was
+    decided, reviewed or tried before on this area is asked of the graph the same way;
+    GitHub is read live only for this PR and for anything newer than the memory's time.
     Batch independent reads when supported, but use one plain command per
     Bash call: no pipes, &&, semicolons, substitutions or cd. Recover truncated
     ranges explicitly. Keep a compact evidence map; reread only changed or missing

@@ -213,6 +213,10 @@ actor Dispatcher {
             jobs.note(job, "\(CodeGraph.linkName) kept: \(error.localizedDescription)")
             return nil
         }
+        // The memory's files beside the graph, so a query's hit on memory/... opens in this tree.
+        if marker.memoryAt != nil {
+            do { try GraphMemory.link(into: worktree, store: store) } catch { jobs.note(job, "\(GraphMemory.folderName) not linked: \(error.localizedDescription)") }
+        }
         return CodeGraph.instructionLine(base: base, marker: marker, template: graphInstruction, tool: tool)
     }
 

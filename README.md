@@ -138,8 +138,10 @@ where your flow says a person decides.
     <td width="50%" valign="top">
       <b>A code graph for every agent</b><br>
       Turn on "Build a code graph for agents" and Bton keeps a graphify graph of the branch PRs
-      merge into under <code>~/.bton/graphs</code>, rebuilt when that branch moves, and links it
-      into every checkout it makes. Agents query it before they search. Settings > Agents installs
+      merge into under <code>~/.bton/graphs</code>, with the repo's issues, PRs, decisions and
+      job reports beside it as its memory, refreshed every sync and rebuilt when the branch moves
+      or the memory is newer, and links both into every checkout it makes. Agents ask it before
+      they search or read GitHub. Settings > Agents installs
       graphify when no Python has it, shows what the graphs take on disk, and takes the line agents
       are told about them.
     </td>

@@ -207,6 +207,9 @@ private struct StoredGraphsList: View {
             if let marker = graph.marker {
                 RelativeTime(date: marker.at) { "built from \(marker.commit.prefix(8)) \($0) ago" }
                     .font(.meta).foregroundStyle(Theme.textTertiary)
+                if let memoryAt = marker.memoryAt {
+                    RelativeTime(date: memoryAt) { "memory to \($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
+                }
             } else {
                 Text("no finished build").font(.meta).foregroundStyle(Theme.textTertiary)
             }

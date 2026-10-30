@@ -115,7 +115,7 @@ public actor Engine {
         unsetenv("BTON_PRESSED")
         jobs = try JobStore(home: home)
         self.log = log
-        graphs = CodeGraphBuilder(home: home, log: log)
+        graphs = CodeGraphBuilder(home: home, jobs: jobs, log: log)
     }
 
     /// Awaits the code graph builds a tick started; tests only.

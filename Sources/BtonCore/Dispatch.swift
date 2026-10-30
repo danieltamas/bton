@@ -289,12 +289,17 @@ public enum DispatchPlanner {
 
     /// What Bton posts to GitHub never carries a repo's environment: each value of at least 8
     /// characters, and a URL value's password, becomes `[KEY]`. Shorter values (a flag like
-    /// `1`) would match too much text to hide.
+    /// `1`) would match too much text to hide. A URL password equal to its user name
+    /// (`lexito:lexito@`, the local development pattern) is the product's name, not a secret:
+    /// measured 2026-10-30, it had turned the name into `[DATABASE_URL]` in posted reviews.
     public static func redact(_ text: String, environment: [String: String]) -> String {
         var secrets: [(value: String, key: String)] = []
         for (key, value) in environment {
             if value.count >= 8 { secrets.append((value, key)) }
-            if let password = URLComponents(string: value)?.password, password.count >= 4 { secrets.append((password, key)) }
+            if let parts = URLComponents(string: value), let password = parts.password, password.count >= 4,
+               password != parts.user {
+                secrets.append((password, key))
+            }
         }
         // The longest first, so a URL goes whole before its password alone.
         return secrets.sorted { $0.value.count > $1.value.count }

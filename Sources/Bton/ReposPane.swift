@@ -84,7 +84,7 @@ struct ReposPane: View {
                         }
                         HStack(spacing: 8) {
                             RepoSwitch(symbol: "point.3.connected.trianglepath.dotted", title: "Build a code graph for agents",
-                                       help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs and links it into every checkout it makes, so agents query it before searching.",
+                                       help: "After a sync, Bton keeps a graphify graph of the branch PRs merge into under ~/.bton/graphs, with the repo's issues, PRs, decisions and job reports as its memory, and links both into every checkout it makes, so agents ask it before searching or reading GitHub.",
                                        isOn: repo.buildsGraph, problem: $problem) { try store.setCodeGraph($0, for: repo.slug) }
                             if repo.buildsGraph, !store.codeGraphs {
                                 Chip(text: "graphify is off", symbol: "exclamationmark.triangle", color: Theme.neutral)

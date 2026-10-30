@@ -46,7 +46,7 @@ struct AgentsPane: View {
                 }
             }
             SettingsCard(title: "Code graphs",
-                         detail: "graphify maps a repo's code into modules and their links. For a repo with \"Build a code graph for agents\" on (Repos), Bton rebuilds the graph after a sync when the branch moved, keeps it under ~/.bton/graphs and links it into every checkout an agent gets; the registry job draws its areas from it.") {
+                         detail: "graphify maps a repo's code into modules and their links. For a repo with \"Build a code graph for agents\" on (Repos), Bton keeps the graph under ~/.bton/graphs with the repo's memory beside it (its issues, PRs, decisions and this Mac's job reports, refreshed every sync), rebuilds it when the branch moves or the memory is newer, and links both into every checkout an agent gets; the registry job draws its areas from it.") {
                 CodeGraphsSettings()
             }
             if store.agents.isEmpty && !adding {

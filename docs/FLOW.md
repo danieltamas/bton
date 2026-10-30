@@ -226,7 +226,19 @@ agent's review would be posted as the author and ignored.
   supervisor), the line also asks for `Feature: <id>` in the PR body, which the registry job then
   links as hard evidence (`why: feature`). Everything but that id travels as data. A codex job is
   also told its scratch directory and the code graph line in the task text, as Claude is in its
-  system prompt.
+  system prompt. The code graph of a repo with the switch on carries the repo's memory: under
+  `memory/` beside `graphify-out` in every job's tree (a link to `~/.bton/graphs/<owner>__<repo>/memory`)
+  are one Markdown file per issue (`memory/issues/<n>.md`, body and comments, so a `## Decision:`
+  comment is found by its heading), per PR (`memory/prs/<n>.md`, with reviews and files) and per
+  item Bton ran jobs on (`memory/jobs/<item>.md`, this Mac's reports). Every sync writes what
+  changed on GitHub since the last one (the first export reaches 180 days back, 600 items a side
+  at most) and graphify indexes the files at the next rebuild: when the branch moves, when a Bton
+  upgrade changed what the graph holds, or when the memory is newer than a graph built 30 minutes
+  ago or more. The graph line tells the agent how far the memory goes, to the minute; the live
+  thread of the job's own item is injected as before. A body that carries a value of the repo's
+  environment is never written. The folder and `graphify-out` are kept out of git through the
+  clone's `info/exclude`; graphify honours that file too, so the build tree carries a
+  `.graphifyignore` with `!memory` (also excluded) that takes the folder back in.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
   line is a review (rules above) naming the current head.
 - `command`: an argv run instead of an agent (merge, or a review), in a fresh worktree of the base
