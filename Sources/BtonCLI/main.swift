@@ -15,6 +15,7 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton docs-review <number> <head> <base> <tier>   the docs tier's policy review, written to $BTON_OUT
                                       (a flow's dispatch.review.command; exit 2 = head not fetchable here)
        bton ask-server --job <uuid> --cwd <dir> [--helper <agent>...] [--graph]   a job's MCP tools (Bton starts it)
+       bton --version                 this tool's version and the build it came from
 exit: 0 done, 1 held by someone else or lost, 2 usage, 3 error (not held)
 """
 
@@ -36,6 +37,13 @@ guard let command = arguments.first else { fail(usage) }
 // Any error left, gh not found among them, ends with its message, not a trace.
 do {
     switch command {
+    case "--version", "version":
+        // The tool lives in the app bundle, whose Info.plist is Bundle.main's; a bare `swift build` has none.
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String
+        let source = info?["BtonSource"] as? String
+        print("bton \(version ?? "unbundled build")" + (source.map { " (\($0))" } ?? ""))
+        exit(0)
     case "ask-server":
         func values(_ flag: String) -> [String] {
             arguments.indices.filter { arguments[$0] == flag && $0 + 1 < arguments.count }.map { arguments[$0 + 1] }
