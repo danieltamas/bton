@@ -376,6 +376,10 @@ public actor Engine {
                 composeRequests.removeAll { drafted.contains($0.key) }
                 next.removeAll { ranPicks.contains($0) }
                 let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
+                // A press that no candidate answers is not dropped in silence: the log says so.
+                for pick in next where picksAtStart.contains(pick) && !kept.contains(pick) && !ranPicks.contains(pick) && pressedPicks.contains(pick) {
+                    log("\(pick): not started: no move of it Bton can start now")
+                }
                 next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
                 let refusedPicks = Set(refused.map { Self.pick(repo: $0.repo, item: $0.item) })
                 waiting = Dictionary(next.filter { !started.contains($0) }.map { pick in
@@ -459,6 +463,16 @@ public actor Engine {
         ask(key)
     }
 
+    /// Runs a PR's move again although it succeeded on this head (the pill's "Fix again"): the job
+    /// that changed nothing is marked to run again, so the key is not seen as done, and the PR goes
+    /// first in line. Only a press reaches here; the sync never starts a key that ran.
+    public func runAgain(_ key: JobKey) throws {
+        let all = jobs.all()
+        guard let ended = all.last(where: { $0.key == key && $0.canRunAgain(among: all) }) else { return }
+        _ = try jobs.requestRunAgain(ended.id)
+        runNext(repo: key.repo, item: key.item, pressed: true)
+    }
+
     /// A review move that runs here with the agent, model and effort the owner set for this repo, and their
     /// rules after the flow's prompt.
     private func reviewed(_ candidate: DispatchCandidate, by pick: AgentPick, rules: String?) -> DispatchCandidate {
@@ -478,6 +492,14 @@ public actor Engine {
         if key.move == "merge" || key.move == "resolve" { asked[Self.pick(repo: key.repo, item: key.item)] = key }
     }
 
+    /// Whether the owner's press (Merge, Fix conflicts) needs a candidate of its own. Not when the
+    /// PR's move is that move on that head and mine: the flow's own candidate runs, first in line.
+    /// When the flow gives the move to someone else (the reviewer's merge on a PR of mine), the
+    /// press is answered by the owner's candidate, or it would wait on a move no Bton here starts.
+    static func pressNeedsOverride(_ request: JobKey, pr: PullRequest, me: String) -> Bool {
+        !(request.head == pr.headSha && request.move == pr.move?.name && pr.move?.isMine(me) == true)
+    }
+
     /// What runs on a PR instead of its flow move: the owner's Merge or Fix conflicts on the head they
     /// saw, or else, where the sync starts moves, Bton's own resolve on a PR of mine that conflicts, once per head.
     private func override(_ pr: PullRequest, flow: Flow, repo: WatchedRepo, me: String) -> DispatchCandidate? {
@@ -485,9 +507,11 @@ public actor Engine {
         let all = jobs.all()
         let fresh = { (c: DispatchCandidate) in !all.contains { $0.key == c.key } || DispatchPlanner.isRetry(c.key, jobs: all) }
         if let request = asked[pick] {
-            // The flow's own move needs no override (a reviewer's merge on a teammate's PR): its
-            // candidate runs, first in line. The request stays, pinning the head, until it starts.
-            if request.head == pr.headSha, request.move == pr.move?.name { return nil }
+            // The flow's own move of mine needs no override (a reviewer's merge on a teammate's PR):
+            // its candidate runs, first in line. The request stays, pinning the head, until it starts.
+            // A merge the flow gives to someone else (the reviewer's, on a PR of mine) is the owner's
+            // Merge: the override runs it, or the press would wait on a move no Bton here starts.
+            if !Self.pressNeedsOverride(request, pr: pr, me: me) { return nil }
             let made = request.head != pr.headSha ? nil : request.move == "merge"
                 ? DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: repo.slug)
                 : DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug)

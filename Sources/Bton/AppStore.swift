@@ -484,6 +484,14 @@ final class AppStore {
         return jobs.first { $0.key == key }.flatMap { $0.canRetry(among: jobs) ? $0 : nil }
     }
 
+    /// The newest job of this move on this head and round that succeeded while the move is still
+    /// the PR's: its agent pushed or posted nothing, and its report says why.
+    func succeededOnHead(_ pr: PullRequest, move: String) -> Job? {
+        guard pr.move?.name == move else { return nil }
+        let key = key(for: pr, move: move)
+        return jobs.first { $0.key == key }.flatMap { $0.status == .succeeded ? $0 : nil }
+    }
+
     /// The key a move of this PR runs under now: `DispatchPlanner.key`, with the round the flow reads.
     func key(for pr: PullRequest, move: String) -> JobKey {
         DispatchPlanner.key(for: pr, move: move, flow: flows[pr.repo]?.flow, me: me ?? "", repo: pr.repo)
@@ -491,7 +499,11 @@ final class AppStore {
 
     func runNow(_ pr: PullRequest, move: String) async {
         markStarting(repo: pr.repo, item: "pr-\(pr.number)")
-        try? await engine?.runNow(key(for: pr, move: move))
+        if succeededOnHead(pr, move: move) != nil {
+            try? await engine?.runAgain(key(for: pr, move: move))
+        } else {
+            try? await engine?.runNow(key(for: pr, move: move))
+        }
         await refresh()
     }
 

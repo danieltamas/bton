@@ -111,6 +111,68 @@ struct ConflictsAcceptanceTests {
         #expect(!DispatchPlanner.isRetry(job.key, jobs: persisted))
     }
 
+    @Test func runAgainMarksSucceededJobToRunAgain() async throws {
+        let fixture = try ConflictsFixture()
+        defer { fixture.remove() }
+        let job = ConflictsFixture.job(status: .succeeded)
+        try fixture.store().save(job)
+        let engine = try fixture.engine()
+
+        try await engine.runAgain(job.key)
+
+        var expected = job
+        expected.retry = true
+        let persisted = try fixture.store().all()
+        #expect(persisted == [expected])
+        #expect(persisted.first?.retry == true)
+        #expect(DispatchPlanner.isRetry(job.key, jobs: persisted))
+    }
+
+    @Test func runAgainLeavesFailedJobAlone() async throws {
+        let fixture = try ConflictsFixture()
+        defer { fixture.remove() }
+        let job = ConflictsFixture.job(status: .failed)
+        try fixture.store().save(job)
+        let engine = try fixture.engine()
+
+        try await engine.runAgain(job.key)
+
+        let persisted = try fixture.store().all()
+        #expect(persisted == [job])
+        #expect(persisted.first?.retry != true)
+        #expect(!DispatchPlanner.isRetry(job.key, jobs: persisted))
+    }
+
+    @Test func canRunAgainRequiresNewestSucceededPullRequestWithoutRetry() {
+        let job = ConflictsFixture.job(status: .succeeded)
+        #expect(job.canRunAgain(among: [job]))
+
+        var explicitNoRetry = job
+        explicitNoRetry.retry = false
+        #expect(explicitNoRetry.canRunAgain(among: [explicitNoRetry]))
+
+        var retry = job
+        retry.retry = true
+        #expect(!retry.canRunAgain(among: [retry]))
+
+        let failed = ConflictsFixture.job(status: .failed)
+        #expect(!failed.canRunAgain(among: [failed]))
+
+        let key = job.key
+        let issueKey = JobKey(repo: key.repo, item: "issue-7", move: key.move, head: key.head)
+        let issue = ConflictsFixture.job(issueKey, status: .succeeded)
+        #expect(!issue.canRunAgain(among: [issue]))
+
+        let older = ConflictsFixture.job(status: .succeeded, offset: -10)
+        #expect(job.canRunAgain(among: [job, older]))
+        let newer = ConflictsFixture.job(status: .failed, offset: 10)
+        #expect(!job.canRunAgain(among: [job, newer]))
+
+        let otherKey = JobKey(repo: key.repo, item: "pr-8", move: key.move, head: key.head)
+        let unrelated = ConflictsFixture.job(otherKey, status: .succeeded, offset: 10)
+        #expect(job.canRunAgain(among: [job, unrelated]))
+    }
+
     @Test func runNowWithoutStoredJobDoesNotCreateOne() async throws {
         let fixture = try ConflictsFixture()
         defer { fixture.remove() }

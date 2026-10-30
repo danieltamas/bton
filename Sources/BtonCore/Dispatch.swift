@@ -143,13 +143,17 @@ public enum DispatchPlanner {
         return made
     }
 
-    /// Whether a PR row offers to start `move` now. Merge and resolve always are. The PR's own flow
-    /// move is when it failed on this head, or when its repo starts no moves on its own and nothing
+    /// Whether a PR row offers to start `move` now. Resolve always is: a conflict holds every move.
+    /// Merge is whenever it is the PR's move. The PR's own flow move is when it failed on this head,
+    /// when it ran and succeeded on this head yet the move is still due (the agent pushed or posted
+    /// nothing, and its report says why), or when its repo starts no moves on its own and nothing
     /// ran it on this head yet: otherwise Bton starts it, or already did.
-    public static func offersStart(_ move: String, current: String, startsMoves: Bool, ranOnHead: Bool, failedOnHead: Bool) -> Bool {
-        if move == "merge" || move == "resolve" { return true }
+    public static func offersStart(_ move: String, current: String, startsMoves: Bool, ranOnHead: Bool, failedOnHead: Bool,
+                                   succeededOnHead: Bool = false) -> Bool {
+        if move == "resolve" { return true }
         guard move == current else { return false }
-        return failedOnHead || (!startsMoves && !ranOnHead)
+        if move == "merge" { return true }
+        return failedOnHead || succeededOnHead || (!startsMoves && !ranOnHead)
     }
 
     /// A resolve that left the PR at the head it started on pushed nothing: its agent stopped,

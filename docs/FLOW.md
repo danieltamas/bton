@@ -282,11 +282,17 @@ A move runs once per head on any Mac, whether it succeeds or fails. When a failu
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
 runs it again on the same head, first in line, if it is still the PR's move.
 
-A PR row shows **Merge** on a PR I authored that GitHub reports mergeable, at any move, when
-the flow has a `merge` dispatch, the PR is not a draft, targets `base` and its author is
-trusted: it runs that dispatch (the repo's merge command and its checks decide), and a push
-before it starts cancels it. A `merge` or `resolve` move of mine that Bton would dispatch shows
-**Merge** or **Fix conflicts**.
+A PR row carries one pill, the PR's move and who has it ("review · lee", "fix · unassigned"),
+and when the move is mine and this Mac's agent would run it, the pill is the button and reads
+what it does: **Merge**, **Review**, **Retry fix**, **Fix again**. A PR of mine that GitHub
+reports mergeable shows **Merge** only when `merge` is its move (the flow has a `merge`
+dispatch, the PR is not a draft, targets `base` and its author is trusted): it runs that
+dispatch (the repo's merge command and its checks decide), and a push before it starts cancels
+it. GitHub's mergeable says nothing about the review a PR still waits on, so a `review` or
+`fix` move never offers Merge. **Fix conflicts** is the one button beside the pill, since a
+conflict holds every move. A move that ran here on this head and succeeded while it is still
+the PR's move changed nothing (the fix agent found nothing it could fix, and said why): the row
+says so with the job's report a click away, and the pill offers the move again.
 
 A PR I authored that GitHub reports conflicting is resolved by Bton itself, whatever its move,
 once per head and without the flow's checks: the flow's `resolve` dispatch when it has one,

@@ -11,6 +11,8 @@ struct SessionView: View {
     let close: () -> Void
     @State private var entries: [SessionTranscript.Entry] = []
     @State private var fallback: String?
+    /// The agent's final message, once the job has ended: what it did, or why it did nothing.
+    @State private var report: String?
     @State private var problem: String?
 
     var body: some View {
@@ -20,6 +22,7 @@ struct SessionView: View {
             ScrollViewReader { reader in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
+                        if let report { reportBlock(report) }
                         if entries.isEmpty {
                             Text(fallback ?? placeholder)
                                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
@@ -91,6 +94,20 @@ struct SessionView: View {
         }
     }
 
+    /// The report first, above the session that produced it: a row that says "its report says
+    /// why" opens here, and the why is the first thing read.
+    private func reportBlock(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Eyebrow(text: "The agent's report", color: Theme.mint)
+            // Agents write Markdown: drawn as an issue's text is (MarkdownView, from the issue-markdown change).
+            MarkdownView(text: text, tone: Theme.textPrimary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.bottom, 6)
+    }
+
     /// Re-reads while the view shows. The read is a child of the view's task, so closing the view
     /// cancels it instead of leaving a parse of a large file running.
     private func follow() async {
@@ -99,6 +116,9 @@ struct SessionView: View {
             guard !Task.isCancelled else { return }
             if read != entries { entries = read }
             fallback = output
+            if current.status != .running, let url = store.outputFiles(of: job).first {
+                report = await Self.report(at: url)
+            }
             try? await Task.sleep(for: .seconds(2))
         }
     }
@@ -111,6 +131,13 @@ struct SessionView: View {
         let text = logs.compactMap { tail(of: $0, bytes: 8_000) }.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return ([], text.isEmpty ? nil : text)
+    }
+
+    /// The output file is the agent's final message; a job that ended without one has no report.
+    nonisolated private static func report(at url: URL) async -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let text = String(decoding: data.prefix(16_000), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 
     nonisolated private static func tail(of url: URL, bytes: UInt64) -> String? {

@@ -482,12 +482,14 @@ extension View {
 /// A card that lifts its core on hover and opens something on click.
 struct HoverCard<Content: View>: View {
     var accent: Color?
+    /// An agent works the row here: the glow a running job's card has.
+    var glow: Color?
     let action: (() -> Void)?
     @ViewBuilder let content: Content
     @State private var hovering = false
 
     var body: some View {
-        Bezel(fill: hovering ? Theme.coreHover : Theme.core) {
+        Bezel(fill: hovering ? Theme.coreHover : Theme.core, glow: glow) {
             HStack(spacing: 0) {
                 if let accent {
                     Capsule().fill(accent.gradient).frame(width: 3).padding(.vertical, 10).padding(.leading, 6)
@@ -501,6 +503,34 @@ struct HoverCard<Content: View>: View {
         .onTapGesture { action?() }
         .pointingHandCursor(action != nil)
         .onHover { hovering in withAnimation(Motion.snappy) { self.hovering = hovering } }
+    }
+}
+
+/// A line under a row about a job that ended, and the way to that job: the report opens first.
+/// Any mention of "its report" on a row is one of these, never plain text.
+struct ReportLine: View {
+    let text: String
+    let symbol: String
+    let color: Color
+    var fill: Color?
+    var help = "Open the job and the agent's report"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Label(text, systemImage: symbol).font(.meta).foregroundStyle(color).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textTertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(fill ?? color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .help(help)
     }
 }
 

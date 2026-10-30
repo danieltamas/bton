@@ -14,6 +14,9 @@ UI:
   left (`.pushed`, or the offset in `RootView.content` when the covered page is itself a pushed
   page: a transition set on a mid page is fixed at its last render and would leave the wrong way).
   Check both directions in the built app before calling a new page done.
+- A job on a row is that row, working: the card glows, a working line under it says what the
+  agent does and that a click watches it, and the click opens the session. Never a second card
+  for the same job; the Active now cards are only for jobs with no row.
 
 Several agents in this repo (enforced by `scripts/hooks`, activated once per clone with
 `git config core.hooksPath scripts/hooks`; run that first thing if `git config core.hooksPath`
@@ -36,3 +39,11 @@ prints nothing):
   LOG.md .release.json Sources Tests`, so every other session sees main is held; rename
   `## Unreleased` to the version, run `release`, then `repo-sync release`. A release that fails
   mid-way is resumed with the same command, not restarted.
+- Before anything ships, the owner sees it running: from `.worktrees/preview` (branch `preview`
+  off main) lay every unshipped branch's working-tree diff (LOG.md left out) and untracked files
+  over main, then `scripts/bundle.sh --scratch /tmp/bton-preview --out /tmp/bton-preview-app
+  --source preview-<main sha>+<branch count>` and `./install.sh --app /tmp/bton-preview-app/Bton.app`.
+  Before installing, grep the bundled binary for one string from each branch (a build from the
+  wrong directory bundles fine and ships the wrong app). Say what is installed and stop. Merging,
+  releasing and the worktree cleanup wait for the owner
+  to say the local install is right; the preview worktree and branch go once the release is out.

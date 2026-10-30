@@ -6,33 +6,52 @@ struct StartButtonAcceptanceTests {
     // Expected results come from the start-button contract, including a failed
     // head that has no recorded run yet.
     @Test(arguments: [
-        (false, false, false, true),
-        (false, false, true, true),
-        (false, true, false, false),
-        (false, true, true, true),
-        (true, false, false, false),
-        (true, false, true, true),
-        (true, true, false, false),
-        (true, true, true, true),
+        (false, false, false, false, true),
+        (false, false, false, true, true),
+        (false, false, true, false, true),
+        (false, false, true, true, true),
+        (false, true, false, false, false),
+        (false, true, false, true, true),
+        (false, true, true, false, true),
+        (false, true, true, true, true),
+        (true, false, false, false, false),
+        (true, false, false, true, true),
+        (true, false, true, false, true),
+        (true, false, true, true, true),
+        (true, true, false, false, false),
+        (true, true, false, true, true),
+        (true, true, true, false, true),
+        (true, true, true, true, true),
     ])
     func currentReviewOffersStartAccordingToTruthTable(
-        startsMoves: Bool, ranOnHead: Bool, failedOnHead: Bool, expected: Bool
+        startsMoves: Bool, ranOnHead: Bool, failedOnHead: Bool,
+        succeededOnHead: Bool, expected: Bool
     ) {
         #expect(DispatchPlanner.offersStart(
             "review", current: "review", startsMoves: startsMoves,
-            ranOnHead: ranOnHead, failedOnHead: failedOnHead
+            ranOnHead: ranOnHead, failedOnHead: failedOnHead,
+            succeededOnHead: succeededOnHead
         ) == expected)
+        if !succeededOnHead {
+            #expect(DispatchPlanner.offersStart(
+                "review", current: "review", startsMoves: startsMoves,
+                ranOnHead: ranOnHead, failedOnHead: failedOnHead
+            ) == expected)
+        }
     }
 
-    @Test func mergeIsAlwaysOfferedForEveryFlagCombination() {
-        for current in ["review", "merge", "resolve"] {
+    @Test func mergeIsOfferedOnlyWhenCurrentForEveryFlagCombination() {
+        for current in ["review", "merge", "resolve", "fix"] {
             for startsMoves in [false, true] {
                 for ranOnHead in [false, true] {
                     for failedOnHead in [false, true] {
-                        #expect(DispatchPlanner.offersStart(
-                            "merge", current: current, startsMoves: startsMoves,
-                            ranOnHead: ranOnHead, failedOnHead: failedOnHead
-                        ))
+                        for succeededOnHead in [false, true] {
+                            #expect(DispatchPlanner.offersStart(
+                                "merge", current: current, startsMoves: startsMoves,
+                                ranOnHead: ranOnHead, failedOnHead: failedOnHead,
+                                succeededOnHead: succeededOnHead
+                            ) == (current == "merge"))
+                        }
                     }
                 }
             }

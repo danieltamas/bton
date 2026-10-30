@@ -109,7 +109,9 @@ struct IssueAskList: View {
                 case let .ready(issue): ReadyIssueRow(issue: issue, showRepo: showRepo)
                 }
             } header: {
-                if !drafting.isEmpty { ActiveStrip(jobs: drafting, schedules: schedules).padding(.bottom, 8) }
+                // A draft on an issue of the list is that row, working; only a job with no row gets a card.
+                let loose = drafting.filter { job in !asks.contains { store.draft(for: $0)?.id == job.id || store.decision(for: $0)?.id == job.id } }
+                if !loose.isEmpty { ActiveStrip(jobs: loose, schedules: schedules).padding(.bottom, 8) }
             }
         }
     }
@@ -125,50 +127,59 @@ private struct ReadyIssueRow: View {
         // The newest job on the issue, whatever round it ran under: a comment during the run moves the round on.
         let job = IssueIntake.latestJob(for: issue.number, repo: issue.repo, jobs: store.jobs)
         // The bar, the stage chip and "Working..." are one color: the issue's stage.
-        HoverCard(accent: Theme.color(forStage: stale ? "spec" : issue.stage ?? "in-progress"), action: { NSWorkspace.shared.open(issue.url) }) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.textTertiary)
-                        if showRepo { RepoName(repo: issue.repo) }
-                        StageChip(stage: issue.stage ?? "in-progress")
-                        PriorityChip(priority: issue.priority)
-                        if stale { Chip(text: "no owner", color: Theme.color(forStage: "spec"), style: .dashed) }
-                    }
-                    Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    // One line: a long login truncates, the time never wraps.
-                    HStack(spacing: 6) {
-                        if let owner = issue.assignees.first {
-                            Avatar(login: owner)
-                            Text(issue.assignees.joined(separator: ", ") + " has it").foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        } else {
-                            // Only a ready issue waits for a Bton; one in progress was labeled by whoever works it.
-                            Text(issue.isReady ? "Unclaimed" : "Nobody assigned").lineLimit(1)
-                                .foregroundStyle(stale ? Theme.color(forStage: "spec") : Theme.textSecondary)
-                                .help(issue.isReady ? "The next free Bton, or you with Take, starts it" : "Labeled in progress, but no one is assigned and no Bton job runs it")
+        let working = job?.status == .running ? job : nil
+        HoverCard(accent: Theme.color(forStage: stale ? "spec" : issue.stage ?? "in-progress"),
+                  glow: working.map { _ in Theme.color(for: .running) }, action: {
+            if let working { withAnimation(Motion.spring) { store.watchingJob = working.id } } else { NSWorkspace.shared.open(issue.url) }
+        }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.textTertiary)
+                            if showRepo { RepoName(repo: issue.repo) }
+                            StageChip(stage: issue.stage ?? "in-progress")
+                            PriorityChip(priority: issue.priority)
+                            if stale { Chip(text: "no owner", color: Theme.color(forStage: "spec"), style: .dashed) }
                         }
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        RelativeTime(date: issue.createdAt) { "opened \($0) ago" }.foregroundStyle(Theme.textTertiary)
-                            .lineLimit(1).fixedSize()
-                    }
-                    .font(.meta)
-                    if let job, job.status == .failed || job.status == .cancelled {
-                        if handedBack {
-                            // The process has the agent unassign itself and move the issue on when it stops on a decision.
-                            Text("The agent stopped on a decision and handed the issue back to \(issue.stage ?? "triage"): its report is in Jobs.")
-                                .font(.meta).foregroundStyle(Theme.color(forStage: "spec")).fixedSize(horizontal: false, vertical: true)
-                        } else {
-                            Text("Bton's job \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? "").")
-                                .font(.meta).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
+                        Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        // One line: a long login truncates, the time never wraps.
+                        HStack(spacing: 6) {
+                            if let owner = issue.assignees.first {
+                                Avatar(login: owner)
+                                Text(issue.assignees.joined(separator: ", ") + " has it").foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            } else {
+                                // Only a ready issue waits for a Bton; one in progress was labeled by whoever works it.
+                                Text(issue.isReady ? "Unclaimed" : "Nobody assigned").lineLimit(1)
+                                    .foregroundStyle(stale ? Theme.color(forStage: "spec") : Theme.textSecondary)
+                                    .help(issue.isReady ? "The next free Bton, or you with Take, starts it" : "Labeled in progress, but no one is assigned and no Bton job runs it")
+                            }
+                            Text("·").foregroundStyle(Theme.textTertiary)
+                            RelativeTime(date: issue.createdAt) { "opened \($0) ago" }.foregroundStyle(Theme.textTertiary)
+                                .lineLimit(1).fixedSize()
                         }
+                        .font(.meta)
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 4)
+                    // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
+                    action(job).fixedSize().layoutPriority(2)
+                }
+                if let job, job.status == .failed || job.status == .cancelled {
+                    // The card's full width, and the way to the report the line speaks of.
+                    if handedBack {
+                        // The process has the agent unassign itself and move the issue on when it stops on a decision.
+                        ReportLine(text: "The agent stopped on a decision and handed the issue back to \(issue.stage ?? "triage"): read its report",
+                                   symbol: "signpost.right", color: Theme.color(forStage: "spec")) {
+                            withAnimation(Motion.spring) { store.watchingJob = job.id }
+                        }
+                    } else {
+                        ReportLine(text: "Bton's job \(job.status.rawValue)\(job.detail.map { ": \($0)" } ?? "")", symbol: "exclamationmark.triangle",
+                                   color: Theme.danger) { withAnimation(Motion.spring) { store.watchingJob = job.id } }
                     }
                 }
-                .layoutPriority(1)
-                Spacer(minLength: 4)
-                // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
-                action(job).fixedSize().layoutPriority(2)
             }
         }
         .contextMenu { Button("Open on GitHub") { NSWorkspace.shared.open(issue.url) } }
@@ -224,7 +235,10 @@ private struct IssueAskRow: View {
     var body: some View {
         let job = store.draft(for: ask)
         let decision = store.decision(for: ask)
-        HoverCard(accent: Theme.color(forStage: "spec"), action: { NSWorkspace.shared.open(ask.url) }) {
+        let working = [job, decision].compactMap { $0 }.first { $0.status == .running }
+        HoverCard(accent: Theme.color(forStage: "spec"), glow: working.map { _ in Theme.color(for: .running) }, action: {
+            if let working { withAnimation(Motion.spring) { store.watchingJob = working.id } } else { NSWorkspace.shared.open(ask.url) }
+        }) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
