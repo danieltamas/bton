@@ -465,14 +465,17 @@ final class AppStore {
     /// One label edit on an issue of the Triage tab, posted to GitHub and then shown on its row
     /// and its open page. An issue the edit settles (stage:ready) leaves the tab at once, its
     /// page closes, and a sync follows. Nothing is sent while another edit of the issue is out.
-    func editLabels(_ edit: (add: [String], remove: [String]), on issue: TriageIssue) async throws {
+    /// `giveBack` also removes me as the issue's assignee, in the same call: an issue of mine sent
+    /// back to ready from the Issues tab is the next free Bton's, not still mine.
+    func editLabels(_ edit: (add: [String], remove: [String]), on issue: TriageIssue, giveBack: Bool = false) async throws {
         guard labelEdits[issue.id] == nil else { return }
         labelEdits[issue.id] = PendingLabels(add: edit.add, remove: edit.remove)
         defer { labelEdits[issue.id] = nil }
         guard let github else { throw CocoaError(.fileNoSuchFile) }
-        try await github.editIssueLabels(add: edit.add, remove: edit.remove, repo: issue.repo, number: issue.number)
+        try await github.editIssueLabels(add: edit.add, remove: edit.remove, repo: issue.repo, number: issue.number, giveBack: giveBack)
         let changed = issue.with(labels: RepoLabels.apply(edit, to: issue.labels))
-        if changed.isSettled {
+        if changed.isSettled || !triage.contains(where: { $0.id == issue.id }) {
+            // Settled, or edited on an Issues row: the rows come from the sync, so one runs now.
             triage.removeAll { $0.id == issue.id }
             if triaging?.id == issue.id { withAnimation(Motion.spring) { triaging = nil } }
             await refresh()

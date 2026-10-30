@@ -12,6 +12,8 @@ struct IssueLabelRow: View {
     let issue: TriageIssue
     /// Where a failed edit is told.
     let report: (String?) -> Void
+    /// The issue is mine: setting it to `stage:ready` also unassigns me, so a free Bton can take it.
+    var givesBackOnReady = false
     @State private var repoLabels: [RepoLabel]?
     @State private var labelsProblem: String?
     /// The chip whose popover is open: a label's name, or `IssueLabelRow.plus`.
@@ -30,11 +32,13 @@ struct IssueLabelRow: View {
         let placeholder: String
     }
 
-    /// The priority and stage slots, then every other label the issue holds, then the one being added.
+    /// The priority and stage slots, then every other label the issue holds. While an edit posts, the
+    /// row shows its outcome: a swap shows the new label in the old one's place, an add the new label,
+    /// a removal the label on its way out; each spins, and a refused edit puts the row back.
     private var slots: [Slot] {
         var labels = issue.labels
-        if let adding = posting?.add.first, !labels.contains(where: { $0.caseInsensitiveCompare(adding) == .orderedSame }) {
-            labels.append(adding)
+        if let posting, !posting.add.isEmpty {
+            labels = RepoLabels.apply((add: posting.add, remove: posting.remove), to: labels)
         }
         var slots: [Slot] = []
         for (family, placeholder) in [(IssueTriage.priorityPrefix, "no priority"), (IssueTriage.stagePrefix, "no stage")] {
@@ -109,7 +113,9 @@ struct IssueLabelRow: View {
                             .padding(.horizontal, 8).padding(.vertical, 4)
                     }
                     ForEach(others, id: \.name) { label in
-                        LabelChoice(label: label) { post(RepoLabels.edit(adding: label.name, to: issue.labels)) }
+                        LabelChoice(label: label, note: givesBack(adding: label.name) ? "and gives the issue back: a free Bton takes it" : nil) {
+                            post(RepoLabels.edit(adding: label.name, to: issue.labels))
+                        }
                     }
                 } else if let labelsProblem {
                     ProblemText(text: labelsProblem).padding(.horizontal, 8).padding(.vertical, 4)
@@ -137,6 +143,10 @@ struct IssueLabelRow: View {
         .frame(width: 240)
     }
 
+    private func givesBack(adding label: String) -> Bool {
+        givesBackOnReady && label.caseInsensitiveCompare(FeatureStatuses.readyLabel) == .orderedSame
+    }
+
     private func popoverBinding(_ id: String) -> Binding<Bool> {
         Binding(get: { open == id }, set: { open = $0 ? id : nil })
     }
@@ -159,9 +169,10 @@ struct IssueLabelRow: View {
             return
         }
         report(nil)
+        let giveBack = edit.add.contains(where: givesBack(adding:))
         Task {
             do {
-                try await store.editLabels(edit, on: issue)
+                try await store.editLabels(edit, on: issue, giveBack: giveBack)
             } catch {
                 report("Label not set: \(error.localizedDescription)")
             }
@@ -172,6 +183,8 @@ struct IssueLabelRow: View {
 /// One label to pick: its hue as a dot, its name, what it is for.
 private struct LabelChoice: View {
     let label: RepoLabel
+    /// What picking it does beyond the label, under the description.
+    var note: String? = nil
     let pick: () -> Void
 
     var body: some View {
@@ -183,6 +196,9 @@ private struct LabelChoice: View {
                     if !label.description.isEmpty {
                         Text(label.description).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let note {
+                        Text(note).font(.meta).foregroundStyle(Theme.mint).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)

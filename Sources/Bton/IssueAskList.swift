@@ -122,6 +122,12 @@ private struct ReadyIssueRow: View {
     @Environment(AppStore.self) private var store
     let issue: ReadyIssue
     let showRepo: Bool
+    @State private var problem: String?
+
+    /// Assigned to me: a stage:ready set here gives the issue back as well.
+    private var mine: Bool {
+        store.me.map { me in issue.assignees.contains { $0.caseInsensitiveCompare(me) == .orderedSame } } ?? false
+    }
 
     var body: some View {
         // The newest job on the issue, whatever round it ran under: a comment during the run moves the round on.
@@ -139,10 +145,12 @@ private struct ReadyIssueRow: View {
                             Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.textTertiary)
                             if showRepo { RepoName(repo: issue.repo) }
-                            StageChip(stage: issue.stage ?? "in-progress")
-                            PriorityChip(priority: issue.priority)
                             if stale { Chip(text: "no owner", color: Theme.color(forStage: "spec"), style: .dashed) }
                         }
+                        // The labels set themselves here as on the Triage page: the only place an issue past triage shows.
+                        IssueLabelRow(issue: TriageIssue(repo: issue.repo, number: issue.number, title: issue.title, url: issue.url,
+                                                         createdAt: issue.createdAt, body: "", labels: issue.labels),
+                                      report: { problem = $0 }, givesBackOnReady: mine)
                         Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                         // One line: a long login truncates, the time never wraps.
@@ -167,6 +175,7 @@ private struct ReadyIssueRow: View {
                     // Its natural size, ahead of the text: squeezed, a button wraps letter by letter and stretches the card.
                     action(job).fixedSize().layoutPriority(2)
                 }
+                if let problem { ProblemText(text: problem) }
                 if let job, job.status == .failed || job.status == .cancelled {
                     // The card's full width, and the way to the report the line speaks of.
                     if handedBack {

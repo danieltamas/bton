@@ -164,10 +164,13 @@ public enum IssueTriage {
 
 extension GitHubClient {
     /// Sets an issue's labels in one edit.
-    public func editIssueLabels(add: [String], remove: [String], repo: String, number: Int) async throws {
-        guard !add.isEmpty || !remove.isEmpty else { return }
+    /// One `gh issue edit`: the labels, and with `giveBack` the owner's assignment removed in the same
+    /// call, so an issue sent back to ready is free for an intake search (`no:assignee`) at once.
+    public func editIssueLabels(add: [String], remove: [String], repo: String, number: Int, giveBack: Bool = false) async throws {
+        guard !add.isEmpty || !remove.isEmpty || giveBack else { return }
         _ = try await gh(["issue", "edit", String(number), "--repo", repo]
                          + (add.isEmpty ? [] : ["--add-label", add.joined(separator: ",")])
-                         + (remove.isEmpty ? [] : ["--remove-label", remove.joined(separator: ",")]))
+                         + (remove.isEmpty ? [] : ["--remove-label", remove.joined(separator: ",")])
+                         + (giveBack ? ["--remove-assignee", "@me"] : []))
     }
 }
