@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.21.0 (2026-10-30)
 
 **An issue's labels are set from the Triage tab.** The issue's page listed its priority and stage at the top and offered no way to touch them, so a label the three questions do not set (a `type:`, an `area:`, a bare `bug`) or a stage decided outside the questions meant a trip to GitHub, and Dani learned late that #509 waited on nobody but him for its `stage:ready`. Every label of the issue is now a chip under its title, the priority and stage first (dashed while the issue has none), then a `+`; a chip reads the label as GitHub names it, `stage:triage`, on the issue's page and on every row. A click on a label of a family (`stage:spec`, `priority:high`, any `<prefix>:` name) offers the family's other labels in their hues, and picking one is a single edit that puts it on and takes the old one off, so an issue never holds two stages; Remove sits last. A click on a plain label asks to remove it. The `+` lists the repo's other labels with a search; the list comes from GitHub once a day and is kept in `labels.json`, so it opens at once. The chip spins until GitHub answers, then shows what GitHub holds; an edit that makes the issue ready closes its page and syncs, so it leaves the tab as Apply does; a failed one says so under the issue and changes nothing.
 
