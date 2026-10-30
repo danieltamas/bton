@@ -10,7 +10,8 @@ struct SessionView: View {
     let title: String
     let close: () -> Void
     @State private var entries: [SessionTranscript.Entry] = []
-    @State private var fallback: String?
+    /// Without a transcript: the agent's output and Bton's log, read as the job writes them.
+    @State private var fallback = Fallback()
     /// The agent's final message, once the job has ended: what it did, or why it did nothing.
     @State private var report: String?
     @State private var problem: String?
@@ -23,12 +24,7 @@ struct SessionView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         if let report { reportBlock(report) }
-                        if entries.isEmpty {
-                            Text(fallback ?? placeholder)
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        if entries.isEmpty { fallbackBlock }
                         ForEach(entries) { entry in EntryRow(entry: entry).id(entry.id) }
                         Color.clear.frame(height: 1).id("end")
                     }
@@ -112,14 +108,38 @@ struct SessionView: View {
         .padding(.bottom, 6)
     }
 
+    /// The agent's output is Markdown, drawn as the report is, and never shown twice: once the
+    /// job has ended the report above is that same file, so only Bton's log follows it. The log
+    /// is Bton's own account and the agent's errors, plain text.
+    @ViewBuilder private var fallbackBlock: some View {
+        if report == nil, fallback.output == nil, fallback.log == nil {
+            Text(placeholder)
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if report == nil, let output = fallback.output {
+            MarkdownView(text: output, tone: Theme.textPrimary)
+        }
+        if let log = fallback.log {
+            VStack(alignment: .leading, spacing: 4) {
+                Eyebrow(text: "Bton's log", color: Theme.textTertiary)
+                Text(log)
+                    .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+        }
+    }
+
     /// Re-reads while the view shows. The read is a child of the view's task, so closing the view
     /// cancels it instead of leaving a parse of a large file running.
     private func follow() async {
         while !Task.isCancelled {
-            let (read, output) = await Self.read(transcript: store.sessionFile(of: job), logs: store.outputFiles(of: job))
+            let (read, files) = await Self.read(transcript: store.sessionFile(of: job), logs: store.outputFiles(of: job))
             guard !Task.isCancelled else { return }
             if read != entries { entries = read }
-            fallback = output
+            if files != fallback { fallback = files }
             if current.status != .running, let url = store.outputFiles(of: job).first {
                 report = await Self.report(at: url)
             }
@@ -127,14 +147,21 @@ struct SessionView: View {
         }
     }
 
-    /// Off the main actor: the transcript and the logs grow as the agent works. The logs are read
-    /// only without a transcript, and only their last 8 KB.
-    nonisolated private static func read(transcript: URL?, logs: [URL]) async -> ([SessionTranscript.Entry], String?) {
-        let entries = transcript.map { SessionTranscript.entries(ofSessionFile: $0) } ?? []
-        guard entries.isEmpty, !Task.isCancelled else { return (entries, nil) }
-        let text = logs.compactMap { tail(of: $0, bytes: 8_000) }.joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return ([], text.isEmpty ? nil : text)
+    struct Fallback: Equatable {
+        var output: String?
+        var log: String?
+    }
+
+    /// Off the main actor: the transcript and the logs grow as the agent works. Without a Claude
+    /// transcript, a Codex job's log reads as its session; the output and the log are shown as
+    /// files only when neither gives one, and only their last 8 KB each.
+    nonisolated private static func read(transcript: URL?, logs: [URL]) async -> ([SessionTranscript.Entry], Fallback) {
+        var entries = transcript.map { SessionTranscript.entries(ofSessionFile: $0) } ?? []
+        if entries.isEmpty, let log = logs.last { entries = CodexTranscript.entries(ofLog: log) }
+        guard entries.isEmpty, !Task.isCancelled else { return (entries, Fallback()) }
+        let texts = logs.map { tail(of: $0, bytes: 8_000)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0?.isEmpty == false ? $0 : nil }
+        return ([], Fallback(output: texts.first ?? nil, log: texts.dropFirst().first ?? nil))
     }
 
     /// The output file is the agent's final message; a job that ended without one has no report.

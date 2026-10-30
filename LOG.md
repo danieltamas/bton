@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A Codex job reads as a session.** A job run by Codex (lexito's quick-fix reviews) has no Claude transcript, so its panel was Codex's raw stream, the job's log, in one monospaced block: the prompt, the agent's words, every file it printed, all alike and none of it drawn, and after the job ended the report at the top followed by the same text again. Bton now reads that stream as it reads a Claude transcript: the prompt, what Codex says drawn as Markdown, each command on its line with its output under it, collapsed, and a thinking mark; it follows the job live. A job that leaves neither transcript nor Codex stream shows its output drawn as Markdown and Bton's log, named as such, in plain text under it, and an ended job's report is not shown a second time.
+
 ## 0.19.0 (2026-10-30)
 
 **An approved PR merges, by whoever approved it.** On lexito the merge move belonged to the requested reviewer. GitHub ends that request the moment the review is filed, so right after Dani's `## Review: approve` the merge fell back to the rotation's pick, a teammate's Mac, and his own Bton, which takes teammates' moves, had already spent its one Take it on that reviewer and head for the review: #599 and #571 sat approved until Bogdan merged them by hand. Two changes. A move rule can now say `"who": "approver"`: the owner is whoever wrote the latest counting review or decision, so the approval and the merge are one person's on every Mac, as the team's process says ("merge on approve, at once, by whoever approved"); lexito's merge rule moves to it. And the automatic Take it is spent per PR, owner, move and head rather than per PR, owner and head, so a repo that keeps `reviewer` on its merge still takes the merge after it took the review.

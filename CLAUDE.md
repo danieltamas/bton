@@ -45,5 +45,7 @@ prints nothing):
   --source preview-<main sha>+<branch count>` and `./install.sh --app /tmp/bton-preview-app/Bton.app`.
   Before installing, grep the bundled binary for one string from each branch (a build from the
   wrong directory bundles fine and ships the wrong app). Say what is installed and stop. Merging,
-  releasing and the worktree cleanup wait for the owner
-  to say the local install is right; the preview worktree and branch go once the release is out.
+  releasing and the worktree cleanup wait for the owner to say the local install is right; the
+  preview worktree and branch go once the release is out. The confirmation covers exactly the
+  build the owner saw: any change after it (a review finding fixed, one more complaint answered)
+  is a new preview and a new confirmation, never released on the earlier one.
