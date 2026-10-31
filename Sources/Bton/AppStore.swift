@@ -440,7 +440,7 @@ final class AppStore {
 
     /// The transcript Claude Code writes while the job's agent works; nil for other agents.
     func sessionFile(of job: Job) -> URL? {
-        ClaudeSessions.sessionFile(id: job.id)
+        ClaudeSessions.sessionFile(id: job.id, worktree: job.worktree)
     }
 
     /// Whether the job's agent is Claude Code, which can reopen a session by its id.

@@ -117,11 +117,25 @@ public enum ClaudeSessions {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects", isDirectory: true)
     }
 
-    public static func sessionFile(id: UUID, projectsRoot: URL = projectsRoot) -> URL? {
+    /// The transcript of a session, in the project folder of the directory it ran in when that is
+    /// known (one probe), else wherever it is under the root: that scan lists every project the
+    /// Mac ever opened Claude Code in and probes each, thousands of calls on a busy Mac, so it is
+    /// the fallback, not the way.
+    public static func sessionFile(id: UUID, worktree: String? = nil, projectsRoot: URL = projectsRoot) -> URL? {
         let name = "\(id.uuidString.lowercased()).jsonl"
+        if let worktree {
+            let direct = projectsRoot.appendingPathComponent(projectDirectoryName(for: worktree)).appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: direct.path) { return direct }
+        }
         let projects = (try? FileManager.default.contentsOfDirectory(at: projectsRoot, includingPropertiesForKeys: nil)) ?? []
         return projects.map { $0.appendingPathComponent(name) }
             .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Claude Code's folder for a working directory: its path with every character that is not
+    /// a letter or a digit as "-" (`/a/.b` is `-a--b`).
+    public static func projectDirectoryName(for path: String) -> String {
+        String(path.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" })
     }
 
     /// Tokens per model, with the session's subagents: Claude Code writes each one's transcript

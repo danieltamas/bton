@@ -16,16 +16,18 @@ final class ScheduleWork {
     /// ended jobs a page at a time, newest first.
     func read(_ jobs: [Job]) async {
         let schedules = jobs.filter { $0.agent != nil && !$0.key.item.hasPrefix("pr-") }
-        let running = schedules.filter { $0.status == .running }.map(\.id)
-        let ended = schedules.filter { $0.status != .running && worked[$0.id] == nil }.prefix(25).map(\.id)
+        let running = schedules.filter { $0.status == .running }.map { ($0.id, $0.worktree) }
+        let ended = schedules.filter { $0.status != .running && worked[$0.id] == nil }.prefix(25).map { ($0.id, $0.worktree) }
         guard !running.isEmpty || !current.isEmpty || !ended.isEmpty else { return }
         let (now, done) = await Task.detached {
-            let now = Dictionary(uniqueKeysWithValues: running.compactMap { id in
-                ClaudeSessions.sessionFile(id: id).flatMap { SessionTranscript.currentPullRequest(ofSessionFile: $0) }.map { (id, $0) }
+            let now = Dictionary(uniqueKeysWithValues: running.compactMap { id, worktree in
+                ClaudeSessions.sessionFile(id: id, worktree: worktree).flatMap { SessionTranscript.currentPullRequest(ofSessionFile: $0) }.map { (id, $0) }
             })
-            // A job whose session file is not found yet is read again on the next pass.
-            let done = Dictionary(uniqueKeysWithValues: ended.compactMap { id in
-                ClaudeSessions.sessionFile(id: id).map { (id, SessionTranscript.pullRequests(ofSessionFile: $0)) }
+            // A running job's file may not be there yet: it is read again on the next pass. An
+            // ended job's never comes (a codex agent, a transcript gone): it is recorded as none,
+            // or the same lookups would run again every pass, for good.
+            let done = Dictionary(uniqueKeysWithValues: ended.map { id, worktree in
+                (id, ClaudeSessions.sessionFile(id: id, worktree: worktree).map(SessionTranscript.pullRequests(ofSessionFile:)) ?? [])
             })
             return (now, done)
         }.value

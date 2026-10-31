@@ -637,7 +637,7 @@ actor Dispatcher {
         else { return nil }
         let (id, start, end) = (job.id, job.startedAt, job.endedAt ?? .now)
         let count = await Task.detached(priority: .utility) { () -> Int? in
-            if let file = ClaudeSessions.sessionFile(id: id), let count = GraphUse.queries(inClaudeSessionFile: file) { return count }
+            if let file = ClaudeSessions.sessionFile(id: id, worktree: worktree), let count = GraphUse.queries(inClaudeSessionFile: file) { return count }
             return GraphUse.queries(inCodexWorktree: worktree, from: start, to: end)
         }.value
         return count.map(String.init) ?? "unknown"
@@ -654,7 +654,7 @@ actor Dispatcher {
         let (usage, cost) = await Task.detached(priority: .utility) { () -> ([String: TokenUsage], Decimal?) in
             var usage: [String: TokenUsage] = [:]
             for session in [id] + secondSession + helperSessions {
-                if let file = ClaudeSessions.sessionFile(id: session), let found = try? ClaudeSessions.usage(ofSessionFile: file) {
+                if let file = ClaudeSessions.sessionFile(id: session, worktree: worktree), let found = try? ClaudeSessions.usage(ofSessionFile: file) {
                     usage.merge(found, uniquingKeysWith: +)
                 }
             }
