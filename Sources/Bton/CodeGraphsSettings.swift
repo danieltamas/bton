@@ -214,6 +214,10 @@ private struct StoredGraphsList: View {
                 Text("no finished build").font(.meta).foregroundStyle(Theme.textTertiary)
             }
             Spacer(minLength: 0)
+            PillButton(title: "View", symbol: "circle.grid.2x2", prominent: false, disabled: !CodeGraph.isBuilt(graph.url)) {
+                ModuleMapWindow.open(graph)
+            }
+            .help(ModuleMapWindow.help)
             AsyncIconButton(symbol: "trash", help: "Delete this graph", size: 22, id: "delete-graph:\(graph.slug)") { await delete(graph) }
         }
     }
