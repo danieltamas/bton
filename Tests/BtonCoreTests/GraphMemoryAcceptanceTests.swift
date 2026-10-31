@@ -123,7 +123,7 @@ struct GraphMemoryAcceptanceTests {
             if let expected { #expect(reason?.hasPrefix(expected) == true) }
             else { #expect(reason == nil) }
         }
-        #expect(CodeGraph.shape == 4) // Raised twice on 2026-10-30: the redaction rule, then graphify's ignore file in the build tree.
+        #expect(CodeGraph.shape == 5) // Raised twice on 2026-10-30 (the redaction rule, graphify's ignore file in the build tree) and on 2026-10-31 (the SQL grammar).
         #expect(CodeGraphBuilder.memoryRebuildInterval == 30 * 60)
     }
 

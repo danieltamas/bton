@@ -387,15 +387,18 @@ public enum GraphMemory {
     // MARK: when to rebuild
 
     /// Why the graph is rebuilt now, nil when the one in the store still serves: no graph, the base
-    /// moved, a Bton with a new shape of graph (an upgrade rebuilds on its own, no press), or memory
-    /// newer than the graph once the last build is old enough that rebuilding is not a build per
-    /// comment. In that order, so the message names the first cause.
+    /// moved once the last build is `baseRebuildInterval` old (lexito's base moves two to five
+    /// times an hour and a rebuild reads the whole tree for two minutes: one per merge was three
+    /// hours of CPU a day for a graph the marker dates anyway), a Bton with a new shape of graph
+    /// (an upgrade rebuilds on its own, no press), or memory newer than the graph once the last
+    /// build is old enough that rebuilding is not a build per comment. In that order, so the
+    /// message names the first cause.
     public static func rebuildReason(marker: CodeGraph.Marker?, built: Bool, tip: String, memory: State?, now: Date) -> String? {
         guard built, let marker else { return "no graph" }
-        if marker.commit != tip { return "base moved to \(tip.prefix(8))" }
+        let age = now.timeIntervalSince(marker.at)
+        if marker.commit != tip, age >= CodeGraphBuilder.baseRebuildInterval { return "base moved to \(tip.prefix(8))" }
         if marker.shape != CodeGraph.shape { return "graph shape \(marker.shape.map(String.init) ?? "none") is not \(CodeGraph.shape)" }
-        if let updated = memory?.updatedAt, updated > (marker.memoryAt ?? .distantPast),
-           now.timeIntervalSince(marker.at) >= CodeGraphBuilder.memoryRebuildInterval {
+        if let updated = memory?.updatedAt, updated > (marker.memoryAt ?? .distantPast), age >= CodeGraphBuilder.memoryRebuildInterval {
             return "memory newer than the graph"
         }
         return nil

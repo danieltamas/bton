@@ -14,8 +14,20 @@ public enum CodeGraph {
     /// Where Install graphify (Settings > Agents) makes its venv: the first place looked in.
     public static let installVenv = ".venvs/graphifyy-arm64"
 
-    /// graphify's package on PyPI.
-    public static let installPackage = "graphifyy"
+    /// graphify's package on PyPI, with its SQL grammar: the base package parses no `.sql` file
+    /// (lexito's 187 migrations were a warning in every build log), the `sql` extra adds tree-sitter-sql.
+    public static let installPackage = "graphifyy[sql]"
+    /// Run with `-c`: exits 0 on a Python whose graphify has the SQL grammar.
+    public static let sqlGrammarProbe = "import tree_sitter_sql"
+
+    /// The step that adds the SQL grammar to a venv Bton made itself (`installVenv`), with uv when
+    /// this Mac has it (a uv venv has no pip). Nil for any other Python: a venv a person made is
+    /// theirs, and the build log names the command.
+    public static func sqlGrammarInstallStep(python: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String]? {
+        guard python == home.appendingPathComponent(installVenv).path + "/bin/python" else { return nil }
+        if let uv = installTools(home: home).uv.first { return [uv, "pip", "install", "--python", python, installPackage] }
+        return [python, "-m", "pip", "install", installPackage]
+    }
     /// Where uv usually is; it brings its own CPython of the Mac's architecture, so it comes first.
     public static let uvCandidates = [".local/bin/uv", "/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
     /// Where a Python that graphify can run on (3.10 or newer) is usually found. Apple's
@@ -121,11 +133,14 @@ public enum CodeGraph {
         return progress(from: text)
     }
 
+    /// The build log's line when the naming step starts, written by Bton before `graphify label`.
+    public static let namingLine = "Naming the communities"
+
     /// graphify's AST extraction prints `n/m uncached files`; after it, the grouping into
-    /// communities and the report take a while with no count.
+    /// communities and the report take a while with no count, and the naming step longer.
     static func progress(from text: String) -> Progress {
         var last: (done: Int, total: Int)?
-        var grouping = false
+        var grouping = false, naming = false
         // A count graphify rewrites in place arrives after a carriage return, not a newline.
         for line in text.components(separatedBy: .newlines) {
             if let range = line.range(of: "AST extraction: ") {
@@ -134,10 +149,13 @@ public enum CodeGraph {
                     last = (done, total)
                     grouping = false
                 }
+            } else if line.hasPrefix(namingLine) {
+                naming = true
             } else if last != nil, !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 grouping = true
             }
         }
+        if naming { return Progress(step: namingLine, fraction: nil) }
         guard let last else { return Progress(step: "Preparing the tree", fraction: nil) }
         if grouping || last.done == last.total { return Progress(step: "Grouping the code into modules", fraction: nil) }
         return Progress(step: "Reading \(last.done) of \(last.total) files", fraction: Double(last.done) / Double(last.total))
@@ -202,18 +220,44 @@ public enum CodeGraph {
         public var shape: Int?
         /// How far the memory in the graph goes; nil when it was built without one.
         public var memoryAt: Date?
+        /// When graphify last named the communities with the model; nil when it never did here.
+        public var labeledAt: Date?
+        /// When it last tried, whether or not the names came: a failed run waits the interval too.
+        public var labelTriedAt: Date?
 
-        public init(commit: String, at: Date, shape: Int? = nil, memoryAt: Date? = nil) {
+        public init(commit: String, at: Date, shape: Int? = nil, memoryAt: Date? = nil, labeledAt: Date? = nil,
+                    labelTriedAt: Date? = nil) {
             self.commit = commit
             self.at = at
             self.shape = shape
             self.memoryAt = memoryAt
+            self.labeledAt = labeledAt
+            self.labelTriedAt = labelTriedAt
         }
     }
 
-    /// Bumped when what a build puts in the graph changes (2: the memory folder), so a Bton
-    /// upgrade rebuilds every store on its first sync, with nothing to press.
-    public static let shape = 4
+    /// graphify's community names, beside the graph; a rebuild keeps them and names a community
+    /// it cannot match after its biggest node.
+    public static let labelsName = ".graphify_labels.json"
+    /// graphify's CLI, in the venv beside its Python: `graphify label` is a command, not a module function.
+    public static func cli(python: String) -> String {
+        URL(fileURLWithPath: python).deletingLastPathComponent().appendingPathComponent("graphify").path
+    }
+
+    /// Why a graph just built gets its communities named now, or nil when the names it has will
+    /// do: a store with no names at all, or names older than `CodeGraphBuilder.labelInterval`;
+    /// never within the interval of the last try, however it ended.
+    public static func labelReason(marker: Marker?, labelsExist: Bool, now: Date) -> String? {
+        if let tried = marker?.labelTriedAt, now.timeIntervalSince(tried) < CodeGraphBuilder.labelInterval { return nil }
+        guard labelsExist else { return "no community names" }
+        guard let labeledAt = marker?.labeledAt else { return "community names not made here" }
+        let age = now.timeIntervalSince(labeledAt)
+        return age >= CodeGraphBuilder.labelInterval ? "community names \(Int(age / 3600)) hours old" : nil
+    }
+
+    /// Bumped when what a build puts in the graph changes (2: the memory folder, 5: the SQL
+    /// files), so a Bton upgrade rebuilds every store on its first sync, with nothing to press.
+    public static let shape = 5
 
     public static func marker(in store: URL) -> Marker? {
         guard let data = try? Data(contentsOf: store.appendingPathComponent(markerName)) else { return nil }

@@ -53,6 +53,10 @@ struct CodeGraphBuildAcceptanceTests {
         defer { f.remove() }
         await f.refresh()
         await f.builder.waitForBuilds()
+        // A moved base rebuilds once the last build is the base interval old: the first is dated so.
+        let built = try #require(CodeGraph.marker(in: f.store))
+        try CodeGraph.writeMarker(.init(commit: built.commit, at: built.at - CodeGraphBuilder.baseRebuildInterval,
+                                        shape: built.shape, memoryAt: built.memoryAt), in: f.store)
         let first = try Data(contentsOf: f.store.appendingPathComponent("bton-build.json"))
         let nextTip = try await f.commitOnOrigin("second")
         #expect(nextTip != f.tip)
@@ -145,14 +149,15 @@ struct GraphFixture {
     var gh: String { "/usr/bin/true" }
     var log: [String] { messages.lines }
 
-    static func make(python: PythonBehavior, codeGraph: Bool = true) async throws -> Self {
+    static func make(python: PythonBehavior, codeGraph: Bool = true, claude: String? = "/usr/bin/true") async throws -> Self {
         let base = try await SupervisionRunFixture.make()
         do {
             var repo = WatchedRepo(slug: base.leases.repo, path: base.clone.path)
             repo.codeGraph = codeGraph
             let tip = try await git(["rev-parse", "HEAD"], in: base.clone)
             let messages = GraphMessages()
-            let builder = CodeGraphBuilder(home: base.home, log: { messages.append($0) })
+            // A claude that exists on every Mac: the naming step reaches the graphify CLI check, not PATH.
+            let builder = CodeGraphBuilder(home: base.home, claude: { claude }, log: { messages.append($0) })
             let f = Self(base: base, repo: repo, tip: tip, builder: builder, messages: messages)
             try f.setPython(python)
             return f
@@ -176,6 +181,8 @@ struct GraphFixture {
         let script = """
         #!/bin/sh
         set -eu
+        # The SQL grammar probe, once a session before the first build: this Python has it.
+        [ "${2:-}" = '\(CodeGraph.sqlGrammarProbe)' ] && exit 0
         printf 'run\\n' >> '\(root.appendingPathComponent("python-runs").path)'
         printf '%s\\n' "$@" > '\(root.appendingPathComponent("python-argv").path)'
         /usr/bin/git rev-parse HEAD > '\(root.appendingPathComponent("python-head").path)'

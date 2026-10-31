@@ -94,14 +94,14 @@ struct CodeGraphSettingsAcceptanceTests {
         #expect(CodeGraph.installVenv == ".venvs/graphifyy-arm64")
         #expect(CodeGraph.installSteps(home: URL(fileURLWithPath: "/Users/x"), uv: "/Users/x/.local/bin/uv") == [
             ["/Users/x/.local/bin/uv", "venv", "--python", "3.12", "/Users/x/.venvs/graphifyy-arm64"],
-            ["/Users/x/.local/bin/uv", "pip", "install", "--python", "/Users/x/.venvs/graphifyy-arm64/bin/python", "graphifyy"],
+            ["/Users/x/.local/bin/uv", "pip", "install", "--python", "/Users/x/.venvs/graphifyy-arm64/bin/python", "graphifyy[sql]"],
         ])
         #expect(CodeGraph.installPythonFits("True arm64\n", machine: "arm64"))
         #expect(!CodeGraph.installPythonFits("False arm64\n", machine: "arm64"))
         #expect(!CodeGraph.installPythonFits("True x86_64\n", machine: "arm64"))
         #expect(CodeGraph.installSteps(home: URL(fileURLWithPath: "/Users/x"), python: "/usr/bin/python3") == [
             ["/usr/bin/python3", "-m", "venv", "/Users/x/.venvs/graphifyy-arm64"],
-            ["/Users/x/.venvs/graphifyy-arm64/bin/python", "-m", "pip", "install", "graphifyy"],
+            ["/Users/x/.venvs/graphifyy-arm64/bin/python", "-m", "pip", "install", "graphifyy[sql]"],
         ])
     }
 
