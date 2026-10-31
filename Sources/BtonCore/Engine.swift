@@ -262,7 +262,7 @@ public actor Engine {
                             candidates.append(chosen)
                         }
                         if let reviewer = read.repo.reviewer.flatMap(AgentPick.init), config.agents[reviewer.agent] != nil {
-                            candidates = candidates.map { reviewed($0, by: reviewer, rules: read.repo.reviewRules) }
+                            candidates = candidates.map { Self.reviewed($0, by: reviewer, rules: read.repo.reviewRules) }
                         }
                         if !read.repo.startsMoves {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
@@ -479,9 +479,10 @@ public actor Engine {
     }
 
     /// A review move that runs here with the agent, model and effort the owner set for this repo, and their
-    /// rules after the flow's prompt.
-    private func reviewed(_ candidate: DispatchCandidate, by pick: AgentPick, rules: String?) -> DispatchCandidate {
-        guard candidate.postComment, candidate.agent != nil else { return candidate }
+    /// rules after the flow's prompt. Only the review: a decision posts a comment too, but the
+    /// setting is the repo's Reviewer, and the flow keeps its own agent for every other move.
+    static func reviewed(_ candidate: DispatchCandidate, by pick: AgentPick, rules: String?) -> DispatchCandidate {
+        guard candidate.key.move == "review", candidate.postComment, candidate.agent != nil else { return candidate }
         var made = candidate
         made.agent = pick.agent
         made.model = pick.model

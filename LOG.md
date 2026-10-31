@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**The Reviewer setting runs reviews, nothing else.** A repo card's Reviewer (`codex:gpt-6-astra medium`) replaced the flow's agent on every move that posts a comment, so a `decide` job, which the flow gives to Claude, ran on the reviewer's model as well, and the card never said so. The setting now takes the review move only; a decision, and any other commenting move, runs with the agent its flow names.
+
 ## 0.23.0 (2026-10-31)
 
 **The repo card shows its flow.** Bton read a repo's `.bton/flow.json` every sync and dispatched its moves, and all it showed of it was a chip saying `flow v1`: the only prompt on screen was a schedule's, so the schedule read as the thing doing the work, and Dani kept one running every ten minutes over the same PRs the flow already moved. The chip is now a button: it opens the flow as Bton reads it, read-only, with a link to the file on GitHub. The moves in the order they are tried, each with its conditions, whose it is per tier and what runs it; the tiers and the paths that raise one; the reviews that count per tier and the decision heading; the reviewers' rotation; how ready issues are found, claimed and worked; the caps; who decides an issue's questions; the release rule. A flow that does not read says why in the same place.
