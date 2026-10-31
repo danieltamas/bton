@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.22.0 (2026-10-31)
 
 **An issue's labels are set from the Issues tab too.** The Triage page got clickable label chips in 0.21.0, but an issue past triage (ready, in progress) shows only in the Issues tab, where its stage and priority were text: #550 sat at `stage:in-progress` with Dani as its owner after its first PR merged, and the only way to send it back to ready for the next PR was GitHub. The Issues rows now carry the same chips: a click on the stage offers the other stages, the `+` adds a label, a plain label offers Remove, and the chip spins until GitHub answers; a swap shows only the new label, spinning in the old one's place, and the old one comes back only if GitHub refuses. Setting an issue of yours to `stage:ready` also takes your name off it in the same call, and the choice says so: the intake search takes unassigned ready issues, so the next free Bton starts it on its sync.
 
