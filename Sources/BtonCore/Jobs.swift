@@ -111,9 +111,10 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     /// A failed or stopped PR job, issue draft, decision or intake that is its key's latest. A schedule's key names its own time,
     /// so it never comes round again to retry.
     /// A PR move that succeeded on this head and is still the PR's move changed nothing: the owner
-    /// may run it again, by a press only; the sync never starts a key that ran.
+    /// may run it again, by a press only; the sync never starts a key that ran. An issue draft
+    /// that succeeded is run again the same way: the owner wants another reply on the same question.
     public func canRunAgain(among jobs: [Job]) -> Bool {
-        status == .succeeded && retry != true && key.item.hasPrefix("pr-")
+        status == .succeeded && retry != true && (key.item.hasPrefix("pr-") || key.move == IssueDrafts.move)
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
     }
 

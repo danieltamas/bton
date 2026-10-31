@@ -16,11 +16,40 @@ public enum IssueDrafts {
         and search files, nothing else). Draft the owner's reply to the newest comment that asks \
         them: answer each question; where they must choose, recommend one option with the reason, \
         and what would change your mind. Plain and short, in the language of the question. Your \
-        final message is the reply only, ready to paste. Posting it posts this text and does \
-        nothing else, so never write that the owner is setting a label, assigning, closing or \
-        doing anything else with it; when the answer needs such a step, end with one line naming \
-        it as the owner's to do, for example "To do: add the label stage:ready."
+        final message is the reply only, ready to paste. Never write that the owner is setting a \
+        label, assigning, closing or doing anything else with the issue, and never leave a to do \
+        for the owner. When the answer moves the issue on (a stage, a priority, a decision made), \
+        end with one last line "\(labelsPrefix) +label-to-add -label-to-remove", for example \
+        "\(labelsPrefix) +stage:ready -stage:spec": Bton sets those labels when the owner posts \
+        the reply, and the line itself is not posted. Only labels the repo already uses.
         """
+
+    /// The last line's prefix for the labels the reply moves the issue with.
+    public static let labelsPrefix = "Labels:"
+
+    /// A drafted reply split from its label line: the text to post, and the labels to add and
+    /// remove with it. A draft without the line, or with an unreadable one, posts as it is.
+    public static func split(_ text: String) -> (reply: String, add: [String], remove: [String]) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = trimmed.split(separator: "\n", omittingEmptySubsequences: false).last.map({ $0.trimmingCharacters(in: .whitespaces) }),
+              last.lowercased().hasPrefix(labelsPrefix.lowercased()) else { return (trimmed, [], []) }
+        var add: [String] = [], remove: [String] = []
+        for word in last.dropFirst(labelsPrefix.count).split(whereSeparator: { $0 == " " || $0 == "," }) {
+            let name = word.dropFirst().trimmingCharacters(in: .punctuationCharacters.subtracting(["-", ":", "_", "."]))
+            guard !name.isEmpty, WatchedRepo.isLabelName(name) else { return (trimmed, [], []) }
+            if word.hasPrefix("+") { add.append(name) } else if word.hasPrefix("-") { remove.append(name) } else { return (trimmed, [], []) }
+        }
+        guard !add.isEmpty || !remove.isEmpty else { return (trimmed, [], []) }
+        let reply = trimmed.dropLast(last.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (reply, add, remove)
+    }
+
+    /// A draft from before the label line, ending with the to do the owner was left with: it is
+    /// drafted again, not posted.
+    public static func leavesToDo(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n").last?
+            .trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("to do:") == true
+    }
 
     /// The issue, its body and comments as Markdown, each with its author and time.
     public static func thread(_ issue: OpenIssue) -> String {

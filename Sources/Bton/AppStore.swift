@@ -384,6 +384,7 @@ final class AppStore {
     }
 
     func canRetry(_ job: Job) -> Bool { job.canRetry(among: jobs) }
+    func canRunAgain(_ job: Job) -> Bool { job.canRunAgain(among: jobs) }
 
     /// The move runs again on the same head, once the cause of the failure is fixed.
     /// Starts a ready issue's work now: the next sync claims it and runs the agent, first in line.
@@ -395,6 +396,15 @@ final class AppStore {
 
     func retry(_ job: Job) async {
         guard (try? await engine?.retry(job.id)) == true else { return }
+        markStarting(repo: job.key.repo, item: job.key.item)
+        await refresh()
+    }
+
+    /// Another draft on the same question: the draft that succeeded runs again at the next sync,
+    /// and my edits of the old one go with it.
+    func draftAgain(_ job: Job, for ask: IssueAsk) async {
+        guard job.canRunAgain(among: jobs), (try? await engine?.runAgain(job.key)) != nil else { return }
+        draftEdits[ask.notice] = nil
         markStarting(repo: job.key.repo, item: job.key.item)
         await refresh()
     }

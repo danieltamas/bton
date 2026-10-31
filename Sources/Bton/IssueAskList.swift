@@ -31,17 +31,35 @@ extension AppStore {
     }
 
     /// Posts my reply as a comment on the issue, from a file beside the draft's output (0600, in
-    /// Bton's home), then syncs so the ask clears.
+    /// Bton's home), sets the labels the draft's last line names, then syncs so the ask clears.
+    /// The comment first: a reply that lands without its labels is a smaller wrong than labels
+    /// moved on an issue with no word from me.
     func postReply(_ text: String, to ask: IssueAsk, draft job: Job) async throws {
         guard let github, let output = outputFiles(of: job).first else { throw CocoaError(.fileNoSuchFile) }
         guard !postedAsks.contains(ask.notice), postingAsks.insert(ask.notice).inserted else { return }
         defer { postingAsks.remove(ask.notice) }
+        let draft = IssueDrafts.split(text)
         let file = output.appendingPathExtension("reply")
-        try Data(text.utf8).write(to: file, options: .atomic)
+        try Data(draft.reply.utf8).write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
         postedAsks.insert(ask.notice)
+        do {
+            try await github.editIssueLabels(add: draft.add, remove: draft.remove, repo: ask.repo, number: ask.number)
+        } catch {
+            await refresh()
+            throw DraftLabelsError.notSet(add: draft.add, remove: draft.remove, reason: error.localizedDescription)
+        }
         await refresh()
+    }
+
+    enum DraftLabelsError: LocalizedError {
+        case notSet(add: [String], remove: [String], reason: String)
+        var errorDescription: String? {
+            if case let .notSet(add, remove, reason) = self {
+                "Posted, but the labels were not set (\((add.map { "+" + $0 } + remove.map { "-" + $0 }).joined(separator: " "))): \(reason)"
+            } else { nil }
+        }
     }
 
     /// The drafted reply: the job's final message.
@@ -379,6 +397,14 @@ struct DraftView: View {
                 PillButton(title: "View issue", symbol: "doc.text", prominent: false) {
                     withAnimation(Motion.spring) { store.viewingIssue = ask }
                 }
+                // An icon, not a fourth pill in the footer: four pills are wider than the panel.
+                if !posted && !posting, let job, store.canRunAgain(job) {
+                    AsyncIconButton(symbol: "arrow.clockwise", help: "Draft again: another reply on the same question; this one and your edits of it go",
+                                    size: 24, id: "again:\(job.id)") {
+                        await store.draftAgain(job, for: ask)
+                        close()
+                    }
+                }
                 IconButton(symbol: "arrow.up.right", help: "Open the issue on GitHub", size: 24) { NSWorkspace.shared.open(ask.url) }
             }
             .padding(.horizontal, 14)
@@ -405,9 +431,14 @@ struct DraftView: View {
             .background(Theme.core, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, 14)
             if let problem { ProblemText(text: problem).padding(.horizontal, 14) }
+            let labels = IssueDrafts.split(text)
+            let moves = (labels.add.map { "+" + $0 } + labels.remove.map { "-" + $0 }).joined(separator: " ")
+            let stale = IssueDrafts.leavesToDo(text)
             Text(posted ? "Posted as your comment. The ask clears when the next sync reads it."
-                 : "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own.")
-                .font(.meta).foregroundStyle(posted ? Theme.success : Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+                 : stale ? "This draft leaves you a to do: it is from before Bton set labels on Post. Draft again ends it with the labels instead."
+                 : moves.isEmpty ? "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own."
+                 : "Post reply comments on the issue as \(store.me ?? "you") and sets its labels \(moves); the last line stays here.")
+                .font(.meta).foregroundStyle(posted ? Theme.success : stale ? Theme.danger : Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
             HStack(spacing: 8) {
@@ -458,7 +489,8 @@ struct DraftView: View {
             do {
                 try await store.postReply(text, to: ask, draft: job)
             } catch {
-                problem = "Not posted: \(error.localizedDescription)"
+                // The labels error says the reply went up; the prefix is for a reply that did not.
+                problem = error is AppStore.DraftLabelsError ? error.localizedDescription : "Not posted: \(error.localizedDescription)"
             }
             confirming = false
         }
