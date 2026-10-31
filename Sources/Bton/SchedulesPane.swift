@@ -14,7 +14,7 @@ struct SchedulesPane: View {
                 PaneHeader(pane: .schedules, title: "Schedules",
                            detail: "Run an agent on a timer, in a clean worktree of the branch PRs merge into.")
                 Spacer(minLength: 12)
-                PillButton(title: "New schedule", symbol: "plus") { editing = .new }
+                PillButton(title: "New schedule", symbol: "plus") { editing = .new() }
             }
             if store.schedules.isEmpty {
                 EmptyState(symbol: "clock.arrow.circlepath", title: "No schedules yet",

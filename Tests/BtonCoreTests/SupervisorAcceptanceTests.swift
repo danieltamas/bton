@@ -564,7 +564,7 @@ private struct SupervisorEngineFixture {
     var prompt: URL { base.root.appendingPathComponent("captured-prompt") }
 
     static func make(schedule: Bool = false, enabled: Bool = false) async throws -> Self {
-        let base = try await StartMovesFixture.make(schedule: schedule)
+        let base = try await StartMovesFixture.make(schedule: schedule, flow: !schedule)
         do {
             let clone = base.root.appendingPathComponent("clone")
             for args in [["clone", base.root.appendingPathComponent("origin.git").path, clone.path],

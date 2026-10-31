@@ -287,16 +287,21 @@ public actor Engine {
                                                         me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
                         }
                     }
-                    // Schedules need no flow: they are this Mac's own, like its agents. They start from
-                    // the branch PRs merge into, which the owner picks per repo.
-                    let runNow = Set(config.schedules.compactMap(\.item).filter { next.contains(Self.pick(repo: read.repo.slug, item: $0)) })
-                    let changedAt = DispatchPlanner.queueChangedAt(read.pullRequests, merged: read.merged)
-                    pending += DispatchPlanner.scheduled(config.schedules, jobs: jobs.all(), repo: read.repo.slug,
-                                                         defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
-                                                         runNow: runNow, changedAt: changedAt,
-                                                         pushedAt: DispatchPlanner.queuePushedAt(read.pullRequests),
-                                                         queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
-                        .map { ($0, clone, nil) }
+                    // A schedule runs a repo without a flow: this Mac's own agent, like its agents,
+                    // started from the branch PRs merge into, which the owner picks per repo. A repo
+                    // with a flow is run by the flow; a schedule left on it is ignored (Settings says so),
+                    // as is a second schedule on one repo: the first in the config is the one the tab shows.
+                    if read.flow == nil {
+                        let schedules = config.schedules.first { $0.repo?.caseInsensitiveCompare(read.repo.slug) == .orderedSame }.map { [$0] } ?? []
+                        let runNow = Set(schedules.compactMap(\.item).filter { next.contains(Self.pick(repo: read.repo.slug, item: $0)) })
+                        let changedAt = DispatchPlanner.queueChangedAt(read.pullRequests, merged: read.merged)
+                        pending += DispatchPlanner.scheduled(schedules, jobs: jobs.all(), repo: read.repo.slug,
+                                                             defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
+                                                             runNow: runNow, changedAt: changedAt,
+                                                             pushedAt: DispatchPlanner.queuePushedAt(read.pullRequests),
+                                                             queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
+                            .map { ($0, clone, nil) }
+                    }
                     // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
                     if let registry = await featureJob(read, config: config, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
                     // The release: opened here when due, merged through a job once its PR is open.

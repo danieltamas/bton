@@ -309,6 +309,13 @@ final class AppStore {
             guard config.repos.contains(where: { $0.slug == entry.repo && $0.path != nil }) else {
                 throw SettingsError.invalid("Choose the folder of \(entry.repo ?? "the repo") under Repos first.")
             }
+            // A repo is run by its flow, or by one schedule: never by both, never by two schedules.
+            if let repo = entry.repo, case .ready? = flows[repo] {
+                throw SettingsError.invalid("\(repo) has a flow, and the flow runs it. A schedule runs a repo without one.")
+            }
+            if let other = config.schedules.first(where: { $0.number != entry.number && $0.repo?.caseInsensitiveCompare(entry.repo ?? "") == .orderedSame }) {
+                throw SettingsError.invalid("\(other.name) already runs \(entry.repo ?? "that repo"): one schedule per repo.")
+            }
             if let index = config.schedules.firstIndex(where: { $0.number == entry.number }) {
                 config.schedules[index] = entry
             } else {
@@ -337,6 +344,17 @@ final class AppStore {
     func refreshPrices() async throws {
         prices = try await PriceFeed.refresh(home: home)
         await refresh()
+    }
+
+    /// A schedule runs a repo without a flow: the repos a new schedule can be made for (and, when
+    /// editing, the schedule's own repo). A repo with a flow is run by the flow; one schedule per repo.
+    func reposOpenToSchedule(keeping current: String? = nil) -> [String] {
+        config.repos.filter { repo in
+            guard repo.path != nil else { return false }
+            if repo.slug.caseInsensitiveCompare(current ?? "") == .orderedSame { return true }
+            if case .ready? = flows[repo.slug] { return false }
+            return !config.schedules.contains { $0.repo?.caseInsensitiveCompare(repo.slug) == .orderedSame }
+        }.map(\.slug)
     }
 
     /// The newest job a schedule started.

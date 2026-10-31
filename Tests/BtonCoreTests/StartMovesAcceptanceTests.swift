@@ -21,7 +21,7 @@ struct StartMovesAcceptanceTests {
 
     @Test(arguments: [Optional<Bool>.none, false])
     func syncOnlyStartsDueSchedule(startMoves: Bool?) async throws {
-        let f = try await StartMovesFixture.make(startMoves: startMoves, schedule: true)
+        let f = try await StartMovesFixture.make(startMoves: startMoves, schedule: true, flow: false)
         defer { f.remove() }
         let snapshot = try await f.engine().tick()
         #expect(snapshot.problem == nil)
@@ -225,7 +225,7 @@ struct StartMovesFixture {
         } catch { f.remove(); throw error }
     }
 
-    static func make(startMoves: Bool? = nil, conflicting: Bool = false, schedule: Bool = false, maxAgents: Int = 2) async throws -> Self {
+    static func make(startMoves: Bool? = nil, conflicting: Bool = false, schedule: Bool = false, flow hasFlow: Bool = true, maxAgents: Int = 2) async throws -> Self {
         let seed = try await template.value
         let root = try GitFixtureCopies.copy(seed.root)
         let home = BtonHome(environment: ["BTON_HOME": root.appendingPathComponent("engine").path])
@@ -241,11 +241,14 @@ struct StartMovesFixture {
             let gh = f.root.appendingPathComponent("gh")
             let old = try String(contentsOf: gh, encoding: .utf8)
             let flow = #"{"version":1,"base":"main","tier":{"marker":"Tier:","values":["small"],"default":"small"},"reviews":{},"fixed":"Fixed:","moves":[{"move":"fix","when":["no_review_or_response_newer"],"who":"author"}],"dispatch":{"fix":{"agent":"synthetic","prompt":"Fix"},"resolve":{"agent":"synthetic","prompt":"Resolve"},"merge":{"command":["/usr/bin/true"]}}}"#
-            let cases = """
-              repos/synthetic/project/contents/.bton/flow.json)
+            let flowResponse = hasFlow ? """
                 cat <<'JSON'
             \(flow)
             JSON
+            """ : "echo 'gh: Not Found (HTTP 404)' >&2; exit 1"
+            let cases = """
+              repos/synthetic/project/contents/.bton/flow.json)
+            \(flowResponse)
                 ;;
               graphql)
                 cat <<'JSON'

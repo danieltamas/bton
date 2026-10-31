@@ -3,7 +3,8 @@ import SwiftUI
 
 /// What the editor is open on: a new schedule or a saved one.
 enum ScheduleDraft: Identifiable {
-    case new
+    /// A new schedule, for the repo whose card asked for one when there is one.
+    case new(repo: String? = nil)
     case existing(ScheduleEntry)
 
     var id: String {
@@ -15,6 +16,10 @@ enum ScheduleDraft: Identifiable {
 
     var entry: ScheduleEntry? {
         if case let .existing(entry) = self { entry } else { nil }
+    }
+
+    var repo: String? {
+        if case let .new(repo) = self { repo } else { nil }
     }
 }
 
@@ -60,11 +65,11 @@ struct ScheduleEditor: View {
     @State private var timeout: String
     @State private var problem: String?
 
-    init(entry: ScheduleEntry?, compact: Bool = false, done: @escaping () -> Void) {
+    init(entry: ScheduleEntry?, repo: String? = nil, compact: Bool = false, done: @escaping () -> Void) {
         self.entry = entry
         self.compact = compact
         self.done = done
-        let start = entry ?? ScheduleEntry(name: "", everyMinutes: 60, enabled: true, agent: "claude")
+        let start = entry ?? ScheduleEntry(name: "", everyMinutes: 60, enabled: true, repo: repo, agent: "claude")
         _draft = State(initialValue: start)
         let unit = IntervalUnit.allCases.last { start.everyMinutes % $0.rawValue == 0 } ?? .minutes
         _unit = State(initialValue: unit)
@@ -87,7 +92,12 @@ struct ScheduleEditor: View {
             field("Name") { GlassField(placeholder: "PR queue", text: $draft.name) }
             HStack(alignment: .top, spacing: 10) {
                 field("Repo") {
-                    menu(draft.repo.map(shortName) ?? "Choose...", options: store.repos.filter { $0.path != nil }.map(\.slug)) { draft.repo = $0 }
+                    let open = store.reposOpenToSchedule(keeping: entry?.repo)
+                    menu(draft.repo.map(shortName) ?? "Choose...", options: open) { draft.repo = $0 }
+                    if open.isEmpty {
+                        Text("Every watched repo has a flow or a schedule already: a schedule runs a repo without a flow, one per repo.")
+                            .font(.meta).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 field("Agent") {
                     menu(draft.agent ?? "Choose...", options: store.agents.keys.sorted()) { draft.agent = $0 }

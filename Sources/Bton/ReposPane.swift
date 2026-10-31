@@ -66,7 +66,8 @@ struct ReposPane: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
                         Text(repo.slug).font(.rowTitle).foregroundStyle(Theme.textPrimary)
-                        Chip(text: flowLabel(flow), color: Theme.color(for: flow))
+                        // The flow as Bton reads it, behind its chip: the moves, whose they are, what runs them.
+                        FlowChip(repo: repo, status: flow)
                         if open > 0 { Chip(text: "\(open) open", color: Theme.neutral, style: .outline) }
                     }
                     if let path = repo.path {
@@ -95,7 +96,7 @@ struct ReposPane: View {
                             }
                         }
                         RepoSwitch(symbol: "play.circle", title: "Start the flow's moves on every sync",
-                                   help: "Off (the default): a sync only reads the PRs, and agents start here from your schedules and from Run now, Merge and Retry.",
+                                   help: "Off (the default): a sync only reads the PRs, and agents start here from Run now, Merge and Retry.",
                                    isOn: repo.startsMoves, problem: $problem) { try store.setStartMoves($0, for: repo.slug) }
                         if repo.startsMoves {
                             RepoSwitch(symbol: "arrow.triangle.branch", title: "Fix conflicts on my PRs automatically",
@@ -121,16 +122,6 @@ struct ReposPane: View {
                     do { try store.removeRepo(repo.slug) } catch { problem = error.localizedDescription }
                 }
             }
-        }
-    }
-
-    private func flowLabel(_ flow: FlowStatus?) -> String {
-        switch flow {
-        case nil: "flow not read yet"
-        case .some(.none): "no flow"
-        case let .unsupported(version)?: "flow v\(version.map(String.init) ?? "?") not supported"
-        case .invalid?: "flow invalid"
-        case .ready?: "flow v1"
         }
     }
 

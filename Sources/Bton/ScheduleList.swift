@@ -13,7 +13,7 @@ struct ScheduleList: View {
             if let editing {
                 ScrollView {
                     Bezel(glow: Theme.color(forMove: "schedule")) {
-                        ScheduleEditor(entry: editing.entry, compact: true) {
+                        ScheduleEditor(entry: editing.entry, repo: editing.repo, compact: true) {
                             withAnimation(Motion.spring) { self.editing = nil }
                         }
                         .padding(14)
@@ -30,16 +30,42 @@ struct ScheduleList: View {
         .animation(Motion.spring, value: editing?.id)
     }
 
+    /// The sync, then one card per watched repo: its flow when it has one, else its schedule, else
+    /// the card that makes one. A repo is run by its flow or by one schedule, never both, so a
+    /// schedule left on a repo with a flow shows under the flow as ignored, with its delete.
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 6) {
                 syncRow.riseIn(0)
-                ForEach(Array(store.schedules.enumerated()), id: \.element.id) { index, entry in
-                    ScheduleRow(entry: entry, last: store.lastJob(of: entry)) { editing = .existing(entry) }
-                        .riseIn(index + 1)
+                ForEach(Array(store.repos.enumerated()), id: \.element.slug) { index, repo in
+                    let flow = store.flows[repo.slug]
+                    let schedules = schedules(of: repo.slug)
+                    Group {
+                        if case .ready? = flow {
+                            FlowRepoRow(repo: repo, flow: flow) { open(.repos) }
+                            ForEach(schedules) { entry in
+                                IgnoredScheduleRow(entry: entry, repo: repo.slug).padding(.leading, 22)
+                            }
+                        } else if let entry = schedules.first {
+                            ScheduleRow(entry: entry, last: store.lastJob(of: entry)) { editing = .existing(entry) }
+                            ForEach(schedules.dropFirst()) { extra in
+                                IgnoredScheduleRow(entry: extra, repo: repo.slug, by: entry.name).padding(.leading, 22)
+                            }
+                        } else {
+                            NoRunnerRow(repo: repo, flow: flow) { editing = .new(repo: repo.slug) }
+                        }
+                    }
+                    .riseIn(index + 1)
                 }
-                if store.schedules.isEmpty {
-                    Text("Run an agent on a timer: drain the PR queue every hour, triage weekly.")
+                let orphans = store.schedules.filter { entry in !store.repos.contains { $0.slug.caseInsensitiveCompare(entry.repo ?? "") == .orderedSame } }
+                if !orphans.isEmpty {
+                    Eyebrow(text: "No watched repo").padding(.top, 10)
+                    ForEach(orphans) { entry in
+                        ScheduleRow(entry: entry, last: store.lastJob(of: entry)) { editing = .existing(entry) }
+                    }
+                }
+                if store.repos.isEmpty {
+                    Text("Add a repo under Settings > Repos. Its flow runs it; a repo without a flow gets one schedule.")
                         .font(.meta).foregroundStyle(Theme.textTertiary).padding(.top, 8)
                 }
             }
@@ -47,7 +73,11 @@ struct ScheduleList: View {
             .padding(.bottom, 12)
         }
         .scrollIndicators(.never)
-        .floatingAction(title: "New schedule", symbol: "plus") { editing = .new }
+        .floatingAction(title: "New schedule", symbol: "plus") { editing = .new() }
+    }
+
+    private func schedules(of slug: String) -> [ScheduleEntry] {
+        store.schedules.filter { $0.repo?.caseInsensitiveCompare(slug) == .orderedSame }
     }
 
     private var syncRow: some View {
@@ -70,6 +100,107 @@ struct ScheduleList: View {
                         RelativeTime(date: last.addingTimeInterval(TimeInterval(store.pollSeconds)))
                             .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.textTertiary)
                     }
+                }
+            }
+        }
+    }
+}
+
+/// A repo run by its flow: the flow chip opens the summary, the switch starts the moves on every
+/// sync or leaves them to Run now, Merge and Retry. The card opens the repo's settings.
+struct FlowRepoRow: View {
+    @Environment(AppStore.self) private var store
+    let repo: WatchedRepo
+    let flow: FlowStatus?
+    let open: () -> Void
+
+    var body: some View {
+        HoverCard(accent: nil, action: open) {
+            HStack(spacing: 10) {
+                GlyphDisc(symbol: "play.circle", color: repo.startsMoves ? Theme.mint : Theme.neutral, size: 30)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(repo.slug).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                        FlowChip(repo: repo, status: flow)
+                    }
+                    Text(repo.path == nil ? "No folder yet: nothing starts here until it has one."
+                         : repo.startsMoves ? "Every sync starts the flow's moves that are yours."
+                         : "Syncs only read the repo; Run now, Merge and Retry start a move.")
+                        .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(2)
+                }
+                Spacer(minLength: 4)
+                if repo.path != nil {
+                    Toggle("", isOn: Binding(get: { repo.startsMoves }, set: { try? store.setStartMoves($0, for: repo.slug) }))
+                        .toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.mint)
+                        .pointingHandCursor()
+                        .help("On: every sync starts the flow's moves that are yours. Off: syncs only read; Run now, Merge and Retry start a move.")
+                }
+            }
+        }
+    }
+}
+
+/// A repo with no flow Bton can run and no schedule: nothing starts here. The card makes the schedule.
+struct NoRunnerRow: View {
+    let repo: WatchedRepo
+    let flow: FlowStatus?
+    let add: () -> Void
+
+    var body: some View {
+        HoverCard(accent: nil, action: repo.path == nil ? nil : add) {
+            HStack(spacing: 10) {
+                GlyphDisc(symbol: "clock.badge.questionmark", color: Theme.neutral, size: 30)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(repo.slug).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                        FlowChip(repo: repo, status: flow)
+                    }
+                    Text(detail).font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(2)
+                }
+                Spacer(minLength: 4)
+                if repo.path != nil {
+                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textTertiary)
+                }
+            }
+        }
+    }
+
+    private var detail: String {
+        if repo.path == nil { return "No folder yet: nothing starts here until it has one." }
+        switch flow {
+        case nil: return "Not read yet: the first sync says whether the repo has a flow."
+        case .some(.none): return "No flow in the repo: nothing starts here. Click to give it a schedule."
+        default: return "The repo's flow does not read, so nothing starts here. Fix the flow, or click to give it a schedule."
+        }
+    }
+}
+
+/// A schedule the sync ignores: on a repo its flow runs, or a second one on a repo another
+/// schedule already runs. It stays visible until deleted, so nobody wonders where it went.
+struct IgnoredScheduleRow: View {
+    @Environment(AppStore.self) private var store
+    let entry: ScheduleEntry
+    let repo: String
+    var by: String?
+    @State private var problem: String?
+
+    var body: some View {
+        HoverCard(accent: nil, action: nil) {
+            HStack(spacing: 10) {
+                GlyphDisc(symbol: "clock.arrow.circlepath", color: Theme.neutral, size: 30)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(entry.name).font(.rowTitle).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Chip(text: "ignored", color: Theme.neutral, style: .outline)
+                    }
+                    Text(by.map { "\($0) already runs \(repo): one schedule per repo. Delete this one." }
+                         ?? "\(repo) has a flow, and the flow runs it. Delete the schedule; its prompt stays in the job history.")
+                        .font(.meta).foregroundStyle(Theme.textTertiary).lineLimit(2)
+                    if let problem { ProblemText(text: problem) }
+                }
+                Spacer(minLength: 4)
+                IconButton(symbol: "trash", help: "Delete \(entry.name)", tint: Theme.danger, size: 26) {
+                    do { try store.removeSchedule(entry.number) } catch { problem = error.localizedDescription }
                 }
             }
         }
