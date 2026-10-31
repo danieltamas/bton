@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.23.1 (2026-10-31)
 
 **The Reviewer setting runs reviews, nothing else.** A repo card's Reviewer (`codex:gpt-6-astra medium`) replaced the flow's agent on every move that posts a comment, so a `decide` job, which the flow gives to Claude, ran on the reviewer's model as well, and the card never said so. The setting now takes the review move only; a decision, and any other commenting move, runs with the agent its flow names.
 
