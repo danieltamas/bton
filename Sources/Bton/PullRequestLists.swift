@@ -478,6 +478,8 @@ private struct HumanMoveButton: View {
     @State private var open = false
     @State private var clearing: String?
     @State private var problem: String?
+    /// The workflows a press of Re-run asked GitHub for, on this popover.
+    @State private var rerun: [String]?
 
     var body: some View {
         Button { open = true } label: { MoveChip(move: move, me: me) }
@@ -487,14 +489,23 @@ private struct HumanMoveButton: View {
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("\(move.name) · #\(pr.number)").font(.rowTitle).foregroundStyle(Theme.textPrimary)
-                    Text(!move.redChecks.isEmpty
-                         ? "Held by a red check on this head: \(move.redChecks.joined(separator: ", ")). Re-run it on GitHub, or fix what it found on the base and push; the flow runs \(move.name) once it is green."
+                    Text(rerun != nil ? "Asked GitHub to run \(rerun!.joined(separator: ", ")) again on this head. The flow runs \(move.name) once a sync reads it green."
+                         : !move.redChecks.isEmpty
+                         ? "Held by a red check on this head: \(move.redChecks.joined(separator: ", ")). Re-run it when the failure was not this PR's, or fix what it found and push; the flow runs \(move.name) once it is green."
                          : move.labels.isEmpty
                          ? "Yours to do on GitHub. Bton sees it at the next sync."
                          : "Yours to do on GitHub. When it is done, remove \(move.labels.joined(separator: ", ")) and the flow moves on.")
                         .font(.meta).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
                     VStack(alignment: .leading, spacing: 8) {
                         PillButton(title: "Open on GitHub", prominent: false) { NSWorkspace.shared.open(pr.url) }
+                        if !move.redChecks.isEmpty, rerun == nil {
+                            AsyncPillButton(title: "Re-run \(move.redChecks.joined(separator: ", "))", runningTitle: "Asking GitHub...",
+                                            symbol: "arrow.clockwise", id: "rerun:\(pr.repo)#\(pr.number):\(pr.headSha)") {
+                                problem = nil
+                                do { rerun = try await store.rerunRedChecks(on: pr) } catch { problem = error.localizedDescription }
+                            }
+                            .help("Runs the failed workflow on this exact commit again; nothing else changes")
+                        }
                         ForEach(move.labels, id: \.self) { label in
                             PillButton(title: clearing == label ? "Removing..." : "Done · remove \(label)", symbol: "checkmark",
                                        disabled: clearing != nil) { remove(label) }

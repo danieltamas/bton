@@ -579,6 +579,13 @@ final class AppStore {
         await refresh()
     }
 
+    /// Runs the failed workflows on the PR's head again, for a move held by a red check; the
+    /// flow starts the move once a sync reads the check green. Names the workflows asked.
+    func rerunRedChecks(on pr: PullRequest) async throws -> [String] {
+        guard let github else { throw GitHubClient.Failure.ghNotFound }
+        return try await github.rerunFailedRuns(repo: pr.repo, sha: pr.headSha)
+    }
+
     /// Says a label-gated move is done: the label goes on GitHub and the next sync reads the next move.
     /// A fresh read must still give me the same move with that label, so a stale popover never
     /// clears a later round's label.

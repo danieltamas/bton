@@ -6,9 +6,11 @@ public struct GitHubClient: Sendable {
         case ghNotFound
         case ghFailed(status: Int32, stderr: String)
         case invalidBranch(String)
+        case noFailedRun(sha: String)
 
         public var errorDescription: String? {
             switch self {
+            case let .noFailedRun(sha): "No failed workflow run on \(sha.prefix(12)): GitHub may still be reporting, or the red check is not an Actions workflow. Re-run it on GitHub."
             case .ghNotFound: "gh not found. Install the GitHub CLI and run gh auth login."
             case let .ghFailed(status, stderr): "gh exited \(status): \(stderr.prefix(300))"
             case let .invalidBranch(name): "\(name.prefix(100)) is not a branch Bton can read; pick another in Settings → Repos."
@@ -198,6 +200,32 @@ public struct GitHubClient: Sendable {
             _ = try? await gh(["label", "create", label, "--repo", repo, "--description", "A Bton is working on this PR"])
             _ = try await gh(add)
         }
+    }
+
+    /// Runs the failed jobs of every workflow run on `sha` again, and names the workflows asked.
+    /// The flow's gate reads the check on the head, so the re-run is on that exact commit;
+    /// a head with no failed run (GitHub still reporting, or a check from outside Actions)
+    /// throws, so nothing passes for a press that did nothing.
+    public func rerunFailedRuns(repo: String, sha: String) async throws -> [String] {
+        let data = try await gh(["run", "list", "--repo", repo, "--commit", sha, "--limit", "50",
+                                 "--json", "databaseId,workflowName,conclusion"])
+        let failed = try Self.failedRuns(data)
+        guard !failed.isEmpty else {
+            throw Failure.noFailedRun(sha: sha)
+        }
+        for run in failed {
+            _ = try await gh(["run", "rerun", String(run.id), "--repo", repo, "--failed"])
+        }
+        return failed.map(\.workflow)
+    }
+
+    /// The workflow runs that ended in failure (or were cancelled or timed out), from `gh run list` JSON.
+    static func failedRuns(_ data: Data) throws -> [(id: Int, workflow: String)] {
+        struct Run: Decodable { let databaseId: Int; let workflowName: String; let conclusion: String }
+        let rerun: Set<String> = ["failure", "cancelled", "timed_out", "startup_failure"]
+        return try JSONDecoder().decode([Run].self, from: data)
+            .filter { rerun.contains($0.conclusion) }
+            .map { (id: $0.databaseId, workflow: $0.workflowName) }
     }
 
     public func removeLabel(_ label: String, repo: String, number: Int) async throws {
