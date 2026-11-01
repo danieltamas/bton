@@ -1,6 +1,12 @@
 import Foundation
 
 extension Dispatcher {
+    /// What every agent Bton starts runs with, under the job's own variables. `RMJ_GUARD=off`:
+    /// RMJ's Claude Code hook (`rmj guard`, 0.12.0) otherwise blocks a test or check command in
+    /// a repo one of the Mac owner's rules routes to a build box, and an unattended agent has no
+    /// box, no approval and no way to answer; a job's commands run where the job runs.
+    static let agentEnvironment = ["RMJ_GUARD": "off"]
+
     /// The agent's git reaches GitHub over HTTPS with gh's credential, as Bton's own does: an SSH
     /// remote needs `~/.ssh`, which Claude Code's sandbox may not let it read.
     static func gitOverHTTPS(ghPath: String) -> [String: String] {

@@ -725,7 +725,7 @@ actor Dispatcher {
         let bton = [
             "PATH": Executables.searchPath(for: executable), "BTON_EXIT_FILE": (second ? jobs.secondExitURL(id) : jobs.exitURL(id)).path,
             "BTON_JOB": id.uuidString,
-        ].merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }.merging(environment) { $1 }
+        ].merging(Self.agentEnvironment) { $1 }.merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }.merging(environment) { $1 }
         process.environment = ProcessRunner.inheritedEnvironment
             .merging(DispatchPlanner.processEnvironment(repo: repoEnvironment, bton: bton)) { $1 }
         process.standardInput = FileHandle.nullDevice
