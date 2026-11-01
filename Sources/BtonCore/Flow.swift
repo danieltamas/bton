@@ -27,6 +27,14 @@ public struct Flow: Decodable, Sendable {
     /// order on every open issue, the first whose conditions hold is the issue's move. Each is run
     /// by its `dispatch` entry under the triager hat.
     public let issues: [IssueRule]?
+    /// Issues that stay open when a PR naming them merges: `{ "labels": ["verify:prod"] }`. Before
+    /// the merge command the PR body's `Fixes #n` becomes `Refs #n` for an issue with one of these
+    /// labels (`KeepOpen`).
+    public let keepOpen: KeepOpen?
+
+    public struct KeepOpen: Decodable, Sendable {
+        public let labels: [String]
+    }
 
     /// One issue move: `triage`, `stage` or `restage`, and the predicates over the issue.
     public struct IssueRule: Decodable, Sendable {
@@ -170,6 +178,10 @@ public struct Flow: Decodable, Sendable {
                         return .invalid("issues[\(index)].when: \(bad.prefix(100)) is not an issue predicate")
                     }
                 }
+            }
+            if let keepOpen = flow.keepOpen {
+                let labels = keepOpen.labels.map { $0.trimmingCharacters(in: .whitespaces) }
+                if labels.isEmpty || labels.contains("") { return .invalid("keepOpen.labels: one label or more, none empty") }
             }
             if let release = flow.release {
                 if let merge = release.merge, !Release.merges.contains(merge) {

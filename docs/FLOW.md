@@ -27,6 +27,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`: a PR move that waits longer than `pingHours` gets one comment pinging its owner from the author's Bton, and past `escalateHours` one mentioning `escalateTo`; the clock is the head commit or the latest comment by a person. In a repo that starts its moves, an open issue someone is assigned to gets the same from the issue author's Bton: its clock is the last assignment or label change, or the latest comment by a person (never Bton's own markers or the triager's line), so a ping is not its own answer and a new assignment, label or comment starts a new wait, pinged once on any Mac: under the issue's lease, before posting, Bton reads every comment of the issue again (the sync reads the last 20) and posts nothing when the notice is there or no longer due. An issue waiting on the owner (a mention, an open Decisions row) is the owner's wait, not the assignee's, and gets no ping. |
 | `decision` | Optional `{ "heading", "move", "by" }`: a ruling that ends a review loop (below). |
 | `decide` | Optional `{ "by", "agent"?, "prompt"?, "timeoutMinutes"?, "except"? }`: the Bton of a login in `by` decides, in their place, the questions put to them on issues (below). |
+| `keepOpen` | Optional `{ "labels": [...] }`: an issue with one of these labels stays open when a PR naming it merges; the merge move turns the body's closing keyword before it into `Refs` first (below). |
 | `release` | Optional `{ "from", "to", "who", "when", "blockedBy"?, "checks"?, "merge"?, "timeoutMinutes"? }`: how `from` (develop) is released to `to` (main). `when` is a list of predicates of which the first match makes a release due, with its reason on the page and in the footer (`ahead_commits:N` -> "N commits ahead", `ahead_days:N` -> "N days ahead", counted from the oldest commit `to` lacks, `features_waiting:N` -> "N features waiting", the registry's features in develop); `blockedBy` any match blocks it (`pr_in_review_on_paths:<glob>`: an open, non-draft PR into `from` touching the glob; `release_pr_open` is implied and only keeps a second release PR from opening, never the merge of the open one); `who` is the login whose Bton opens and merges it, everyone else sees the state; `checks` are argv run in a worktree at the release PR's head (the `from` tip) before the merge, each stopped at `timeoutMinutes` (40 by default), failing closed; `merge` is `merge-commit` (default: `gh pr merge <n> --merge --match-head-commit <head>`) or `fast-forward` (`git push origin <head>:refs/heads/<to>`, refused when `to` moved). When due (or on the owner's Release press on the repo's page, which skips `when` but not `blockedBy`), Bton opens the PR `from -> to` titled `Release <from> -> <to>: <n> features` with the release notes from the registry; the open PR merges on the press, or on its own when the repo starts its moves and the release is still due. The release PR gets no flow move. With a `release` section the repo page tells a feature "in develop" from one "live" on `to`. |
 
 `who`, `dispatch.<move>.agent` and `dispatch.<move>.prompt` take either one value or an object
@@ -314,6 +315,24 @@ row's **Fix conflicts** then starts it. Either starts the move now, first in lin
 again when it failed or was stopped on this head on this Mac (a failure on another Mac is
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:
 it never loops.
+
+### Issues that stay open
+
+```json
+"keepOpen": { "labels": ["verify:prod"] }
+```
+
+GitHub closes an issue when a PR whose body says `Fixes #n` (`closes`, `resolves` and their
+forms, `#n`, `owner/repo#n` or the issue's URL) merges into the default branch, whatever the
+issue's labels say. With `keepOpen`, right before the `merge` command and after the head and
+checks reads, Bton asks GitHub which issues the merge would close (GitHub's own reading of the
+body, not Bton's) with their labels; for an issue carrying one of these labels the keyword
+becomes `Refs` (`Fixes #673` -> `Refs #673`, the `#n` kept, so the PR still names its issue),
+the body, read again at that moment, is saved back, and GitHub is asked once more: an issue it
+would still close refuses the merge, as does a read or a save that failed, each with its reason
+in the job, and nothing runs. The job's log names the issues kept open. Only the PR's body is
+rewritten: a commit message that says `fixes #n` closes the issue on merge whatever the body
+says, so a team that keeps issues open writes `Refs #n` in its commits too.
 
 ## Intake
 

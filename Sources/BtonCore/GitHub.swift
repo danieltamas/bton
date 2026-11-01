@@ -150,6 +150,57 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "create", "--repo", repo, "--base", base, "--head", head, "--title", title, "--body-file", bodyFile.path])
     }
 
+    /// What the PR's merge would close, as GitHub itself reads it: the body as it is now (the
+    /// sync's copy can be minutes old, and the author edits it) and each issue its closing
+    /// keywords name, with the issue's labels.
+    public struct ClosingReferences: Equatable, Sendable {
+        public struct Issue: Equatable, Sendable {
+            public let number: Int
+            public let labels: [String]
+        }
+        public let body: String
+        public let issues: [Issue]
+    }
+
+    public static let closingReferencesQuery = """
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          body
+          closingIssuesReferences(first: 50) { totalCount nodes { number labels(first: 100) { nodes { name } } } }
+        }
+      }
+    }
+    """
+
+    public func closingReferences(repo: String, number: Int) async throws -> ClosingReferences {
+        let parts = repo.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { throw Failure.ghFailed(status: 1, stderr: "repo \(repo) is not owner/name") }
+        return try Self.decodeClosingReferences(try await gh(["api", "graphql", "-f", "query=\(Self.closingReferencesQuery)",
+                                                              "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])", "-F", "number=\(number)"]))
+    }
+
+    /// Throws past the first 50 closing references: a gate never decides on a list cut short.
+    static func decodeClosingReferences(_ data: Data) throws -> ClosingReferences {
+        struct Response: Decodable { let data: Payload }
+        struct Payload: Decodable { let repository: Repository }
+        struct Repository: Decodable { let pullRequest: PR }
+        struct PR: Decodable { let body: String, closingIssuesReferences: References }
+        struct References: Decodable { let totalCount: Int, nodes: [Node] }
+        struct Node: Decodable { let number: Int, labels: Nodes<Name> }
+        let pr = try JSONDecoder().decode(Response.self, from: data).data.repository.pullRequest
+        guard pr.closingIssuesReferences.totalCount <= pr.closingIssuesReferences.nodes.count else {
+            throw Failure.ghFailed(status: 1, stderr: "the PR closes more than 50 issues; the list was cut short")
+        }
+        return ClosingReferences(body: pr.body, issues: pr.closingIssuesReferences.nodes.map {
+            .init(number: $0.number, labels: $0.labels.nodes.map(\.name))
+        })
+    }
+
+    public func editPullRequestBody(repo: String, number: Int, bodyFile: URL) async throws {
+        _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--body-file", bodyFile.path])
+    }
+
     public func comment(repo: String, number: Int, bodyFile: URL) async throws {
         _ = try await gh(["pr", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }

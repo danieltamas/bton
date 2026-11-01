@@ -123,6 +123,55 @@ extension Dispatcher {
         return nil
     }
 
+    /// Why the merge must not run, or nil once every issue the PR would close is free to close or
+    /// its keyword is now `Refs` (`KeepOpen`). GitHub's own reading of the body decides what the
+    /// merge closes, read live right before the command; the body is read again right before it
+    /// is saved, and GitHub is asked once more after the save, so a form the rewrite missed still
+    /// refuses. A failed read or save refuses too: an issue whose labels Bton could not read may
+    /// be one that must stay open. A Stop during the reads is thrown.
+    func keepOpenRefusal(_ labels: [String], repo: String, pr number: Int, job id: UUID) async throws -> String? {
+        func closing() async throws -> GitHubClient.ClosingReferences? {
+            do {
+                return try await github.closingReferences(repo: repo, number: number)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                return nil
+            }
+        }
+        let names = { (issues: [Int]) in issues.map { "#\($0)" }.joined(separator: ", ") }
+        let protected = { (issue: GitHubClient.ClosingReferences.Issue) in issue.labels.first(where: labels.contains) }
+        guard let before = try await closing() else { return "could not read what the PR closes before the merge; nothing was run" }
+        guard before.issues.contains(where: { protected($0) != nil }) else {
+            if !before.issues.isEmpty {
+                jobs.note(id, "the merge closes \(names(before.issues.map(\.number))): none is labelled to stay open")
+            }
+            return nil
+        }
+        // The body and the list as they are now, not as they were at the first read.
+        guard let now = try await closing() else { return "could not read the PR's body before the merge; nothing was run" }
+        let kept = now.issues.compactMap { issue in protected(issue).map { (issue: issue.number, label: $0) } }
+        let file = jobs.outputURL(id).appendingPathExtension("body")
+        defer { try? FileManager.default.removeItem(at: file) }
+        do {
+            try KeepOpen.neutralised(now.body, keeping: Set(kept.map(\.issue)), repo: repo).write(to: file, atomically: true, encoding: .utf8)
+            try await github.editPullRequestBody(repo: repo, number: number, bodyFile: file)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return "could not rewrite the PR's body to keep \(names(kept.map(\.issue))) open; nothing was run"
+        }
+        // Judged by label on GitHub's final list, so an issue that joined the body between the reads counts too.
+        guard let after = try await closing() else { return "could not read what the PR closes after the rewrite; nothing was run" }
+        let still = after.issues.filter { protected($0) != nil }.map(\.number)
+        guard still.isEmpty else {
+            return "\(names(still)) would still close on merge after the rewrite: edit the PR's body by hand; nothing was run"
+        }
+        jobs.note(id, "kept open: " + kept.map { "#\($0.issue) (\($0.label))" }.joined(separator: ", ")
+                  + "; the closing keyword before each is now Refs in the PR's body")
+        return nil
+    }
+
     /// Why the command must not run, or nil when every check the move's rule named is green on
     /// GitHub for `head` now. The tick's snapshot is minutes old by the time the checks above
     /// have run; a re-run that failed since, or a check that was still pending, must not merge.

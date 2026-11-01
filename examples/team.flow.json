@@ -80,5 +80,6 @@
     "timeoutMinutes": 120
   },
   "caps": { "openPullRequestsPerDeveloper": 2, "openPullRequestsTeam": 6 },
+  "keepOpen": { "labels": ["verify:prod"] },
   "stale": { "pingHours": 24, "escalateHours": 48, "escalateTo": "lead-dev" }
 }

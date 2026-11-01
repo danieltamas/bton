@@ -114,6 +114,7 @@ public enum FeatureJob {
             "Before reading or editing anything: `git fetch origin \(base)` and `git switch -c \(branch) origin/\(base)`, so the file you extend is the one on `\(base)`, which this checkout may not be at. When the file is right: commit `\(FeatureRegistry.relativePath)` only, push the branch, and open a PR against `\(base)` in \(repo) titled `features: <n> added, <m> linked` with the counts of features you added and links you made.",
         ]
         if let tier { lines.append("The PR body's first line is `\(tier)`, then one paragraph on what changed.") }
+        lines.append("The PR body names an issue only as `Refs #n`, never after `fixes`, `closes` or `resolves`: the registry links issues, it closes none.")
         lines.append("Nothing else is changed, no other file, no issue, no label.")
         return lines.joined(separator: "\n")
     }

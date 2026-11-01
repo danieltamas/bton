@@ -320,6 +320,9 @@ actor Dispatcher {
                     if refusal == nil {
                         refusal = try await checksRefusal(candidate.requiredChecks, pr: pr, head: candidate.key.head, job: job.id)
                     }
+                    if refusal == nil, candidate.move.name == "merge", let labels = flow?.keepOpen?.labels {
+                        refusal = try await keepOpenRefusal(labels, repo: candidate.key.repo, pr: pr.number, job: job.id)
+                    }
                     if let refusal {
                         _ = await Worktrees.removeClean(trusted, clone: clone, ghPath: github.ghPath, runner: runner)
                         return await finish(job, status: .failed, detail: refusal)
