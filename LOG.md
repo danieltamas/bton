@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.24.1 (2026-11-01)
 
 **Triage never makes an issue ready, and the triager leaves no signature.** The triage move set `stage:ready` when the agent found the plan clear, exactly as a click in the Triage tab does; but in a repo whose process gives ready only to its staging pass (a plan in the body, a review of that plan, no open decision), and whose intake then builds a ready issue unattended, that was a build from an unreviewed body, so lexito held the triage rule back. Now triage caps the stage at `stage:spec`: a clear plan still scores its point, and `ready` is the stage move's, after the plan the process asks for. The line every triager comment ended with ("Bton's triager wrote this...") is now an HTML comment, `<!-- bton:triager -->`: the round and cooldown rules read it as before, a person sees nothing, and a repo that forbids agent attribution in its issues keeps its rule; comments carrying the old sentence still count as the triager's. Playbook v11.
 
