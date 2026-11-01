@@ -23,6 +23,8 @@ import SwiftUI
         var body: String
         var answers: [Int?]
         var loadedRound: Int?
+        /// The type label the issue is created with (`bug`), nil for the flow's default type. Missing in files from before.
+        var typeLabel: String? = nil
     }
 
     let id: String
@@ -37,6 +39,8 @@ import SwiftUI
     var answers: [Int?] = Array(repeating: nil, count: IssueTriage.questions.count)
     /// The round whose issue text is in `title` and `body`, so a later edit is not overwritten.
     var loadedRound: Int?
+    /// The type label the issue is created with, one of the repo's intake `type.labels`; nil builds as the default type.
+    var typeLabel: String?
     var creating = false
     var problem: String?
     var created: URL?
@@ -58,11 +62,12 @@ import SwiftUI
         body = saved.body
         answers = saved.answers
         loadedRound = saved.loadedRound
+        typeLabel = saved.typeLabel
     }
 
     var snapshot: Snapshot {
         Snapshot(id: id, repo: repo, repoChosen: repoChosen, turns: turns, nextRound: nextRound, draft: draft,
-                 title: title, body: body, answers: answers, loadedRound: loadedRound)
+                 title: title, body: body, answers: answers, loadedRound: loadedRound, typeLabel: typeLabel)
     }
 
     func newRound() -> Int {
@@ -175,7 +180,7 @@ extension AppStore {
             try Data(session.body.utf8).write(to: file, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             session.created = try await github.createIssue(repo: session.repo, title: session.title, bodyFile: file,
-                                                           labels: verdict.labels)
+                                                           labels: NewIssues.labels(verdict: verdict, typeLabel: session.typeLabel, flow: flows[session.repo]?.flow))
             // Whatever view is on screen: a restart must never offer this issue to create twice.
             persist(session)
             await refresh()
@@ -420,6 +425,7 @@ struct NewIssueView: View {
 
     @ViewBuilder private var issue: some View {
         VStack(alignment: .leading, spacing: 8) {
+            typeRow
             TextField("Title", text: $session.title)
                 .textFieldStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.textPrimary)
                 .padding(8).background(Theme.core, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -428,6 +434,25 @@ struct NewIssueView: View {
                 .scrollContentBackground(.hidden)
                 .padding(6).frame(height: 190)
                 .background(Theme.core, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    /// The kind of change, as the repo's intake reads it from a label: a dropdown of the flow's
+    /// `type.labels` after the default type. The pick is a label on the created issue, so intake
+    /// builds a bug as a fix instead of the default type. Nothing is shown when the flow maps no labels.
+    @ViewBuilder private var typeRow: some View {
+        let flow = store.flows[session.repo]?.flow
+        let choices = NewIssues.typeChoices(flow)
+        if let rule = flow?.intake?.type, !choices.isEmpty {
+            let options = [SelectorPill.Option(id: "", text: "\(rule.default) (no label)")]
+                + choices.map { SelectorPill.Option(id: $0.label, text: "\($0.label), built as \($0.type)") }
+            let chosen = choices.first { $0.label.caseInsensitiveCompare(session.typeLabel ?? "") == .orderedSame }
+            HStack(spacing: 8) {
+                Text("Type").font(.meta).foregroundStyle(Theme.textTertiary)
+                SelectorPill(text: chosen?.label ?? rule.default, options: options, selected: chosen?.label ?? "") { id in
+                    session.typeLabel = id.isEmpty ? nil : id
+                }
+            }
         }
     }
 
@@ -452,48 +477,13 @@ struct NewIssueView: View {
 private struct RepoSelector: View {
     @Environment(AppStore.self) private var store
     @Bindable var session: NewIssueSession
-    @State private var open = false
-
     var body: some View {
-        Button { open.toggle() } label: {
-            HStack(spacing: 5) {
-                Text(session.repoChosen ? session.repo : "Choose a repo...")
-                    .foregroundStyle(session.repoChosen ? Theme.textSecondary : Theme.mint).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .font(.meta)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Theme.core, in: Capsule())
-            .overlay(Capsule().strokeBorder(session.repoChosen ? Theme.wash.opacity(0.08) : Theme.mint.opacity(0.6), lineWidth: 0.5))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(PressStyle())
-        .popover(isPresented: $open, arrowEdge: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(store.repos.map(\.slug).sorted { $0.lowercased() < $1.lowercased() }, id: \.self) { slug in
-                        Button {
-                            session.repo = slug
-                            session.repoChosen = true
-                            open = false
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
-                                    .opacity(session.repoChosen && session.repo == slug ? 1 : 0)
-                                Text(slug).font(.system(size: 12)).foregroundStyle(Theme.textPrimary)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PressStyle(scale: 0.98))
-                    }
-                }
-                .padding(6)
-            }
-            .frame(width: 260)
-            .frame(maxHeight: 260)
+        let slugs = store.repos.map(\.slug).sorted { $0.lowercased() < $1.lowercased() }
+        SelectorPill(text: session.repoChosen ? session.repo : "Choose a repo...", pending: !session.repoChosen,
+                     options: slugs.map { SelectorPill.Option(id: $0, text: $0) },
+                     selected: session.repoChosen ? session.repo : nil) { slug in
+            session.repo = slug
+            session.repoChosen = true
         }
     }
 }

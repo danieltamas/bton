@@ -140,4 +140,36 @@ import Testing
         #expect(try JSONDecoder().decode(BtonConfig.self, from: JSONEncoder().encode(config)).draftModel == "claude-opus-5-5")
         #expect(try JSONDecoder().decode(BtonConfig.self, from: JSONEncoder().encode(BtonConfig.initial)).draftModel == nil)
     }
+
+    @Test func theTypeLabelsOfferedAreTheIntakesInNameOrderAndNoneWithoutAnIntake() throws {
+        let flow = try FlowFixture.flow()
+        #expect(NewIssues.typeChoices(flow).map(\.label) == ["bug", "chore", "docs"])
+        #expect(NewIssues.typeChoices(flow).first == NewIssues.TypeChoice(label: "bug", type: "fix"))
+        #expect(flow.intake?.type.default == "feat")
+        #expect(NewIssues.typeChoices(nil).isEmpty)
+        var json = try #require(JSONSerialization.jsonObject(with: FlowFixture.data()) as? [String: Any])
+        json.removeValue(forKey: "intake")
+        let withoutIntake = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(NewIssues.typeChoices(withoutIntake).isEmpty)
+    }
+
+    @Test func theCreatedIssueCarriesTheChosenTypeLabelOnlyWhileTheFlowOffersIt() throws {
+        let flow = try FlowFixture.flow()
+        let verdict = try #require(IssueTriage.verdict([0, 0, 0]))
+        #expect(NewIssues.labels(verdict: verdict, typeLabel: "bug", flow: flow) == verdict.labels + ["bug"])
+        #expect(NewIssues.labels(verdict: verdict, typeLabel: nil, flow: flow) == verdict.labels)
+        // A pick saved before the flow dropped the label, or a repo with no intake: the issue gets no type label.
+        #expect(NewIssues.labels(verdict: verdict, typeLabel: "feature", flow: flow) == verdict.labels)
+        #expect(NewIssues.labels(verdict: verdict, typeLabel: "bug", flow: nil) == verdict.labels)
+    }
+
+    @Test func aSavedPickMatchesTheFlowsLabelWithoutRegardToCaseAndTakesItsSpelling() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: FlowFixture.data()) as? [String: Any])
+        var intake = try #require(json["intake"] as? [String: Any])
+        intake["type"] = ["default": "feat", "labels": ["Bug": "fix"]]
+        json["intake"] = intake
+        let renamed = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: json))
+        let verdict = try #require(IssueTriage.verdict([0, 0, 0]))
+        #expect(NewIssues.labels(verdict: verdict, typeLabel: "bug", flow: renamed) == verdict.labels + ["Bug"])
+    }
 }

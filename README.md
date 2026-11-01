@@ -234,7 +234,9 @@ are satisfied.
 
 When the agent has written the issue, the title and body are editable. The same three questions as
 in Triage are the steps under it, so the issue is created with its `priority:` and `stage:` labels already
-set, and does not come back to Triage. **Create issue** is the only step that writes to GitHub: it
+set, and does not come back to Triage. When the repo's flow maps labels to branch types (`intake.type.labels`,
+`bug` building as `fix` for instance), a Type dropdown above the title offers them: pick one and the issue
+carries it, so intake builds it as that type instead of the default. **Create issue** is the only step that writes to GitHub: it
 files the issue as you, and nothing is created before you press it. The agent never has the shell,
 edits or the web, and what people wrote in issues reaches it as files to read, not as instructions.
 Each turn is one short job on the default branch, so a conversation needs a Claude Code agent named

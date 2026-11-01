@@ -142,6 +142,30 @@ public enum NewIssues {
         guard !title.isEmpty, !body.isEmpty else { return .questions(text) }
         return .ready(title: title, body: body)
     }
+
+    /// A label the repo's intake maps to a branch type, offered when the issue is created.
+    public struct TypeChoice: Equatable, Sendable {
+        public let label: String
+        public let type: String
+    }
+
+    /// The type labels the New issue screen offers: the flow's intake `type.labels`, in the order of
+    /// their names. Empty without a flow or an intake, when there is nothing to choose; the default
+    /// type (`intake.type.default`) is what an issue with none of these labels is built as.
+    public static func typeChoices(_ flow: Flow?) -> [TypeChoice] {
+        guard let rule = flow?.intake?.type else { return [] }
+        return rule.labels.sorted { $0.key.lowercased() < $1.key.lowercased() }.map { TypeChoice(label: $0.key, type: $0.value) }
+    }
+
+    /// The labels the created issue gets: the priority and stage the answers set, and the chosen type
+    /// label when the repo's flow still offers it (the pick outlives a flow edit on disk), spelled as
+    /// the flow spells it now: intake matches labels without regard to case, and so does this.
+    public static func labels(verdict: TriageVerdict, typeLabel: String?, flow: Flow?) -> [String] {
+        guard let typeLabel,
+              let offered = typeChoices(flow).first(where: { $0.label.caseInsensitiveCompare(typeLabel) == .orderedSame })
+        else { return verdict.labels }
+        return verdict.labels + [offered.label]
+    }
 }
 
 extension GitHubClient {

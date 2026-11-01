@@ -360,6 +360,8 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   since its job ran is not. A retry runs under the failed job's own key, so a comment written
   while the agent worked does not strand an issue that is already mine. `{issue}`, `{repo}`, `{base}` and `{type}` (the first of the issue's labels `type.labels`
   maps, else `type.default`) are the only substitutions; issue text never reaches an argv or the prompt.
+  The New issue screen offers the `type.labels` names in a Type dropdown above the title, so an issue
+  written in Bton is created with the label its type needs.
   The feature context above applies: an issue the registry links gets its feature, and the agent is
   asked to write `Feature: <id>` in the PR body.
 - **The PR.** Bton opens none: the prompt tells the agent to follow the repo's own process (its
