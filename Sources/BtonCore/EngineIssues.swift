@@ -56,6 +56,7 @@ extension Engine {
         var seen = Set<Int>()
         openIssues[slug] = issues.filter { seen.insert($0.number).inserted }
         issuesReadThisTick.insert(slug)
+        lastIssueReads[slug] = (.now, pages)
         if after == nil { issuesMore.remove(slug) } else { issuesMore.insert(slug) }
         return true
     }
@@ -152,11 +153,12 @@ extension Engine {
     }
 
     /// The turns this repo's requests ask for. A turn that already ran ends its request; one whose
-    /// issues were not read this tick waits for a read, so the agent never works from a stale list.
+    /// issues are not fresh (`issuesFresh`: read this sync, or kept from one under a poll old)
+    /// waits for a read, so the agent never works from a stale list.
     func composeCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
-                           merged: [MergedPullRequest],
+                           merged: [MergedPullRequest], issuesFresh: Bool,
                            clone: URL, codeGraph: Bool, model: String) -> [DispatchCandidate] {
-        guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
+        guard issuesFresh else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
         let ran = Set(all.map(\.key))

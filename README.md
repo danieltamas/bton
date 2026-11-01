@@ -240,7 +240,9 @@ carries it, so intake builds it as that type instead of the default. **Create is
 files the issue as you, and nothing is created before you press it. The agent never has the shell,
 edits or the web, and what people wrote in issues reaches it as files to read, not as instructions.
 Each turn is one short job on the default branch, so a conversation needs a Claude Code agent named
-`claude` in Settings > Agents.
+`claude` in Settings > Agents. A turn starts from the lists the last sync read when they are younger
+than the sync interval, so the agent is at work seconds after Send; only an older read waits for a
+full sync.
 
 **Several at once.** Every New issue is its own conversation. Go back to the list while an agent
 works and it stays there as a hatched card that says whether the agent is working, has replied

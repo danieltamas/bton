@@ -91,6 +91,64 @@ struct IssuePagingAcceptanceTests {
         #expect(try GitHubClient.decodeIssue(data, repo: "o/r") == nil)
     }
 
+    @Test func aTurnSentStartsFromTheLastReadWithoutGitHubWhileItIsFresh() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        let engine = try f.engine()
+        let request = NewIssues.Request(id: "123456789", repo: IssuePagingPayload.repo, turn: 1, conversation: "## Owner\n\nexport csv")
+        // Nothing read yet: the turn needs the full sync.
+        await engine.requestCompose(request)
+        #expect(await engine.composeTick() == nil)
+        let full = await engine.tick(dispatching: false)
+        #expect(full.problem == nil)
+        try f.clearCalls()
+        // Read a moment ago: the turn's tick shows the same lists and asks GitHub for nothing.
+        let quick = try #require(await engine.composeTick())
+        #expect(quick.problem == nil)
+        #expect(quick.triage.map(\.number) == full.triage.map(\.number))
+        #expect(quick.flows.keys.sorted() == full.flows.keys.sorted())
+        #expect(quick.me == full.me)
+        #expect(try String(contentsOf: f.file("call-count"), encoding: .utf8) == "0")
+        // Load more asked for since: the list the agent would get is short by a page, so the full sync reads it.
+        await engine.loadMoreIssues(repo: IssuePagingPayload.repo)
+        #expect(await engine.composeTick() == nil)
+    }
+
+    @Test func aTurnIsMadeOnlyFromAFreshIssueList() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        let engine = try f.engine()
+        let request = NewIssues.Request(id: "123456789", repo: IssuePagingPayload.repo, turn: 1, conversation: "## Owner\n\nexport csv")
+        let agents = ["claude": AgentTemplate(argv: ["/usr/local/bin/claude", "-p"])]
+        await engine.requestCompose(request)
+        let clone = f.root
+        // A stale list makes no turn and keeps the request for the sync that reads a fresh one.
+        let stale = await engine.composeCandidates(repo: IssuePagingPayload.repo, defaultBranch: "main", me: "me", agents: agents,
+                                                   merged: [], issuesFresh: false, clone: clone, codeGraph: false, model: "m")
+        #expect(stale.isEmpty)
+        let made = await engine.composeCandidates(repo: IssuePagingPayload.repo, defaultBranch: "main", me: "me", agents: agents,
+                                                  merged: [], issuesFresh: true, clone: clone, codeGraph: false, model: "m")
+        #expect(made.map(\.key) == [request.key])
+    }
+
+    @Test func noTurnWaitingMeansNoQuickTick() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        let engine = try f.engine()
+        _ = await engine.tick(dispatching: false)
+        #expect(await engine.composeTick() == nil)
+    }
+
+    @Test func aReadIsFreshUnderOnePollWithEveryWantedPage() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let fresh = now.addingTimeInterval(-100), stale = now.addingTimeInterval(-300)
+        #expect(Engine.isFresh(read: fresh, issues: fresh, pages: 1, wanted: 1, now: now, maxAge: 300))
+        #expect(!Engine.isFresh(read: stale, issues: fresh, pages: 1, wanted: 1, now: now, maxAge: 300))
+        #expect(!Engine.isFresh(read: fresh, issues: stale, pages: 1, wanted: 1, now: now, maxAge: 300))
+        #expect(!Engine.isFresh(read: fresh, issues: fresh, pages: 1, wanted: 2, now: now, maxAge: 300))
+        #expect(Engine.isFresh(read: fresh, issues: fresh, pages: 3, wanted: 2, now: now, maxAge: 300))
+    }
+
     @Test func loadMoreReadsBothPagesAndClearsMoreWhenLastPageArrives() async throws {
         let f = try IssuePagingEngineFixture.make()
         defer { f.remove() }

@@ -106,6 +106,26 @@ public actor Engine {
     var deferred: [String: String] = [:]
     /// Each repo's registry facts between syncs, by lowercased slug.
     var featureStates: [String: FeatureState] = [:]
+    /// What the last sync read of each repo, by lowercased slug: a New issue turn starts from it
+    /// while it is under one poll old (`composeTick`), instead of reading GitHub again.
+    var lastReads: [String: RepoRead] = [:]
+    /// When each repo's open issues were last read in full, and how many pages, by lowercased slug.
+    var lastIssueReads: [String: (at: Date, pages: Int)] = [:]
+    /// The environment holds the last sync found, by lowercased slug: a quick tick shows them
+    /// again, since it probes only the repos it starts a turn in.
+    private var outages: [String: String] = [:]
+
+    /// One repo as a sync read it, in the order the tick needs it.
+    struct RepoRead {
+        var repo: WatchedRepo
+        let status: FlowStatus
+        let viewer: String
+        let defaultBranch: String
+        let pullRequests: [PullRequest]
+        let merged: [MergedPullRequest]
+        let at: Date
+        var flow: Flow? { status.flow }
+    }
 
     public init(home: BtonHome = BtonHome(), log: @escaping @Sendable (String) -> Void = { _ in }) throws {
         try self.init(home: home, github: GitHubClient(), log: log)
@@ -187,8 +207,7 @@ public actor Engine {
             // Read every tick: the app's Repos panel and a hand edit both change it.
             let config = try BtonConfig.loadOrCreate(home: home)
             // Every repo is read before anything starts, so the agents go where the work is.
-            var reads: [(repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
-                         pullRequests: [PullRequest], merged: [MergedPullRequest])] = []
+            var reads: [RepoRead] = []
             var failures: [String] = [], unread: Set<String> = []
             issuesReadThisTick = []
             for repo in config.repos {
@@ -208,7 +227,10 @@ public actor Engine {
                     snapshot.openPullRequests += pullRequests
                     snapshot.merged += merged
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
-                    reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
+                    let kept = RepoRead(repo: repo, status: status, viewer: read.viewer, defaultBranch: read.defaultBranch,
+                                        pullRequests: pullRequests, merged: merged, at: .now)
+                    reads.append(kept)
+                    lastReads[repo.slug.lowercased()] = kept
                     // A flow with issue moves is about the issues nobody looked at, which are the
                     // oldest: every page is read, not the newest one.
                     if repo.startsMoves, status.flow?.issues?.isEmpty == false { issuePages[repo.slug.lowercased()] = Self.issuePageCap }
@@ -222,15 +244,7 @@ public actor Engine {
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
-            snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me, flows: snapshot.flows)
-            snapshot.triage = IssueTriage.ordered(config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) })
-            snapshot.issuesMore = issuesMore
-            snapshot.issueRevisions = issueRevisions
-            snapshot.ready = config.repos.flatMap { repo in
-                IssueIntake.ready(openIssues[repo.slug.lowercased()] ?? [], priority: snapshot.flows[repo.slug]?.flow?.intake?.priority,
-                                  held: IssueIntake.held(by: jobs.all(), repo: repo.slug))
-            }
-            snapshot.loggedOut = heldAgents().sorted()
+            issueLists(into: &snapshot, config: config)
             // Started here, before dispatch, and never awaited: a build runs beside the agents.
             for read in reads where config.buildsGraph(read.repo) {
                 await graphs.refresh(repo: read.repo, branch: read.repo.branch ?? read.defaultBranch,
@@ -330,6 +344,7 @@ public actor Engine {
                                                table: read.flow?.decide?.table).map { ($0, clone, nil) }
                     pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                  me: read.viewer, agents: config.agents, merged: read.merged,
+                                                 issuesFresh: issuesReadThisTick.contains(read.repo.slug.lowercased()),
                                                  clone: clone, codeGraph: config.buildsGraph(read.repo),
                                                  model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
                     // Every agent job of this repo runs under its hat and starts with what the registry knows about its work.
@@ -348,78 +363,180 @@ public actor Engine {
                 }
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
+            outages = snapshot.outages
             if let me = snapshot.me {
-                // A move already run on its head can't start, so a pick waiting on it would wait forever.
-                let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
-                let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
-                    .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) }).union(deferred.keys)
-                var started: Set<String> = [], startedKeys: Set<JobKey> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
-                // A pick whose lease is held elsewhere frees its slot for the next candidate.
-                while true {
-                    // Read again each round: an agent may have logged out while the last round started jobs.
-                    let held = heldAgents()
-                    let open = pending.map(\.candidate).filter { candidate in
-                        !refused.contains(candidate.key) && !(candidate.agent.map(held.contains) ?? false)
-                    }
-                    let selected = DispatchPlanner.select(open, jobs: jobs.all(), maxAgents: config.maxAgents,
-                                                          agents: config.agents, first: next)
-                    guard !selected.isEmpty else { break }
-                    let dispatcher = try await dispatcher(me: me, config: config)
-                    for chosen in selected {
-                        guard let entry = pending.first(where: { $0.candidate.key == chosen.key }) else { continue }
-                        if let agent = chosen.agent, heldAgents().contains(agent) {
-                            refused.insert(chosen.key)
-                            continue
-                        }
-                        var candidate = Supervision.steered(chosen, jobs: jobs.all())
-                        candidate.pressed = pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
-                        let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
-                        switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
-                                                         environment: environment) {
-                        case .started:
-                            started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
-                            startedKeys.insert(candidate.key)
-                        case .busy: refused.insert(candidate.key)
-                        case .ran:
-                            refused.insert(candidate.key)
-                            ran.insert(candidate.key)
-                            if candidate.issueMove != nil { issueMovesRanElsewhere.insert(candidate.key) }
-                        }
-                    }
-                }
-                // A pick whose move already ran elsewhere would wait forever, or hand its place to another move.
-                let ranPicks = Set(ran.map { Self.pick(repo: $0.repo, item: $0.item) })
-                for pick in started { asked[pick] = nil }
-                // Only the ask that ran: a newer one on the same issue, asked meanwhile, stays.
-                let drafted = startedKeys.union(ran)
-                draftRequests.removeAll { drafted.contains(IssueDrafts.key(for: $0)) }
-                composeRequests.removeAll { drafted.contains($0.key) }
-                next.removeAll { ranPicks.contains($0) }
-                let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
-                // A press that no candidate answers is not dropped in silence: the log says so.
-                for pick in next where picksAtStart.contains(pick) && !kept.contains(pick) && !ranPicks.contains(pick) && pressedPicks.contains(pick) {
-                    log("\(pick): not started: no move of it Bton can start now")
-                }
-                next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
-                let refusedPicks = Set(refused.map { Self.pick(repo: $0.repo, item: $0.item) })
-                waiting = Dictionary(next.filter { !started.contains($0) }.map { pick in
-                    (pick, deferred[pick] ?? (unplanned.contains { pick.hasPrefix($0 + "#") } ? "its repo could not be read this sync"
-                        : refusedPicks.contains(pick) ? "another job or Mac holds the PR's lease, or its job could not be recorded"
-                        : runnable.contains(pick) ? "waiting for a free agent slot (\(config.maxAgents) at most) or its agent to log in"
-                        : "the PR's move is not one Bton can start now"))
-                }) { first, _ in first }
-                // A press starts one move: a later move of the same PR the sync starts is not pressed.
-                pressedPicks = pressedPicks.subtracting(started).filter(next.contains)
-                // A request whose lease history says it already ran elsewhere would hold the PR's flow move
-                // back; one whose lease is only held now (a schedule's agent on the PR) waits for it.
-                asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
-                for key in refused where key.move == "resolve" { declined[key] = .now }
-                declined = declined.filter { $0.value > .now.addingTimeInterval(-900) }
+                try await start(pending, me: me, config: config, picksAtStart: picksAtStart, unplanned: unplanned)
             }
         } catch {
             snapshot.problem = error.localizedDescription
         }
         return decorated(snapshot)
+    }
+
+    /// The lists the window shows from what is in memory: asks, triage rows, ready issues, the
+    /// agents whose login expired.
+    private func issueLists(into snapshot: inout Snapshot, config: BtonConfig) {
+        snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me, flows: snapshot.flows)
+        snapshot.triage = IssueTriage.ordered(config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) })
+        snapshot.issuesMore = issuesMore
+        snapshot.issueRevisions = issueRevisions
+        snapshot.ready = config.repos.flatMap { repo in
+            IssueIntake.ready(openIssues[repo.slug.lowercased()] ?? [], priority: snapshot.flows[repo.slug]?.flow?.intake?.priority,
+                              held: IssueIntake.held(by: jobs.all(), repo: repo.slug))
+        }
+        snapshot.loggedOut = heldAgents().sorted()
+    }
+
+    /// A New issue turn, sent: its agent starts from what the last sync read when every list it
+    /// needs is under one poll old, instead of waiting for the next sync to read GitHub again (a
+    /// repo whose registry links hundreds of issues takes most of a minute to read). Only the
+    /// turns start here: a PR's move or an intake reads the live head first, in the full sync.
+    /// Nil when no turn waits, or a turn's repo has no read that fresh (its issues included, and
+    /// not asked to load more since): the caller syncs in full.
+    public func composeTick() async -> Snapshot? {
+        guard !composeRequests.isEmpty else { return nil }
+        var snapshot = Snapshot()
+        do {
+            let config = try BtonConfig.loadOrCreate(home: home)
+            let maxAge = TimeInterval(config.pollSeconds)
+            let wanted = Set(composeRequests.map { $0.repo.lowercased() })
+            for slug in wanted {
+                guard config.repos.contains(where: { $0.slug.lowercased() == slug }),
+                      let read = lastReads[slug], let issues = lastIssueReads[slug],
+                      Self.isFresh(read: read.at, issues: issues.at, pages: issues.pages,
+                                   wanted: max(1, issuePages[slug] ?? 1), now: .now, maxAge: maxAge) else { return nil }
+            }
+            // The window shows the same lists as after the sync they come from, for the repos as
+            // the config names them now (a path or an environment changed since the sync counts).
+            let reads: [RepoRead] = config.repos.compactMap { repo in
+                guard var read = lastReads[repo.slug.lowercased()] else { return nil }
+                read.repo = repo
+                return read
+            }
+            snapshot.outages = outages
+            for read in reads {
+                snapshot.flows[read.repo.slug] = read.status
+                snapshot.me = read.viewer
+                snapshot.openPullRequests += read.pullRequests
+                snapshot.merged += read.merged
+                snapshot.defaultBranches[read.repo.slug] = read.defaultBranch
+                if let report = featureStates[read.repo.slug.lowercased()]?.report { snapshot.features[read.repo.slug] = report }
+            }
+            issueLists(into: &snapshot, config: config)
+            guard let me = snapshot.me else { return nil }
+            var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
+            for read in reads where wanted.contains(read.repo.slug.lowercased()) {
+                guard let path = read.repo.path else { continue }
+                let clone = URL(fileURLWithPath: path)
+                let first = pending.count
+                pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
+                                             me: read.viewer, agents: config.agents, merged: read.merged, issuesFresh: true,
+                                             clone: clone, codeGraph: config.buildsGraph(read.repo),
+                                             model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
+                for index in first..<pending.count {
+                    let hatted = Self.hatted(pending[index].candidate, repo: read.repo, hats: config.hatSettings, agents: config.agents)
+                    pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
+                }
+                guard first < pending.count else { continue }
+                let slug = read.repo.slug.lowercased()
+                if let hold = await environmentHold(read.repo) {
+                    pending.removeSubrange(first...)
+                    snapshot.outages[slug] = hold
+                } else if let lifted = snapshot.outages.removeValue(forKey: slug) {
+                    // The service answers again: the repo's picks no longer wait on it.
+                    let prefix = slug + "#"
+                    deferred = deferred.filter { !($0.key.hasPrefix(prefix) && $0.value == lifted) }
+                }
+            }
+            outages = snapshot.outages
+            // Only the turns' own picks are judged: every other pick waits for the full sync, as before.
+            let turns = Set(pending.map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
+            try await start(pending, me: me, config: config, picksAtStart: turns, unplanned: [], judgedOnly: true)
+        } catch {
+            snapshot.problem = error.localizedDescription
+        }
+        return decorated(snapshot)
+    }
+
+    /// Whether a repo's last read can start a New issue turn: the lists and the issues both
+    /// younger than `maxAge`, and the issues read to as many pages as are wanted now.
+    static func isFresh(read: Date, issues: Date, pages: Int, wanted: Int, now: Date, maxAge: TimeInterval) -> Bool {
+        now.timeIntervalSince(read) < maxAge && now.timeIntervalSince(issues) < maxAge && pages >= wanted
+    }
+
+    /// Starts what `pending` holds, picks first, as many as the agent slots allow, and settles the
+    /// picks: the started ones leave the line, the unplanned ones say why they wait. `judgedOnly`
+    /// (a quick tick) rewrites the reasons of `picksAtStart` alone: the rest were judged by the
+    /// last full sync and keep theirs.
+    private func start(_ pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)], me: String, config: BtonConfig,
+                       picksAtStart: Set<String>, unplanned: Set<String>, judgedOnly: Bool = false) async throws {
+        // A move already run on its head can't start, so a pick waiting on it would wait forever.
+        let seen = Set(jobs.all().filter { $0.retry != true }.map(\.key))
+        let runnable = Set(pending.filter { $0.candidate.pr == nil || !seen.contains($0.candidate.key) }
+            .map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) }).union(deferred.keys)
+        var started: Set<String> = [], startedKeys: Set<JobKey> = [], refused: Set<JobKey> = [], ran: Set<JobKey> = []
+        // A pick whose lease is held elsewhere frees its slot for the next candidate.
+        while true {
+            // Read again each round: an agent may have logged out while the last round started jobs.
+            let held = heldAgents()
+            let open = pending.map(\.candidate).filter { candidate in
+                !refused.contains(candidate.key) && !(candidate.agent.map(held.contains) ?? false)
+            }
+            let selected = DispatchPlanner.select(open, jobs: jobs.all(), maxAgents: config.maxAgents,
+                                                  agents: config.agents, first: next)
+            guard !selected.isEmpty else { break }
+            let dispatcher = try await dispatcher(me: me, config: config)
+            for chosen in selected {
+                guard let entry = pending.first(where: { $0.candidate.key == chosen.key }) else { continue }
+                if let agent = chosen.agent, heldAgents().contains(agent) {
+                    refused.insert(chosen.key)
+                    continue
+                }
+                var candidate = Supervision.steered(chosen, jobs: jobs.all())
+                candidate.pressed = pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
+                switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
+                                                 environment: environment) {
+                case .started:
+                    started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                    startedKeys.insert(candidate.key)
+                case .busy: refused.insert(candidate.key)
+                case .ran:
+                    refused.insert(candidate.key)
+                    ran.insert(candidate.key)
+                    if candidate.issueMove != nil { issueMovesRanElsewhere.insert(candidate.key) }
+                }
+            }
+        }
+        // A pick whose move already ran elsewhere would wait forever, or hand its place to another move.
+        let ranPicks = Set(ran.map { Self.pick(repo: $0.repo, item: $0.item) })
+        for pick in started { asked[pick] = nil }
+        // Only the ask that ran: a newer one on the same issue, asked meanwhile, stays.
+        let drafted = startedKeys.union(ran)
+        draftRequests.removeAll { drafted.contains(IssueDrafts.key(for: $0)) }
+        composeRequests.removeAll { drafted.contains($0.key) }
+        next.removeAll { ranPicks.contains($0) }
+        let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
+        // A press that no candidate answers is not dropped in silence: the log says so.
+        for pick in next where picksAtStart.contains(pick) && !kept.contains(pick) && !ranPicks.contains(pick) && pressedPicks.contains(pick) {
+            log("\(pick): not started: no move of it Bton can start now")
+        }
+        next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
+        let refusedPicks = Set(refused.map { Self.pick(repo: $0.repo, item: $0.item) })
+        let judged = Dictionary(next.filter { !started.contains($0) && (!judgedOnly || picksAtStart.contains($0)) }.map { pick in
+            (pick, deferred[pick] ?? (unplanned.contains { pick.hasPrefix($0 + "#") } ? "its repo could not be read this sync"
+                : refusedPicks.contains(pick) ? "another job or Mac holds the PR's lease, or its job could not be recorded"
+                : runnable.contains(pick) ? "waiting for a free agent slot (\(config.maxAgents) at most) or its agent to log in"
+                : "the PR's move is not one Bton can start now"))
+        }) { first, _ in first }
+        waiting = judgedOnly ? waiting.filter { !picksAtStart.contains($0.key) }.merging(judged) { _, new in new } : judged
+        // A press starts one move: a later move of the same PR the sync starts is not pressed.
+        pressedPicks = pressedPicks.subtracting(started).filter(next.contains)
+        // A request whose lease history says it already ran elsewhere would hold the PR's flow move
+        // back; one whose lease is only held now (a schedule's agent on the PR) waits for it.
+        asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
+        for key in refused where key.move == "resolve" { declined[key] = .now }
+        declined = declined.filter { $0.value > .now.addingTimeInterval(-900) }
     }
 
     /// The snapshot with this Mac's jobs, picks and costs, newest first.

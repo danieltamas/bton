@@ -17,7 +17,9 @@ final class AppStore {
     private(set) var loggedOut: [String] = []
     private(set) var isRefreshing = false
     /// A refresh asked for while one runs: it runs right after, never dropped.
-    private var refreshAgain = false
+    /// A refresh asked for while one runs: true when a quick one will do (a turn was sent), false
+    /// when it must be a full sync, nil when none waits.
+    private var refreshAgain: Bool?
     /// Run-next picks waiting for their repo, `owner/name#item` with the repo lowercased.
     private(set) var next: [String] = []
     /// Why a pick has not started at the last sync, by pick.
@@ -524,15 +526,22 @@ final class AppStore {
         }
     }
 
-    func refresh() async {
+    /// `quick`: a New issue turn was sent; the engine starts it from the last sync's lists when
+    /// they are fresh, and syncs in full otherwise. A refresh asked for while one runs follows it:
+    /// quick after a quick one, full when either was full.
+    func refresh(quick: Bool = false) async {
         guard !isRefreshing else {
-            refreshAgain = true
+            // Full wins: a sync covers a turn sent meanwhile; a quick refresh covers nothing else.
+            refreshAgain = (refreshAgain ?? true) && quick
             return
         }
-        repeat {
-            refreshAgain = false
-            await tick()
-        } while refreshAgain
+        var quick = quick
+        while true {
+            refreshAgain = nil
+            await tick(quick: quick)
+            guard let again = refreshAgain else { break }
+            quick = again
+        }
     }
 
     /// Starts a PR's move or a schedule before anything else, as soon as its repo is free.
@@ -638,7 +647,7 @@ final class AppStore {
         if !next.contains(pick) { next.insert(pick, at: 0) }
     }
 
-    private func tick() async {
+    private func tick(quick: Bool = false) async {
         guard let engine else { return }
         // The engine reads the file every tick; the window shows the same.
         if let latest = try? BtonConfig.loadOrCreate(home: home) { config = latest }
@@ -652,7 +661,9 @@ final class AppStore {
         let before = Before(moves: Set(humanMovesForMe.map(\.id)), jobs: jobs, merged: Set(merged.map(\.id)),
                             outages: Set(outages.keys), first: lastRefresh == nil)
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
-        let snapshot = await engine.tick { read in await self.apply(read) }
+        // A turn just sent starts from the last read when it is fresh, with no GitHub read at all.
+        let turn = quick ? await engine.composeTick() : nil
+        let snapshot = if let turn { turn } else { await engine.tick { read in await self.apply(read) } }
         apply(snapshot)
         local.start(repos: config.repos, defaults: snapshot.defaultBranches, flows: snapshot.flows)
         notify(since: before)

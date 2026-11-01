@@ -133,9 +133,7 @@ extension Engine {
     /// waits in line with the reason. An automatic run also asks the item's lease when the last
     /// run started on any Mac, so two Btons keep one nightly clock; a lease that cannot be read
     /// means no automatic run this tick.
-    func featureJob(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
-                                     pullRequests: [PullRequest], merged: [MergedPullRequest]),
-                            config: BtonConfig, leases: LeaseStore) async -> DispatchCandidate? {
+    func featureJob(_ read: RepoRead, config: BtonConfig, leases: LeaseStore) async -> DispatchCandidate? {
         let agents = config.agents
         let slug = read.repo.slug
         let pick = Self.pick(repo: slug, item: FeatureJob.item)

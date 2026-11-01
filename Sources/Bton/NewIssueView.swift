@@ -150,7 +150,7 @@ extension AppStore {
         await engine.requestCompose(NewIssues.Request(id: session.id, repo: session.repo, turn: last.round,
                                                       conversation: NewIssues.conversation(turns), notes: notes))
         markStarting(repo: session.repo, item: "new-\(session.id)")
-        await refresh()
+        await refresh(quick: true)
     }
 
     func send(_ text: String, in session: NewIssueSession) async {

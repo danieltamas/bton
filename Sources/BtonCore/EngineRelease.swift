@@ -4,8 +4,7 @@ extension Engine {
     /// The release this tick, for the Bton of `release.who`: opens the PR when the release is due
     /// (or pressed) and none is open, or plans the merge of the open one. Opening is one `gh`
     /// call, no job: a second Mac of the same login is refused by GitHub and logs it.
-    func planRelease(_ read: (repo: WatchedRepo, flow: Flow?, viewer: String, defaultBranch: String,
-                              pullRequests: [PullRequest], merged: [MergedPullRequest])) async -> DispatchCandidate? {
+    func planRelease(_ read: RepoRead) async -> DispatchCandidate? {
         guard let release = read.flow?.release, release.who.caseInsensitiveCompare(read.viewer) == .orderedSame else { return nil }
         let slug = read.repo.slug
         let pick = Self.pick(repo: slug, item: Release.item)
