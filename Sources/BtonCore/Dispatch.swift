@@ -26,6 +26,9 @@ public struct DispatchCandidate: Sendable {
     public let command: [String]?
     /// Bton posts the agent's final message as the review comment.
     public let postComment: Bool
+    /// The flow's `fix` run by an agent: the PR's head must have moved by the time the agent
+    /// exits, or the job failed, whatever its report says.
+    public var pushes = false
     public let timeout: Duration
     /// A schedule's pinned model; nil runs the agent's own.
     public var model: String?
@@ -169,10 +172,25 @@ public enum DispatchPlanner {
     /// for a ruling or a fork, and its report says why. Unconfirmed is a failure too.
     public static func resolveOutcome(startedAt head: String,
                                       liveHead: () async throws -> String) async -> (status: Job.Status, detail: String?) {
+        await headMoved(from: head, liveHead: liveHead,
+                        unmoved: "pushed nothing: the agent stopped without resolving; its report says why")
+    }
+
+    /// A fix (any agent move that edits the PR's branch) is done when the PR's head moved: an
+    /// agent that exits 0 after a blocked tool or a question nobody answered pushed nothing, and
+    /// a success there would hide that until someone reads its report.
+    public static let endedWithoutPushing = "ended without pushing"
+
+    public static func pushOutcome(startedAt head: String,
+                                   liveHead: () async throws -> String) async -> (status: Job.Status, detail: String?) {
+        await headMoved(from: head, liveHead: liveHead,
+                        unmoved: "\(endedWithoutPushing): the PR is still at \(head.prefix(12)); the agent's report says what it did instead")
+    }
+
+    private static func headMoved(from head: String, liveHead: () async throws -> String,
+                                  unmoved: String) async -> (status: Job.Status, detail: String?) {
         do {
-            return try await liveHead() == head
-                ? (.failed, "pushed nothing: the agent stopped without resolving; its report says why")
-                : (.succeeded, nil)
+            return try await liveHead() == head ? (.failed, unmoved) : (.succeeded, nil)
         } catch {
             return (.failed, "could not confirm the push: \(error.localizedDescription)")
         }
@@ -204,6 +222,9 @@ public enum DispatchPlanner {
                                           command: rule.agent?.value(for: move.tier) == nil ? rule.command?.map(filling) : nil,
                                           postComment: rule.post == "comment", timeout: rule.timeout)
         candidate.helpers = rule.helpers ?? []
+        // The fix answers a review on the branch: its push is the PR's response. Any other agent
+        // move may finish through a comment or a gh call that leaves the head where it was.
+        candidate.pushes = move.name == "fix" && candidate.agent != nil
         candidate.skipsChecks = rule.checks == RuleChecks.none
         if case .own(let argv)? = rule.checks {
             candidate.checks = argv.map { $0.map(filling) }

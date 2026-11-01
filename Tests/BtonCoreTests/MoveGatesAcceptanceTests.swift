@@ -183,6 +183,8 @@ private struct MoveGatesFixture {
         try #require(push.status == 0)
         let handler = """
         if [ "${1-}" = pr ] && [ "${2-}" = view ]; then
+          # The fake fix agent's marker stands for its push: the PR's head has moved once it ran.
+          if [ -e "$(dirname "$0")/agent-fix" ]; then printf '%s\\n' '{"headRefOid":"pushed-by-fix","state":"OPEN"}'; exit 0; fi
           printf '%s\\n' '{"headRefOid":"\(head)","state":"OPEN"}'
           exit 0
         fi

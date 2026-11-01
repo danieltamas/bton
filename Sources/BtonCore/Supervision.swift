@@ -177,6 +177,8 @@ public enum Supervision {
             known = (.escalate, "the repo's environment in Settings > Repos is invalid: fix the variable named in the detail")
         } else if detail.hasPrefix("check ") {
             known = (.none, "a check failed before the agent started: its output was posted on the PR, so the fix move gets it")
+        } else if detail.hasPrefix(DispatchPlanner.endedWithoutPushing) {
+            known = (.escalate, "the agent exited without pushing: its report says what stopped it (a blocked tool, a question); fix that on this Mac, then press Retry")
         } else {
             known = nil
         }

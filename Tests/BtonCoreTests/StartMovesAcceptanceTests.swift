@@ -295,7 +295,8 @@ struct StartMovesFixture {
 
     func waitForJobs() async throws {
         let store = try JobStore(home: home)
-        for _ in 0..<200 {
+        // A fix that pushed nothing reads the head three times, 10 s apart in all, before it ends.
+        for _ in 0..<800 {
             if store.all().allSatisfy({ $0.status != .running }) { return }
             try await Task.sleep(for: .milliseconds(25))
         }

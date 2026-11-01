@@ -245,7 +245,9 @@ private struct ProbeAcceptanceFixture {
         try Data().write(to: file("release"))
         try await wait { try store.all().contains { $0.id == job.id && $0.status != .running } }
         let ended = try #require(try store.all().first { $0.id == job.id })
-        #expect(ended.status == .succeeded)
+        // The no-op fix agent pushes nothing, so the job ends as such; the checks and the agent still ran.
+        #expect(ended.status == .failed)
+        #expect(ended.detail?.hasPrefix("ended without pushing") == true)
         // BTON_PRESSED reaches the checks, never the agent (PressedAcceptanceTests, the fix move).
         #expect(try read("agent") == "absent")
     }

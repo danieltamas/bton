@@ -140,7 +140,7 @@ struct PressedAcceptanceTests {
         try f.configurePost()
         let engine = try f.engine()
         try await engine.runNow(f.key)
-        try await f.observe(engine, expected: "1")
+        try await f.observe(engine, expected: "1", posts: true)
         let posted = try f.read("posted")
         #expect(posted.contains("There is 1 migration"))
         #expect(posted.contains("[REPO_SENTINEL]"))
@@ -350,7 +350,8 @@ private struct PressedFixture {
         try #require(try condition(), "Timed out waiting for the real job boundary")
     }
 
-    func observe(_ engine: Engine, expected: String, excluding: UUID? = nil, item: String = "pr-7") async throws {
+    func observe(_ engine: Engine, expected: String, excluding: UUID? = nil, item: String = "pr-7",
+                 posts: Bool = false) async throws {
         let snapshot = await engine.tick()
         #expect(snapshot.problem == nil)
         let job = try #require(snapshot.jobs.first { $0.id != excluding && $0.key.item == item && $0.key.move == move })
@@ -371,6 +372,11 @@ private struct PressedFixture {
             // The no-op agent proves dispatch/checks, but deliberately pushes no resolution.
             #expect(ended.status == .failed)
             #expect(ended.detail?.contains("pushed nothing") == true)
+        } else if move == "fix", !posts {
+            // The same no-op agent: a fix that left the head where it was failed, as such; one
+            // whose message is posted answers the review with that comment.
+            #expect(ended.status == .failed)
+            #expect(ended.detail?.hasPrefix("ended without pushing") == true)
         } else {
             #expect(ended.status == .succeeded, "\(ended.detail ?? "")")
         }

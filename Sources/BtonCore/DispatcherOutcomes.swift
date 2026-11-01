@@ -37,14 +37,29 @@ extension Dispatcher {
             return (.failed, "could not confirm the push: \(job.key.item) is not a PR")
         }
         return await DispatchPlanner.resolveOutcome(startedAt: job.key.head) { [github] in
-            // GitHub can show the old head for a few seconds after a push.
-            var head = try await github.pullRequestHead(repo: job.key.repo, number: number)
-            for _ in 0..<2 where head == job.key.head {
-                try await Task.sleep(for: .seconds(5))
-                head = try await github.pullRequestHead(repo: job.key.repo, number: number)
-            }
-            return head
+            try await Self.settledHead(of: number, in: job.key.repo, startedAt: job.key.head, github: github)
         }
+    }
+
+    /// A fix is done when the PR's head moved: an agent that exits 0 without a push (a blocked
+    /// tool, a question nobody answered) wrote a report, not a fix.
+    func pushOutcome(of job: Job) async -> (status: Job.Status, detail: String?) {
+        guard let number = Int(job.key.item.dropFirst("pr-".count)) else {
+            return (.failed, "could not confirm the push: \(job.key.item) is not a PR")
+        }
+        return await DispatchPlanner.pushOutcome(startedAt: job.key.head) { [github] in
+            try await Self.settledHead(of: number, in: job.key.repo, startedAt: job.key.head, github: github)
+        }
+    }
+
+    /// GitHub can show the old head for a few seconds after a push.
+    private static func settledHead(of number: Int, in repo: String, startedAt head: String, github: GitHubClient) async throws -> String {
+        var live = try await github.pullRequestHead(repo: repo, number: number)
+        for _ in 0..<2 where live == head {
+            try await Task.sleep(for: .seconds(5))
+            live = try await github.pullRequestHead(repo: repo, number: number)
+        }
+        return live
     }
 
     /// On while the lease is held: added after the claim and kept on the job (saved first, so a

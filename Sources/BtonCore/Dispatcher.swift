@@ -166,6 +166,7 @@ actor Dispatcher {
         var job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         job.pressed = candidate.pressed ? true : nil
+        job.pushes = candidate.pushes ? true : nil
         job.issueMove = candidate.issueMove
         job.queueHeads = candidate.queueHeads
         // The agent may have logged out while the lease was claimed: its job waits with the others.
@@ -418,7 +419,7 @@ actor Dispatcher {
         } catch {
             // An agent whose job could not be recorded must not run on without its lease.
             await terminateAll(job)
-            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             await finish(job, status: .failed, detail: lost[job.id].map { "lease lost: \($0)" } ?? error.localizedDescription)
         }
     }
@@ -486,22 +487,22 @@ actor Dispatcher {
         if job.key.move == "resolve" {
             let outcome = await resolveOutcome(of: job)
             // A Stop pressed while GitHub was read stands over what it said.
-            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         if job.key.move == IssueIntake.move {
             let outcome = await intakeOutcome(of: job)
-            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         if job.key.move == IssueDecisions.move, job.key.item.hasPrefix("issue-") {
             let outcome = await decideOutcome(of: job)
-            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         if let plan = job.issueMove, job.key.item.hasPrefix("issue-") {
             let outcome = await issueMoveOutcome(of: job, plan: plan)
-            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         let output = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
@@ -509,6 +510,11 @@ actor Dispatcher {
             job.verdict = Supervision.verdict(fromFinalMessage: output)
             return await finish(job, status: job.verdict == nil ? .failed : .succeeded,
                                 detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
+        }
+        if job.pushes == true, job.review == nil {
+            let outcome = await pushOutcome(of: job)
+            if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         guard let review = job.review else { return await finish(job, status: .succeeded, detail: nil) }
         guard let second = job.second else { return await postReview(job, text: output, review: review) }

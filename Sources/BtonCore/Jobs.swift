@@ -65,6 +65,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var retry: Bool?
     /// A person started it (Merge, a pill, Retry, Take): a supervisor's retry of it is pressed too.
     public var pressed: Bool?
+    /// The agent edits the PR's branch: the job succeeded only if the PR's head moved by its end.
+    public var pushes: Bool?
     /// What the watchdog found when the job ended; nil when nothing.
     public var flags: [JobFlag]?
     /// A supervise job's flagged job.
