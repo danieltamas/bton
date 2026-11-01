@@ -78,8 +78,13 @@ struct SessionView: View {
             }
             Spacer(minLength: 4)
             if store.hasLogs(of: current) {
-                IconButton(symbol: "doc.text", help: "Open the agent's output and error log", size: 24) {
-                    store.openLogs(of: current)
+                // The window shows the newest entries and cut results; the file and the copy are whole.
+                CopyButton(id: "copy-session:\(current.id)", help: "Copy the whole session as Markdown") {
+                    await store.sessionMarkdown(of: current)
+                }
+                AsyncIconButton(symbol: "doc.text", help: "Open the whole session as a Markdown file", size: 24,
+                                id: "open-session:\(current.id)") {
+                    do { try await store.openLogs(of: current) } catch { problem = error.localizedDescription }
                 }
             }
             if current.status != .running, current.worktree != nil, store.isClaude(current) {

@@ -119,7 +119,9 @@ where your flow says a person decides.
       <b>Find any PR, and know why it failed</b><br>
       Search by number, title or login. A failed job names the last line its agent printed and
       gets a Retry. A fix whose agent exits without pushing fails too, named as such, instead of
-      passing on its report. When an agent's login expires its jobs wait instead of failing one by one.
+      passing on its report. A job's session page copies or opens the whole session as one
+      Markdown file: Bton's log, the prompt, every step with its full result, the report. When an
+      agent's login expires its jobs wait instead of failing one by one.
     </td>
   </tr>
   <tr>

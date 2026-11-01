@@ -261,6 +261,15 @@ public struct JobStore: Sendable {
     /// every check's and command's output.
     public func logURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).log") }
 
+    /// The whole session as one Markdown file (`SessionExport`): the log, the prompt, every
+    /// step with its full result, the report.
+    public func sessionExportURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).session.md") }
+
+    /// The session as it stands when opened on demand (a job still running, or ended without its
+    /// whole session): its own file, so a snapshot written late can never replace the whole
+    /// session the job's end writes.
+    public func sessionPreviewURL(_ id: UUID) -> URL { directory.appendingPathComponent("\(id.uuidString).session-so-far.md") }
+
     /// One timestamped line of Bton's in the job's log; a log that can't be written loses it.
     public func note(_ id: UUID, _ line: String) {
         guard let handle = try? FileHandle.appending(to: logURL(id)) else { return }
@@ -292,7 +301,8 @@ public struct JobStore: Sendable {
         for job in all() where job.status != .running {
             guard let ended = job.endedAt, ended < cutoff else { continue }
             let files = [outputURL(job.id), logURL(job.id), exitURL(job.id), helperSessionsURL(job.id), helpersConfigURL(job.id),
-                         secondOutputURL(job.id), secondLogURL(job.id), secondExitURL(job.id), stopURL(job.id)]
+                         secondOutputURL(job.id), secondLogURL(job.id), secondExitURL(job.id), stopURL(job.id),
+                         sessionExportURL(job.id), sessionPreviewURL(job.id)]
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
             guard !files.isEmpty else { continue }
             files.forEach { try? FileManager.default.removeItem(at: $0) }

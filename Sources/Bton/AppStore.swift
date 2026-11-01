@@ -435,12 +435,30 @@ final class AppStore {
         }
     }
 
-    func openLogs(of job: Job) {
-        let files = outputFiles(of: job).filter(Self.hasContent)
-        guard !files.isEmpty, let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit")
-        else { return }
-        NSWorkspace.shared.open(files, withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+    /// Opens the job's session file in TextEdit: the whole session as Markdown, or a snapshot
+    /// rendered now, in its own file, for a job still running or one that ended without the file.
+    func openLogs(of job: Job) async throws {
+        guard let jobStore, hasLogs(of: job),
+              let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") else { return }
+        var url = jobStore.sessionExportURL(job.id)
+        if job.status == .running || !FileManager.default.fileExists(atPath: url.path) {
+            guard let snapshot = await SessionExport.snapshot(of: job, in: jobStore, transcript: Self.transcript) else {
+                throw SessionExport.Failure.notWritten
+            }
+            url = snapshot
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration(),
+                                completionHandler: nil)
     }
+
+    /// The whole session as Markdown, for the clipboard: an ended job's saved file, a running
+    /// job rendered now, so it copies as far as it got.
+    func sessionMarkdown(of job: Job) async -> String {
+        guard let jobStore else { return "" }
+        return await SessionExport.text(of: job, in: jobStore, transcript: Self.transcript)
+    }
+
+    private static let transcript: SessionExport.Transcript = { ClaudeSessions.sessionFile(id: $0.id, worktree: $0.worktree) }
 
     /// A job that failed before its agent started wrote neither file; an empty one isn't shown.
     func hasLogs(of job: Job) -> Bool {

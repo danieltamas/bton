@@ -74,7 +74,9 @@ private struct JobRow: View {
         .contextMenu {
             Button("Watch Session") { watch() }
             if store.hasLogs(of: job) {
-                Button("Open Output and Log") { store.openLogs(of: job) }
+                AsyncPress(id: "open-session:\(job.id)", action: { try? await store.openLogs(of: job) }) { running, press in
+                    Button("Open Session as Markdown", action: press).disabled(running)
+                }
             }
             if job.status != .running, job.worktree != nil, store.isClaude(job) {
                 Button("Resume in Terminal") { try? store.resumeInTerminal(job) }

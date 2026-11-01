@@ -631,9 +631,15 @@ actor Dispatcher {
         try? jobs.save(job)
         jobs.note(job.id, job.status.rawValue + (job.detail.map { ": \($0)" } ?? "")
                   + (job.cost.map { ", cost $\($0)" } ?? ""))
+        // Before the trim: the export is the one whole account of the job. Without it the output
+        // and log stay whole instead.
+        let exported = await SessionExport.write(job, in: jobs) {
+            ClaudeSessions.sessionFile(id: $0.id, worktree: $0.worktree, searching: false)
+        }
+        if !exported { jobs.note(job.id, "session file not written: the output and log are kept whole") }
         jobs.stopHelpers(job.id)
         // Only once nothing of the agent is left: a survivor would go on writing to the old file.
-        if job.pid.map({ kill(-$0, 0) != 0 }) ?? true { jobs.trim(job.id) }
+        if job.pid.map({ kill(-$0, 0) != 0 }) ?? true, exported { jobs.trim(job.id) }
         if let lease = held.removeValue(forKey: job.id) {
             // Not in a stopped job's cancelled task, which kills each process as it starts: the
             // label and the lease would stay until the lease expired, and the PR read as busy.

@@ -157,24 +157,46 @@ struct ProblemText: View {
 
 /// Copies a command; the glyph turns into a check for a moment so the press never looks like nothing happened.
 struct CopyButton: View {
-    let text: String
+    /// Read on the press: a session's text is rendered from its files then, off the main thread,
+    /// not on every redraw. While it renders the press shows as working and cannot repeat.
+    let render: @MainActor () async -> String
     let help: String
+    /// Distinguishes this button's press among the window's in-flight actions.
+    let id: String
     @State private var copied = false
-    /// The pending reset, cancelled by a new press so the check always stays the full time.
+    /// The pending reset, cancelled by a new copy so the check always stays the full time.
     @State private var reset: Task<Void, Never>?
 
+    init(text: @autoclosure @escaping () -> String, help: String) {
+        render = { text() }
+        self.help = help
+        id = "copy:\(help)"
+    }
+
+    init(id: String, help: String, render: @escaping @MainActor () async -> String) {
+        self.render = render
+        self.help = help
+        self.id = id
+    }
+
     var body: some View {
-        IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: copied ? "Copied" : help,
-                   tint: copied ? Theme.success : Theme.textSecondary, size: 22) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            withAnimation(Motion.snappy) { copied = true }
-            reset?.cancel()
-            reset = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1.5))
-                guard !Task.isCancelled else { return }
-                withAnimation(Motion.snappy) { copied = false }
-            }
+        AsyncPress(id: id, action: copy) { running, press in
+            IconButton(symbol: copied ? "checkmark" : running ? "ellipsis" : "doc.on.doc",
+                       help: copied ? "Copied" : running ? "Copying…" : help,
+                       tint: copied ? Theme.success : Theme.textSecondary, size: 22, action: press)
+        }
+    }
+
+    private func copy() async {
+        let text = await render()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        withAnimation(Motion.snappy) { copied = true }
+        reset?.cancel()
+        reset = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.snappy) { copied = false }
         }
     }
 }

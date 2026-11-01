@@ -121,12 +121,16 @@ public enum ClaudeSessions {
     /// known (one probe), else wherever it is under the root: that scan lists every project the
     /// Mac ever opened Claude Code in and probes each, thousands of calls on a busy Mac, so it is
     /// the fallback, not the way.
-    public static func sessionFile(id: UUID, worktree: String? = nil, projectsRoot: URL = projectsRoot) -> URL? {
+    public static func sessionFile(id: UUID, worktree: String? = nil, projectsRoot: URL = projectsRoot,
+                                   searching: Bool = true) -> URL? {
         let name = "\(id.uuidString.lowercased()).jsonl"
         if let worktree {
             let direct = projectsRoot.appendingPathComponent(projectDirectoryName(for: worktree)).appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: direct.path) { return direct }
         }
+        // `searching: false`: the probe alone, for a caller that asks for every job, a command's
+        // and a Codex job's too, which have no transcript to find.
+        guard searching else { return nil }
         let projects = (try? FileManager.default.contentsOfDirectory(at: projectsRoot, includingPropertiesForKeys: nil)) ?? []
         return projects.map { $0.appendingPathComponent(name) }
             .first { FileManager.default.fileExists(atPath: $0.path) }

@@ -8,16 +8,16 @@ import Foundation
 public enum CodexTranscript {
     static let banner = "OpenAI Codex"
     /// A result keeps this much: the rows show three lines collapsed and forty open.
-    static let resultLimit = 6_000
+    public static let resultLimit = 6_000
 
     /// The newest `limit` entries; a log without Codex's banner before its first marker, or one
     /// that cannot be read, has none, so another agent's log is not mistaken for a session.
-    public static func entries(ofLog url: URL, limit: Int = 400) -> [SessionTranscript.Entry] {
+    public static func entries(ofLog url: URL, limit: Int = 400, resultLimit: Int = resultLimit) -> [SessionTranscript.Entry] {
         guard let data = try? Data(contentsOf: url) else { return [] }
-        return entries(in: data, limit: limit)
+        return entries(in: data, limit: limit, resultLimit: resultLimit)
     }
 
-    static func entries(in data: Data, limit: Int) -> [SessionTranscript.Entry] {
+    static func entries(in data: Data, limit: Int, resultLimit: Int = resultLimit) -> [SessionTranscript.Entry] {
         let text = String(decoding: data, as: UTF8.self)
         var made: [(SessionTranscript.Entry.Kind, String)] = []
         var marker: String?
