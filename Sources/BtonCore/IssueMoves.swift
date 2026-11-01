@@ -108,12 +108,27 @@ public enum IssueMoves {
     /// A triager's comment on the issue within this long holds another run off, whatever Mac
     /// wrote it: two Btons read the issue in different minutes and would both find it due.
     public static let cooldown: TimeInterval = 6 * 3600
-    /// The line every triager comment ends with. A comment carrying it is the automation's own,
-    /// whoever's login posted it: it makes no new round on any Mac, and its time is the cooldown.
-    public static let marker = "Bton's triager wrote this; a comment from a person overrules it."
+    /// The line every triager comment ends with, hidden on GitHub: a comment carrying it is the
+    /// automation's own, whoever's login posted it, so it makes no new round on any Mac and its
+    /// time is the cooldown. An HTML comment, not a sentence: a repo's rules may forbid agent
+    /// attribution in issues, and a person reads nothing of it.
+    public static let marker = "<!-- bton:triager -->"
+    /// What the marker said before v0.25: comments that carry it stay the triager's.
+    static let formerMarker = "bton's triager wrote this"
 
+    /// The whole marker, not its word: a person asking about `bton:triager` is a person.
     static func isTriagers(_ comment: IssueComment) -> Bool {
-        comment.body.range(of: "bton's triager wrote this", options: .caseInsensitive) != nil
+        comment.body.range(of: marker, options: .caseInsensitive) != nil
+            || comment.body.range(of: formerMarker, options: .caseInsensitive) != nil
+    }
+
+    /// The triage move never makes an issue ready: `ready` is the stage move's, after the plan
+    /// the repo's process asks for, and intake builds a ready issue unattended. A clear plan
+    /// scores its point and the issue goes to `spec`, where the stage move picks it up.
+    public static let stageCap = "spec"
+
+    public static func capped(_ verdict: TriageVerdict) -> TriageVerdict {
+        verdict.stage == "ready" ? TriageVerdict(score: verdict.score, priority: verdict.priority, stage: stageCap) : verdict
     }
     /// The thread's file in the job's scratch directory, as for a decision: no issue text in the prompt.
     public static let attachment = IssueDrafts.attachment
@@ -300,11 +315,12 @@ public enum IssueMoves {
 
     /// A posted question wins over answers in the same report: a report that quotes earlier
     /// answers and ends by asking must leave the issue to the person, never set it ready. Only the
-    /// triage move's answers become labels: a stage that quotes a score has not scored the issue.
+    /// triage move's answers become labels, capped at `stageCap`: a stage that quotes a score has
+    /// not scored the issue.
     public static func outcome(report: String, move: String = "triage", plan: Plan, now: IssueNow, comments: [IssueComment], since: Date) -> Outcome {
         let commented = comments.contains { $0.author?.caseInsensitiveCompare(plan.me) == .orderedSame && $0.createdAt >= since }
         if commented, let question = question(in: report) { return .asked(question) }
-        if move == "triage", let answers = answers(in: report), let verdict = IssueTriage.verdict(answers) { return .labels(verdict) }
+        if move == "triage", let answers = answers(in: report), let verdict = IssueTriage.verdict(answers) { return .labels(capped(verdict)) }
         if commented || Set(now.labels.map { $0.lowercased() }) != Set(plan.facts.labels.map { $0.lowercased() }) { return .done }
         if let why = line("unchanged:", in: report) { return .unchanged(why) }
         return .nothing

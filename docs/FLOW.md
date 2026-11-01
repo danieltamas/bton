@@ -444,9 +444,9 @@ may touch and what counts as done.
   before someone sees it, not a night's worth. These counts are this Mac's: two Macs that start the
   repo's moves each keep their own, and the lease keeps them off the same issue.
 - **Once per round.** The job's key carries the issue's round for these moves: the time of the
-  newest comment that is not a triager's. Every comment the triager posts ends with the line "Bton's
-  triager wrote this; a comment from a person overrules it.", and a comment carrying that line makes
-  no new round, whichever Mac and login posted it: the move never runs again on its own output, nor
+  newest comment that is not a triager's. Every comment the triager posts ends with the hidden
+  line `<!-- bton:triager -->` (an HTML comment: nothing shows, and a repo that forbids agent
+  attribution in its issues keeps its rule), and a comment carrying that line makes no new round, whichever Mac and login posted it: the move never runs again on its own output, nor
   on a teammate's Bton's. A person's comment does make a new round, the owner's own answer under
   the same login included, and so does a hand-back with a word. A person who demotes an issue by
   label alone (ready back to spec, no comment) is left alone: no round changed. Retry on a failed
@@ -475,7 +475,9 @@ may touch and what counts as done.
   with the answers and the evidence, and ends its final message with `Impact: n`, `Urgency: n`,
   `Start: n`, `Goal: ...`. Bton scores the answers exactly as a click in the tab would and sets the
   `priority:` and `stage:` labels itself, so the labels an agent sets are the ones a person would
-  have. The job's detail says the labels and the score.
+  have, with one cap: triage never sets `stage:ready`. A clear plan scores its point and the issue
+  goes to `stage:spec`; `ready` is the stage move's, after the plan the process asks for, since
+  intake builds a ready issue unattended. The job's detail says the labels and the score.
 - **Asking a person.** When the evidence to answer is missing, or a question is the owner's in
   person (product scope, pricing, a promise in copy, a legal page, a new public endpoint, anything
   the repo's process reserves; a high-risk area), the agent does not guess: it posts the specific

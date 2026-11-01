@@ -229,6 +229,15 @@ struct IssueMovesAcceptanceTests {
         #expect(IssueMoves.round(of: answered.comments) == String(Int(F.now.addingTimeInterval(-5 * 3600).timeIntervalSince1970)))
         let triagersOnly = F.issue(comments: [F.triagers("1", author: "teammate-bton", hoursAgo: 2)])
         #expect(IssueMoves.round(of: triagersOnly.comments) == "")
+        // A comment with the sentence the marker was before v0.25 is still the triager's.
+        let former = IssueComment(id: "c91", author: "lee", authorAssociation: "MEMBER",
+                                  body: "Impact: 1\n\nBton's triager wrote this; a comment from a person overrules it.",
+                                  createdAt: F.now.addingTimeInterval(-3600), url: nil)
+        #expect(IssueMoves.round(of: [former]) == "")
+        // A person who mentions the marker's word is a person: only the whole hidden line is the triager's.
+        let asks = IssueComment(id: "c92", author: "lee", authorAssociation: "MEMBER", body: "Does bton:triager survive editing?",
+                                createdAt: F.now.addingTimeInterval(-1800), url: nil)
+        #expect(IssueMoves.round(of: [asks]) == String(Int(F.now.addingTimeInterval(-1800).timeIntervalSince1970)))
         // The owner's own words under the same login are a person's.
         let owners = F.issue(comments: [F.comment("1", author: "Dani", hoursAgo: 2)])
         #expect(IssueMoves.round(of: owners.comments) == String(Int(F.now.addingTimeInterval(-2 * 3600).timeIntervalSince1970)))
@@ -275,7 +284,11 @@ struct IssueMovesAcceptanceTests {
         #expect(IssueMoves.answers(in: "impact: 3 (workaround)\nurgency: 3") == [2, 2, nil])
         let plan = try #require(try F.candidate([F.issue()])).issueMove!
         let outcome = IssueMoves.outcome(report: report, plan: plan, now: IssueNow(state: "OPEN", labels: [], assignees: []), comments: [], since: F.now)
-        #expect(outcome == .labels(TriageVerdict(score: 8, priority: "high", stage: "ready")))
+        // A clear plan scores its point, and the stage is capped: ready is the stage move's, after the plan.
+        #expect(outcome == .labels(TriageVerdict(score: 8, priority: "high", stage: "spec")))
+        #expect(IssueTriage.verdict([0, 1, 0])?.stage == "ready")
+        let open = IssueMoves.outcome(report: "Impact: 1\nUrgency: 2\nStart: 3", plan: plan, now: IssueNow(state: "OPEN", labels: [], assignees: []), comments: [], since: F.now)
+        #expect(open == .labels(TriageVerdict(score: 7, priority: "high", stage: "spec")))
         // Three answers that name no option are not a verdict: the job reads as it is on GitHub.
         let bad = IssueMoves.outcome(report: "Impact: 9\nUrgency: 1\nStart: 1", plan: plan, now: IssueNow(state: "OPEN", labels: [], assignees: []), comments: [], since: F.now)
         #expect(bad == .nothing)
@@ -320,6 +333,10 @@ struct IssueMovesAcceptanceTests {
             #expect(text.range(of: "On an issue\n")!.lowerBound < text.range(of: "Move: \(move)\n")!.lowerBound, Comment(rawValue: move))
             #expect(text.contains("graphify-src \"<question>\" and naming the issue as #<n>"), Comment(rawValue: move))
         }
+        // The marker is hidden on GitHub and the triage text says where the stage stops.
+        #expect(IssueMoves.marker.hasPrefix("<!--") && IssueMoves.marker.hasSuffix("-->"))
+        #expect(text.contains("the stage at most `stage:spec`"))
+        for move in IssueMoves.moves { #expect(try Hats.text(for: move, settings: [:]).contains(IssueMoves.marker + "\n") || Hats.text(for: move, settings: [:]).hasSuffix(IssueMoves.marker), Comment(rawValue: move)) }
         let prompt = IssueMoves.prompt(move: "triage", issue: 7, repo: F.repo)
         #expect(prompt.contains("graphify-src \"<question>\"") && prompt.contains("#7"))
         #expect(prompt.contains("for what the graph does not answer"))

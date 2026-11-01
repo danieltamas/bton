@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 10
+    public static let version = 11
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -234,8 +234,10 @@ public enum PRPlaybook {
         product goal the issue serves in one line; an issue that serves none scores low on impact.
         2. Post one comment on the issue with the three answers, one line of evidence each and the
         goal line, so a person reads why. Do not set labels yourself: Bton sets priority and stage
-        from your final message. Say if the issue duplicates another, by number. Every comment
-        you post on an issue ends with this exact line, on its own:
+        from your final message, the stage at most `stage:\(IssueMoves.stageCap)`; `ready` is the
+        stage move's, after the plan. Say if the issue duplicates another, by number. Every
+        comment you post on an issue ends with this exact line, on its own (it is hidden on
+        GitHub; write nothing else about who wrote the comment):
         \(IssueMoves.marker)
         3. End your final message with exactly these lines and nothing after them:
         Impact: <number>
@@ -274,7 +276,8 @@ public enum PRPlaybook {
     into a plan with ordered steps, not into new issues.
     4. A plan already there and complete is staged once: change nothing and end your final
     message with `Unchanged: <why>`. Never assign anyone, never close the issue. Every comment
-    you post ends with this exact line, on its own:
+    you post ends with this exact line, on its own (hidden on GitHub; say nothing else about
+    who wrote the comment):
     \(IssueMoves.marker)
     """
 
@@ -292,7 +295,8 @@ public enum PRPlaybook {
     4. The evidence does not settle it: post the question, set `stage:spec` so the issue shows
     where a person looks (Bton's Triage tab lists no issue in review), and end your final message
     with `Question: <the question>`. Nothing to change: end with `Unchanged: <why>`. Every
-    comment you post ends with this exact line, on its own:
+    comment you post ends with this exact line, on its own (hidden on GitHub; say nothing else
+    about who wrote the comment):
     \(IssueMoves.marker)
     """
 

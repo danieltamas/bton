@@ -230,7 +230,7 @@ struct PREvidenceAcceptanceTests {
 
     // i
     @Test func playbookUsesDispatchEvidence() {
-        #expect(PRPlaybook.version == 10)
+        #expect(PRPlaybook.version == 11)
         #expect(PRPlaybook.text(for: "review").contains("pr-evidence.md"))
     }
 }
