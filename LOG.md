@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.25.0 (2026-11-01)
 
 **A new issue says what kind of change it is.** The New issue screen created an issue with its `priority:` and `stage:` labels and nothing else, so a bug written in Bton had no `bug` label and the repo's intake, which reads the branch type from the labels (`type.labels`: `bug` builds as `fix`), built every one of them as the default type. Now, when the repo's flow maps labels to types, a Type dropdown sits above the title once the agent has written the issue, the same pill as the repo picker: the default type first, then `bug`, `chore`, `docs` as the flow names them, each saying what it is built as; the pick is a label on the created issue, survives a restart with the draft, and a label the flow no longer maps is dropped rather than created. A repo without an intake shows no dropdown.
 
