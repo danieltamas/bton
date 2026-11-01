@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.26.0 (2026-11-01)
 
 **A fix that pushed nothing is a failed fix.** A fix job was judged by its agent's exit status: an agent that hit a blocked tool, or stopped at a question nobody was there to answer, exited 0 with a report of what it could not do, and Bton recorded the job as succeeded, so the row went green, the review's findings stayed unanswered on the PR, and nobody read the report until a teammate asked why the PR had not moved. Now the flow's `fix` run by an agent is done when the PR's head moved, read from GitHub the way a `resolve` already was, and a job that ends with the PR still at the head it started on fails with `ended without pushing`, the head it is still at, and a pointer to the agent's report. A `fix` whose message is posted as the review's response (`"post": "comment"`) answers with that comment and is judged as before, and so is every other agent move: a `decide` or a `finish` may end through a comment or a `gh` call with the head where it was. The failure is a plain one: Retry is on it, the supervisor spends nothing on it (Bton named the cause itself, the note says to fix what stopped the agent on that Mac and press Retry), and a head read that errors fails the job closed as before. A Stop pressed from another Bton on the same Mac while the head was read is honoured too, on the `resolve` as well.
 
