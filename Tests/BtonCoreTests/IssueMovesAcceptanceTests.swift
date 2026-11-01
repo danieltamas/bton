@@ -57,9 +57,9 @@ private enum IssueMovesFixture {
                              repo: repo, me: me, agents: agents, ranElsewhere: ranElsewhere, now: now)
     }
 
-    /// A comment the triager posted, on any Mac: it ends with Bton's marker line.
-    static func triagers(_ id: String, author: String, hoursAgo: Double) -> IssueComment {
-        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: "Impact: 1, because...\n\n" + IssueMoves.marker,
+    /// A comment the triager posted for a move, on any Mac: it ends with Bton's hidden marker line.
+    static func triagers(_ id: String, author: String, hoursAgo: Double, move: String = "triage") -> IssueComment {
+        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: "Impact: 1, because...\n\n" + IssueMoves.marker(for: move),
                      createdAt: now.addingTimeInterval(-hoursAgo * 3600), url: nil)
     }
 }
@@ -131,6 +131,11 @@ struct IssueMovesAcceptanceTests {
         #expect(!holds("open_pr"))
         #expect(holds("quiet_hours:24"))
         #expect(!holds("quiet_hours:48"))
+        // The triager's own comment is not activity: an issue it just capped at spec is quiet for the stage rule.
+        let capped = F.issue(8, daysOld: 3, comments: [F.triagers("t1", author: "me", hoursAgo: 1)])
+        #expect(IssueFacts.of(capped, issues: [], pullRequests: [], now: F.now).holds(all: ["quiet_hours:48"]))
+        let answered = F.issue(9, daysOld: 3, comments: [F.triagers("t1", author: "me", hoursAgo: 3), F.comment("p1", author: "lee", hoursAgo: 1)])
+        #expect(!IssueFacts.of(answered, issues: [], pullRequests: [], now: F.now).holds(all: ["quiet_hours:2"]))
         #expect(holds("author_writes"))
         #expect(holds("unassigned_ready_under:3"))
         #expect(!holds("unassigned_ready_under:2"))
@@ -269,6 +274,40 @@ struct IssueMovesAcceptanceTests {
         #expect(IssueMoves.refusal(answered, now: open, comments: [recent, answer], at: F.now) == nil)
     }
 
+    @Test func theCooldownHoldsARepeatOfTheSameMoveOnlyAndAHeldIssueIsNotPicked() throws {
+        let flow = try F.flow(issues: """
+        [{"move":"triage","when":["no_label:priority:","no_assignee"]},
+         {"move":"stage","when":["label:priority:","label:stage:spec","no_assignee","quiet_hours:48"]}]
+        """)
+        let spec = ["priority:medium", "stage:spec"]
+        // Triage capped the issue at spec an hour ago: its comment is neither activity nor a hold for stage.
+        let triaged = F.issue(8, labels: spec, daysOld: 3, comments: [F.triagers("t1", author: F.me, hoursAgo: 1, move: "triage")])
+        let next = try #require(try F.candidate([triaged], flow: flow))
+        #expect(next.key.move == "stage" && next.issueMove?.number == 8 && next.issueMove?.move == "stage")
+        let open = IssueNow(state: "OPEN", labels: spec, assignees: [])
+        #expect(IssueMoves.refusal(next.issueMove!, now: open, comments: triaged.comments, at: F.now) == nil)
+        // A stage comment an hour ago is another Mac's stage run: held, and the issue behind it gets the turn.
+        let staged = F.issue(9, labels: spec, daysOld: 4, comments: [F.triagers("s1", author: "teammate-bton", hoursAgo: 1, move: "stage")])
+        let waiting = F.issue(10, labels: spec, daysOld: 3)
+        #expect(try F.candidate([staged, waiting], flow: flow)?.issueMove?.number == 10)
+        #expect(try F.candidate([staged], flow: flow) == nil)
+        #expect(IssueMoves.refusal(next.issueMove!, now: open, comments: staged.comments, at: F.now)?.contains("triager wrote") == true)
+        // A marker that names no move (the generic one, the former sentence) holds every move, as before.
+        let generic = IssueComment(id: "g1", author: "teammate-bton", authorAssociation: "MEMBER", body: "Scored.\n\n" + IssueMoves.marker,
+                                   createdAt: F.now.addingTimeInterval(-3600), url: nil)
+        #expect(IssueMoves.refusal(next.issueMove!, now: open, comments: [generic], at: F.now) != nil)
+        // An opening with no close, or another word after it, is a person's text: activity and a round.
+        for text in ["<!-- bton:triager:stage", "<!-- bton:triager-notes -->", "see bton:triager:stage -->"] {
+            let person = IssueComment(id: "p", author: "lee", authorAssociation: "MEMBER", body: text, createdAt: F.now.addingTimeInterval(-60), url: nil)
+            #expect(IssueMoves.round(of: [person]) != "", Comment(rawValue: text))
+        }
+        // A plan written before the move was recorded (jobs.json of v0.24.1) reads as triage.
+        let legacy = Data(#"{"number":8,"when":["no_assignee"],"round":"","me":"me","facts":{"state":"OPEN","labels":[],"assignees":[],"authorAssociation":"MEMBER","lastActivity":0,"hasOpenPR":false,"unassignedReady":0,"now":0}}"#.utf8)
+        #expect(try JSONDecoder().decode(IssueMoves.Plan.self, from: legacy).move == "triage")
+        let kept = try JSONDecoder().decode(IssueMoves.Plan.self, from: JSONEncoder().encode(next.issueMove!))
+        #expect(kept.move == "stage")
+    }
+
     @Test func aKeyAnotherMacRanIsRememberedSoTheNextIssueGetsItsTurn() throws {
         let issues = [F.issue(1, daysOld: 5), F.issue(2, daysOld: 3)]
         let first = try #require(try F.candidate(issues))
@@ -336,7 +375,8 @@ struct IssueMovesAcceptanceTests {
         // The marker is hidden on GitHub and the triage text says where the stage stops.
         #expect(IssueMoves.marker.hasPrefix("<!--") && IssueMoves.marker.hasSuffix("-->"))
         #expect(text.contains("the stage at most `stage:spec`"))
-        for move in IssueMoves.moves { #expect(try Hats.text(for: move, settings: [:]).contains(IssueMoves.marker + "\n") || Hats.text(for: move, settings: [:]).hasSuffix(IssueMoves.marker), Comment(rawValue: move)) }
+        // Each move's text carries its own marker, so a comment says which move wrote it.
+        for move in IssueMoves.moves { #expect(try Hats.text(for: move, settings: [:]).contains(IssueMoves.marker(for: move)), Comment(rawValue: move)) }
         let prompt = IssueMoves.prompt(move: "triage", issue: 7, repo: F.repo)
         #expect(prompt.contains("graphify-src \"<question>\"") && prompt.contains("#7"))
         #expect(prompt.contains("for what the graph does not answer"))

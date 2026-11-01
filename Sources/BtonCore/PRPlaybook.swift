@@ -5,7 +5,7 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 11
+    public static let version = 12
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
@@ -238,7 +238,7 @@ public enum PRPlaybook {
         stage move's, after the plan. Say if the issue duplicates another, by number. Every
         comment you post on an issue ends with this exact line, on its own (it is hidden on
         GitHub; write nothing else about who wrote the comment):
-        \(IssueMoves.marker)
+        \(IssueMoves.marker(for: "triage"))
         3. End your final message with exactly these lines and nothing after them:
         Impact: <number>
         Urgency: <number>
@@ -278,7 +278,7 @@ public enum PRPlaybook {
     message with `Unchanged: <why>`. Never assign anyone, never close the issue. Every comment
     you post ends with this exact line, on its own (hidden on GitHub; say nothing else about
     who wrote the comment):
-    \(IssueMoves.marker)
+    \(IssueMoves.marker(for: "stage"))
     """
 
     static let restage = """
@@ -297,7 +297,7 @@ public enum PRPlaybook {
     with `Question: <the question>`. Nothing to change: end with `Unchanged: <why>`. Every
     comment you post ends with this exact line, on its own (hidden on GitHub; say nothing else
     about who wrote the comment):
-    \(IssueMoves.marker)
+    \(IssueMoves.marker(for: "restage"))
     """
 
     static let scheduleQueue = """

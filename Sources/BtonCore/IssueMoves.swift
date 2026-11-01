@@ -47,7 +47,7 @@ public struct IssueFacts: Codable, Hashable, Sendable {
     public var labels: [String]
     public var assignees: [String]
     public var authorAssociation: String
-    /// The newest comment's time, or the opening.
+    /// The newest comment's time that is not the triager's, or the opening.
     public var lastActivity: Date
     public var hasOpenPR: Bool
     public var unassignedReady: Int
@@ -113,13 +113,41 @@ public enum IssueMoves {
     /// time is the cooldown. An HTML comment, not a sentence: a repo's rules may forbid agent
     /// attribution in issues, and a person reads nothing of it.
     public static let marker = "<!-- bton:triager -->"
-    /// What the marker said before v0.25: comments that carry it stay the triager's.
+    /// The marker a move's comments carry, naming the move (`<!-- bton:triager:stage -->`): the
+    /// cooldown then holds a repeat of the same move only, and triage's comment does not hold
+    /// the stage move that follows it.
+    public static func marker(for move: String) -> String { "<!-- bton:triager:\(move) -->" }
+    /// A complete marker, generic or naming a move: a person writing `bton:triager` in a sentence,
+    /// or an opening with no close, is a person.
+    static let markerPattern = #"<!-- bton:triager(:[a-z]+)? -->"#
+    /// What the marker said before v0.24.1: comments that carry it stay the triager's.
     static let formerMarker = "bton's triager wrote this"
 
-    /// The whole marker, not its word: a person asking about `bton:triager` is a person.
     static func isTriagers(_ comment: IssueComment) -> Bool {
-        comment.body.range(of: marker, options: .caseInsensitive) != nil
-            || comment.body.range(of: formerMarker, options: .caseInsensitive) != nil
+        markerRange(in: comment.body) != nil || comment.body.range(of: formerMarker, options: .caseInsensitive) != nil
+    }
+
+    private static func markerRange(in body: String) -> Range<String.Index>? {
+        body.range(of: markerPattern, options: [.regularExpression, .caseInsensitive])
+    }
+
+    /// The move a triager's comment was written for; nil when the marker names none (the
+    /// generic marker, the former sentence), which every move then treats as its own.
+    static func triagerMove(of comment: IssueComment) -> String? {
+        guard let range = markerRange(in: comment.body) else { return nil }
+        let inner = comment.body[range].dropFirst("<!-- bton:triager".count).dropLast(" -->".count)
+        return inner.hasPrefix(":") ? String(inner.dropFirst()).lowercased() : nil
+    }
+
+    /// Why the move waits on the issue, or nil: the last word is a triager's for this move within
+    /// the cooldown, which is another Mac's run of it that this read came before. A person's
+    /// answer after it, or a triager's comment for another move (triage before stage), holds nothing.
+    static func cooldownHold(move: String, comments: [IssueComment], at time: Date) -> String? {
+        guard let newest = comments.max(by: { $0.createdAt < $1.createdAt }), isTriagers(newest),
+              time.timeIntervalSince(newest.createdAt) < cooldown,
+              triagerMove(of: newest).map({ $0 == move }) ?? true
+        else { return nil }
+        return "a triager wrote on the issue \(Int(time.timeIntervalSince(newest.createdAt) / 60)) min ago"
     }
 
     /// The triage move never makes an issue ready: `ready` is the stage move's, after the plan
@@ -141,8 +169,24 @@ public enum IssueMoves {
         public let me: String
         /// The sync's facts the live read cannot refresh (PRs, the ready count, the author).
         public let facts: IssueFacts
+        /// The move, for the cooldown: a triager's comment for another move holds nothing.
+        /// Absent in a plan written before v0.24.2, which reads as `triage`.
+        public var move: String = "triage"
 
-        public init(number: Int, when: [String], round: String, me: String, facts: IssueFacts) {
+        enum CodingKeys: String, CodingKey { case number, when, round, me, facts, move }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            number = try container.decode(Int.self, forKey: .number)
+            when = try container.decode([String].self, forKey: .when)
+            round = try container.decode(String.self, forKey: .round)
+            me = try container.decode(String.self, forKey: .me)
+            facts = try container.decode(IssueFacts.self, forKey: .facts)
+            move = try container.decodeIfPresent(String.self, forKey: .move) ?? "triage"
+        }
+
+        public init(number: Int, when: [String], round: String, me: String, facts: IssueFacts, move: String = "triage") {
+            self.move = move
             self.number = number
             self.when = when
             self.round = round
@@ -165,8 +209,11 @@ public enum IssueMoves {
         comments.filter { !isTriagers($0) }.map(\.createdAt).max().map { String(Int($0.timeIntervalSince1970)) } ?? ""
     }
 
+    /// The newest comment by someone other than the triager, or the opening: the triager's own
+    /// comment is not activity for `quiet_hours`, or an issue it just capped at `spec` would wait
+    /// the stage rule's quiet time for nothing. The same rule as the round and the stale clock.
     static func lastActivity(of issue: OpenIssue) -> Date {
-        issue.comments.map(\.createdAt).max() ?? issue.createdAt
+        issue.comments.filter { !isTriagers($0) }.map(\.createdAt).max() ?? issue.createdAt
     }
 
     /// `#n` as a whole number in the PR's title or body.
@@ -219,6 +266,9 @@ public enum IssueMoves {
             let move = rules[index].move
             let key = key(repo: repo, number: issue.number, move: move, round: round(of: issue.comments))
             guard !ran.contains(key), let dispatch = flow.dispatch[move] else { continue }
+            // An issue the cooldown would refuse under the lease is skipped here, so it never
+            // stands first every sync with the eligible issues behind it.
+            if cooldownHold(move: move, comments: issue.comments, at: now) != nil { continue }
             let agent = dispatch.agent?.value(for: "")
             if let agent, agents[agent]?.argv.first.map(AgentHardening.isClaude) != true { continue }
             if agent == nil, dispatch.command == nil { continue }
@@ -233,7 +283,7 @@ public enum IssueMoves {
             made.attachments = [attachment: IssueDrafts.thread(issue)]
             made.denied = denied(for: move)
             made.issueMove = Plan(number: issue.number, when: rules[index].when, round: round(of: issue.comments), me: me,
-                                  facts: IssueFacts.of(issue, issues: issues, pullRequests: pullRequests, now: now))
+                                  facts: IssueFacts.of(issue, issues: issues, pullRequests: pullRequests, now: now), move: move)
             return made
         }
         return nil
@@ -266,13 +316,7 @@ public enum IssueMoves {
         guard now.state == "OPEN" else { return "the issue is no longer open" }
         guard facts.holds(all: plan.when) else { return "the issue no longer meets the move's conditions" }
         if round(of: comments) != plan.round { return "a comment came since the read; the next sync reads it" }
-        // The cooldown holds only while the triager's comment is the last word: a person's answer
-        // after it is what the move waits for, and must not wait six hours more.
-        if let newest = comments.max(by: { $0.createdAt < $1.createdAt }), isTriagers(newest),
-           time.timeIntervalSince(newest.createdAt) < cooldown {
-            return "a triager wrote on the issue \(Int(time.timeIntervalSince(newest.createdAt) / 60)) min ago"
-        }
-        return nil
+        return cooldownHold(move: plan.move, comments: comments, at: time)
     }
 
     /// What the job did, read back from GitHub and the agent's report.

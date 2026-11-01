@@ -427,8 +427,9 @@ may touch and what counts as done.
   equal to the name, or starting with it when the name ends in `:`, so `label:priority:` is any
   priority), `no_label:<name>`, `no_assignee`, `assigned`, `author_writes` (an owner, member or
   collaborator opened it, as intake requires), `open_pr` and `no_open_pr` (an open PR of the repo
-  names the issue as `#n` in its title or body), `quiet_hours:<n>` (no comment and no opening for
-  that long) and `unassigned_ready_under:<n>` (the repo has fewer than that many unassigned
+  names the issue as `#n` in its title or body), `quiet_hours:<n>` (no comment by anyone but the
+  triager, and no opening, for that long: an issue the triager just capped at `spec` does not wait
+  the stage rule's quiet time for its own comment) and `unassigned_ready_under:<n>` (the repo has fewer than that many unassigned
   `stage:ready` issues: the stage move stops promoting once enough work is lined up). Text that is
   not a predicate makes the flow invalid, unlike a PR move's: a typo must not leave every issue
   with no move. A move name is one of the three, listed once, not also a PR move, and has a
@@ -445,17 +446,19 @@ may touch and what counts as done.
   repo's moves each keep their own, and the lease keeps them off the same issue.
 - **Once per round.** The job's key carries the issue's round for these moves: the time of the
   newest comment that is not a triager's. Every comment the triager posts ends with the hidden
-  line `<!-- bton:triager -->` (an HTML comment: nothing shows, and a repo that forbids agent
-  attribution in its issues keeps its rule), and a comment carrying that line makes no new round, whichever Mac and login posted it: the move never runs again on its own output, nor
+  line `<!-- bton:triager:<move> -->` (an HTML comment naming the move: nothing shows, and a repo
+  that forbids agent attribution in its issues keeps its rule), and a comment carrying that line makes no new round, whichever Mac and login posted it: the move never runs again on its own output, nor
   on a teammate's Bton's. A person's comment does make a new round, the owner's own answer under
   the same login included, and so does a hand-back with a word. A person who demotes an issue by
   label alone (ready back to spec, no comment) is left alone: no round changed. Retry on a failed
   job in the Jobs tab runs the same key again. Under the lease (`issue-<n>`, the one intake and
   decide use, so no two Btons work one issue at once), before the agent starts, Bton reads the
   issue again and does not start on one closed, one that no longer meets the rule's conditions, one
-  with a person's comment since the read (the next sync keys it anew), or one a triager wrote on in
-  the last six hours and nobody answered since, which is another Mac's run that this Mac's read came
-  before; a person's answer after the triager's comment ends the wait. A key whose lease history
+  with a person's comment since the read (the next sync keys it anew), or one a triager wrote on for
+  the same move in the last six hours and nobody answered since, which is another Mac's run that this
+  Mac's read came before; a person's answer after the triager's comment ends the wait, and a triager's
+  comment for another move (triage just before stage) holds nothing. An issue that wait would refuse
+  is not picked in the first place, so it never stands in front of the eligible ones. A key whose lease history
   says another Mac already ran it is remembered as run until Bton restarts, so the next issue gets
   its turn.
 - **What the agent does.** `agent` must be a Claude Code agent: the job's tools are denied as a
