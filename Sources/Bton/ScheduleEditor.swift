@@ -100,7 +100,13 @@ struct ScheduleEditor: View {
                     }
                 }
                 field("Agent") {
-                    menu(draft.agent ?? "Choose...", options: store.agents.keys.sorted()) { draft.agent = $0 }
+                    HStack(spacing: 8) {
+                        menu(draft.agent ?? "Choose...", options: store.agents.keys.sorted()) { draft.agent = $0 }
+                        if let program = draft.agent.flatMap({ store.missingProgram(of: $0) }) {
+                            Chip(text: "\(program) not installed", symbol: "exclamationmark.triangle", color: Theme.danger)
+                                .help(AppStore.programSearchHint)
+                        }
+                    }
                 }
                 if pinsModel {
                     field("Model") {
@@ -193,7 +199,7 @@ struct ScheduleEditor: View {
 
     private func helperToggle(_ name: String) -> some View {
         let picked = draft.helpers?.contains(name) == true
-        let installed = store.agents[name]?.argv.first.flatMap(Executables.resolve) != nil
+        let installed = store.missingProgram(of: name) == nil
         return Button {
             var helpers = draft.helpers ?? []
             if picked { helpers.removeAll { $0 == name } } else { helpers.append(name) }
@@ -205,7 +211,7 @@ struct ScheduleEditor: View {
         .buttonStyle(.plain)
         .pointingHandCursor(installed || picked)
         .disabled(!installed && !picked)
-        .help(installed ? "Let the agent ask \(name)" : "Install its program first")
+        .help(installed ? "Let the agent ask \(name)" : "Install its program first: " + AppStore.programSearchHint)
     }
 
     private var current: ScheduleEntry? {
@@ -242,6 +248,11 @@ struct ScheduleEditor: View {
         }
         guard let limit = Int(timeout.trimmingCharacters(in: .whitespaces)) else {
             problem = "Enter the time limit in whole minutes."
+            return
+        }
+        // A new or changed agent must run here: a schedule starts it unattended, and would fail at every run.
+        if let agent = draft.agent, agent != current?.agent, let program = store.missingProgram(of: agent) {
+            problem = "\(agent) runs \(program), which is not installed on this Mac (\(AppStore.programSearchHint)): install it or pick another agent."
             return
         }
         var next = draft

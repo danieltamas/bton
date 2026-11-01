@@ -37,13 +37,16 @@ actor Dispatcher {
     private(set) var graphStores: [String: URL] = [:]
     /// Settings > Agents' line about the graph; nil is the default.
     private(set) var graphInstruction: String?
+    /// This Mac's hats, for the playbook each job's agent reads first.
+    private(set) var hats: [String: HatSettings] = [:]
     /// Called after every job ends, so the next one starts without waiting for the next tick.
     private var jobEnded: (@Sendable () -> Void)?
 
     func onJobEnded(_ handler: @escaping @Sendable () -> Void) { jobEnded = handler }
 
     /// `graphs` off: no job gets a graph, whatever the repos say.
-    func useRepos(_ repos: [WatchedRepo], graphs: Bool = true, graphInstruction: String? = nil) {
+    func useRepos(_ repos: [WatchedRepo], graphs: Bool = true, graphInstruction: String? = nil, hats: [String: HatSettings] = [:]) {
+        self.hats = hats
         environments = Dictionary(repos.map { ($0.slug.lowercased(), $0.environment ?? [:]) }) { first, _ in first }
         workLabels = Dictionary(repos.compactMap { repo in repo.workLabel.map { (repo.slug.lowercased(), $0) } }) { first, _ in first }
         graphStores = graphs
@@ -153,9 +156,17 @@ actor Dispatcher {
                 return .busy
             }
         }
+        // Under the lease, the issue as it is now: an issue move does not start on an issue closed,
+        // moved on or commented on since the read.
+        if let plan = candidate.issueMove, let reason = await issueMoveRefusal(plan, repo: candidate.key.repo) {
+            log("\(candidate.key): not started, \(reason)")
+            try? await leases.release(lease, ran: false)
+            return .busy
+        }
         var job = Job(id: id, key: candidate.key, agent: candidate.agent, startedAt: .now, status: .running,
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         job.pressed = candidate.pressed ? true : nil
+        job.issueMove = candidate.issueMove
         job.queueHeads = candidate.queueHeads
         // The agent may have logged out while the lease was claimed: its job waits with the others.
         guard !isLoggedOut(candidate.agent), let lock = LocalLock(jobs.lockURL(id)) else {
@@ -336,7 +347,9 @@ actor Dispatcher {
             var instructions = isClaude ? try await TeamInstructions.read(clone: clone, base: base, runner: runner) : nil
             if isClaude, let graphLine { instructions = [instructions, graphLine].compactMap { $0 }.joined(separator: "\n\n") }
             let helpers = isClaude ? try offerHelpers(candidate.helpers, graph: graphLine != nil, agents: agents, to: job.id, in: worktree) : nil
-            var playbook = candidate.key.move == Supervision.move ? nil : PRPlaybook.text(for: candidate.key.move)
+            // The hat's file that cannot be read fails the job here, before anything starts.
+            let onIssue = candidate.issue != nil
+            var playbook = candidate.key.move == Supervision.move ? nil : try Hats.text(for: candidate.key.move, onIssue: onIssue, settings: hats)
             if let helpers, !helpers.names.isEmpty {
                 instructions = [instructions, Helpers.instructions(helpers.names)].compactMap { $0 }.joined(separator: "\n\n")
             } else if !candidate.helpers.isEmpty {
@@ -393,12 +406,12 @@ actor Dispatcher {
                 }
                 second.pid = try spawn(DispatchPlanner.argv(secondTemplate.argv, prompt: DispatchPlanner.fill(secondTask, values), session: second.session,
                                                             instructions: secondInstructions, values: values, scratch: scratch,
-                                                            playbook: PRPlaybook.text(for: candidate.key.move), denying: candidate.denied),
+                                                            playbook: try Hats.text(for: candidate.key.move, onIssue: onIssue, settings: hats), denying: candidate.denied),
                                        in: worktree, job: job.id, repoEnvironment: environment, second: true)
                 job.second = second
             }
             try jobs.save(job)
-            jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?"), playbook v\(PRPlaybook.version)")
+            jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?"), \(Hats.describe(move: candidate.key.move, settings: hats))")
             if let second = job.second { jobs.note(job.id, "second reviewer \(second.agent) running, pid \(second.pid.map(String.init) ?? "?")") }
             let started = job
             Task { await self.watch(started) }
@@ -483,6 +496,11 @@ actor Dispatcher {
         }
         if job.key.move == IssueDecisions.move, job.key.item.hasPrefix("issue-") {
             let outcome = await decideOutcome(of: job)
+            if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
+            return await finish(job, status: outcome.status, detail: outcome.detail)
+        }
+        if let plan = job.issueMove, job.key.item.hasPrefix("issue-") {
+            let outcome = await issueMoveOutcome(of: job, plan: plan)
             if stopping.contains(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }

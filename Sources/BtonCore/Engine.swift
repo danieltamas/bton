@@ -84,6 +84,9 @@ public actor Engine {
     var issueRevisions: [String: Int] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
+    /// Issue-move keys another Mac ran (the lease history said so when this Mac tried): without
+    /// this, the same issue would be the repo's first candidate every sync and none behind it would start.
+    var issueMovesRanElsewhere: Set<JobKey> = []
     /// Each repo's issue read in flight, by lowercased slug, with the page count it asked for: a
     /// second caller waits for it instead of racing it (a Load more during a sync's read, or the reverse).
     var issueReads: [String: (id: UUID, pages: Int, task: Task<Bool, Never>)] = [:]
@@ -206,6 +209,9 @@ public actor Engine {
                     snapshot.merged += merged
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     reads.append((repo, status.flow, read.viewer, read.defaultBranch, pullRequests, merged))
+                    // A flow with issue moves is about the issues nobody looked at, which are the
+                    // oldest: every page is read, not the newest one.
+                    if repo.startsMoves, status.flow?.issues?.isEmpty == false { issuePages[repo.slug.lowercased()] = Self.issuePageCap }
                     await readIssues(repo.slug)
                     snapshot.features[repo.slug] = await readFeatures(repo: repo, flow: status.flow, defaultBranch: read.defaultBranch,
                                                                       viewer: read.viewer, merged: merged, pullRequests: pullRequests)
@@ -216,7 +222,7 @@ public actor Engine {
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
             snapshot.unread = unread
-            snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me)
+            snapshot.issueAsks = issueAsks(in: config.repos, me: snapshot.me, flows: snapshot.flows)
             snapshot.triage = IssueTriage.ordered(config.repos.flatMap { IssueTriage.pending(openIssues[$0.slug.lowercased()] ?? []) })
             snapshot.issuesMore = issuesMore
             snapshot.issueRevisions = issueRevisions
@@ -252,6 +258,10 @@ public actor Engine {
                         }
                         if let stale = flow.stale {
                             await postStaleNotices(read.pullRequests, stale: stale, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
+                            if read.repo.startsMoves, issuesReadThisTick.contains(read.repo.slug.lowercased()) {
+                                await postIssueStaleNotices(openIssues[read.repo.slug.lowercased()] ?? [], stale: stale, flow: flow,
+                                                            repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
+                            }
                         }
                         var candidates = DispatchPlanner.candidates(read.pullRequests, flow: flow, me: read.viewer, repo: read.repo.slug)
                         for pr in read.pullRequests {
@@ -260,9 +270,6 @@ public actor Engine {
                                   chosen.agent.map({ config.agents[$0] != nil }) ?? true else { continue }
                             candidates.removeAll { $0.key.item == chosen.key.item }
                             candidates.append(chosen)
-                        }
-                        if let reviewer = read.repo.reviewer.flatMap(AgentPick.init), config.agents[reviewer.agent] != nil {
-                            candidates = candidates.map { Self.reviewed($0, by: reviewer, rules: read.repo.reviewRules) }
                         }
                         if !read.repo.startsMoves {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
@@ -275,7 +282,7 @@ public actor Engine {
                            let made = IssueIntake.candidate(issues: openIssues[read.repo.slug.lowercased()] ?? [], intake: intake,
                                                             caps: flow.caps, pullRequests: read.pullRequests, jobs: jobs.all(),
                                                             repo: read.repo.slug, base: flow.base, me: read.viewer, agents: config.agents,
-                                                            work: read.repo.work.flatMap(AgentPick.init), requested: requested,
+                                                            work: Self.coderPick(read.repo, config: config), requested: requested,
                                                             resumeOnly: !read.repo.startsMoves && requested == nil) {
                             pending.append((made, clone, flow))
                         }
@@ -285,6 +292,9 @@ public actor Engine {
                         if read.repo.startsMoves {
                             pending += decideCandidates(repo: read.repo.slug, flow: flow, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                         me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
+                            // The issues' own moves, last: the triager sorts what nobody is building.
+                            pending += issueMoveCandidates(repo: read.repo.slug, flow: flow, pullRequests: read.pullRequests,
+                                                           me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
                         }
                     }
                     // A schedule runs a repo without a flow: this Mac's own agent, like its agents,
@@ -316,14 +326,16 @@ public actor Engine {
                     }
                     pending += draftCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                me: read.viewer, agents: config.agents,
-                                               model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
+                                               model: config.draftModel ?? BtonConfig.defaultDraftModel,
+                                               table: read.flow?.decide?.table).map { ($0, clone, nil) }
                     pending += composeCandidates(repo: read.repo.slug, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                  me: read.viewer, agents: config.agents, merged: read.merged,
                                                  clone: clone, codeGraph: config.buildsGraph(read.repo),
                                                  model: config.draftModel ?? BtonConfig.defaultDraftModel).map { ($0, clone, nil) }
-                    // Every agent job of this repo starts with what the registry knows about its work.
+                    // Every agent job of this repo runs under its hat and starts with what the registry knows about its work.
                     for index in first..<pending.count {
-                        pending[index].candidate = Self.withFeatureContext(pending[index].candidate, report: snapshot.features[read.repo.slug])
+                        let hatted = Self.hatted(pending[index].candidate, repo: read.repo, hats: config.hatSettings, agents: config.agents)
+                        pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
                     }
                     // Nothing of this repo starts while a service its environment names does not answer.
                     if first < pending.count, let hold = await environmentHold(read.repo) {
@@ -368,7 +380,10 @@ public actor Engine {
                             started.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
                             startedKeys.insert(candidate.key)
                         case .busy: refused.insert(candidate.key)
-                        case .ran: refused.insert(candidate.key); ran.insert(candidate.key)
+                        case .ran:
+                            refused.insert(candidate.key)
+                            ran.insert(candidate.key)
+                            if candidate.issueMove != nil { issueMovesRanElsewhere.insert(candidate.key) }
                         }
                     }
                 }
@@ -478,21 +493,6 @@ public actor Engine {
         runNext(repo: key.repo, item: key.item, pressed: true)
     }
 
-    /// A review move that runs here with the agent, model and effort the owner set for this repo, and their
-    /// rules after the flow's prompt. Only the review: a decision posts a comment too, but the
-    /// setting is the repo's Reviewer, and the flow keeps its own agent for every other move.
-    static func reviewed(_ candidate: DispatchCandidate, by pick: AgentPick, rules: String?) -> DispatchCandidate {
-        guard candidate.key.move == "review", candidate.postComment, candidate.agent != nil else { return candidate }
-        var made = candidate
-        made.agent = pick.agent
-        made.model = pick.model
-        made.effort = pick.effort
-        if let rules = rules?.trimmingCharacters(in: .whitespacesAndNewlines), !rules.isEmpty, let prompt = made.prompt {
-            made.prompt = prompt + "\n\nReview rules from the reviewer:\n" + rules
-        }
-        return made
-    }
-
     /// A Merge or Fix conflicts runs instead of the PR's flow move, also when retried from Jobs.
     func ask(_ key: JobKey) {
         if key.move == "merge" || key.move == "resolve" { asked[Self.pick(repo: key.repo, item: key.item)] = key }
@@ -585,14 +585,14 @@ public actor Engine {
 
     func dispatcher(me: String, config: BtonConfig) async throws -> Dispatcher {
         if let dispatcher {
-            await dispatcher.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction)
+            await dispatcher.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction, hats: config.hatSettings)
             return dispatcher
         }
         let leases = try LeaseStore(home: home, holder: me, github: github)
         let made = Dispatcher(github: github, leases: leases, jobs: jobs, log: log)
         if let jobEnded { await made.onJobEnded(jobEnded) }
         // Before adopting: a job that ended while Bton was down posts its review at once.
-        await made.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction)
+        await made.useRepos(config.repos, graphs: config.codeGraphs, graphInstruction: config.graphInstruction, hats: config.hatSettings)
         await made.adopt()
         dispatcher = made
         return made
@@ -645,6 +645,40 @@ public actor Engine {
             } catch {
                 noticed.remove("\(repo)#\(pr.number) \(notice.marker)")
                 log("\(repo)#\(pr.number): could not post \(notice.marker): \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: file)
+            try? await dispatcher.leases.release(lease)
+        }
+    }
+
+    /// The issue author's Bton posts an issue's stale notices, as a PR's author's does, in a repo
+    /// that starts its moves, under the issue's lease (a job holding it is the issue moving).
+    private func postIssueStaleNotices(_ issues: [OpenIssue], stale: Stale, flow: Flow, repo: String, me: String,
+                                       dispatcher: Dispatcher) async {
+        for issue in issues where issue.author?.caseInsensitiveCompare(me) == .orderedSame {
+            let askedOfMe = IssueAsks.ask(in: issue, me: me, table: flow.decide?.table) != nil
+            guard let notice = Staleness.notice(for: issue, stale: stale, askedOfMe: askedOfMe), let item = LeaseItem("issue-\(issue.number)"),
+                  noticed.insert("\(repo)#\(issue.number) \(notice.marker)").inserted else { continue }
+            guard case let .claimed(lease)? = try? await dispatcher.leases.claim(item, in: repo) else {
+                noticed.remove("\(repo)#\(issue.number) \(notice.marker)")
+                continue
+            }
+            // Under the lease, every comment of the issue, not the read's last 20: a notice another
+            // Mac posted a moment ago, or one older than twenty comments, is seen and not posted again.
+            guard let comments = try? await github.issueComments(repo: repo, number: issue.number),
+                  Staleness.notice(for: issue.with(comments: comments), stale: stale, askedOfMe: askedOfMe)?.marker == notice.marker else {
+                log("\(repo)#\(issue.number): \(notice.marker) not posted, the issue changed since the read")
+                try? await dispatcher.leases.release(lease)
+                continue
+            }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
+            do {
+                try notice.body.write(to: file, atomically: true, encoding: .utf8)
+                try await github.commentOnIssue(repo: repo, number: issue.number, bodyFile: file)
+                log("\(repo)#\(issue.number): posted \(notice.marker)")
+            } catch {
+                noticed.remove("\(repo)#\(issue.number) \(notice.marker)")
+                log("\(repo)#\(issue.number): could not post \(notice.marker): \(error.localizedDescription)")
             }
             try? FileManager.default.removeItem(at: file)
             try? await dispatcher.leases.release(lease)

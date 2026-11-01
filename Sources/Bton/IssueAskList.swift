@@ -278,14 +278,22 @@ private struct IssueAskRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                     // One line: a long login truncates, the time never wraps.
                     HStack(spacing: 6) {
-                        Avatar(login: ask.asker)
-                        Text("\(ask.asker) \(ask.handoff ? "handed off" : "asked")").foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary).lineLimit(1).fixedSize()
+                        if ask.rows.isEmpty {
+                            Avatar(login: ask.asker)
+                            Text("\(ask.asker) \(ask.handoff ? "handed off" : "asked")").foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            Text("·").foregroundStyle(Theme.textTertiary)
+                            RelativeTime(date: ask.askedAt) { "\($0) ago" }.foregroundStyle(Theme.textTertiary).lineLimit(1).fixedSize()
+                        } else {
+                            // The Decisions table asks, not a comment: the open rows wait on me until decided in the body.
+                            Image(systemName: "tablecells").foregroundStyle(Theme.textTertiary)
+                            Text("\(ask.rows.joined(separator: ", ")) open for you in the Decisions table")
+                                .foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        }
                     }
                     .font(.meta)
                     if store.postedAsks.contains(ask.notice) {
-                        Text("Reply posted. This clears when the next sync reads it.")
+                        Text(ask.rows.isEmpty ? "Reply posted. This clears when the next sync reads it."
+                             : "Reply posted. The row stays here until it is decided in the issue's body.")
                             .font(.meta).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true)
                     } else if let decision, decision.status == .succeeded, decision.detail == nil {
                         Text("Bton decided this in your place; the comment on the issue says what. This clears when the next sync reads it.")
@@ -434,7 +442,8 @@ struct DraftView: View {
             let labels = IssueDrafts.split(text)
             let moves = (labels.add.map { "+" + $0 } + labels.remove.map { "-" + $0 }).joined(separator: " ")
             let stale = IssueDrafts.leavesToDo(text)
-            Text(posted ? "Posted as your comment. The ask clears when the next sync reads it."
+            Text(posted ? (ask.rows.isEmpty ? "Posted as your comment. The ask clears when the next sync reads it."
+                           : "Posted as your comment. The Decisions row stays an ask until it is decided in the issue's body.")
                  : stale ? "This draft leaves you a to do: it is from before Bton set labels on Post. Draft again ends it with the labels instead."
                  : moves.isEmpty ? "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own."
                  : "Post reply comments on the issue as \(store.me ?? "you") and sets its labels \(moves); the last line stays here.")

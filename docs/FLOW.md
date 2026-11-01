@@ -24,7 +24,7 @@ with a decision step) and [`examples/sandbox.flow.json`](../examples/sandbox.flo
 | `checks` | `{ "beforeSession": [argv...], "beforeMerge": [argv...], "fresh": [argv...], "together": [[argv, argv...]...], "cache": { "key": ["bun.lock"], "paths": ["node_modules"] } }`. A dispatch rule's own `checks` list replaces the flow's for that move. Checks run one after another; `together` names groups of argv the team declares independent (each at least two, an argv in one group only), and consecutive checks of one group that have no receipt start at the same time, each with its own time limit and its output as one block in the job's log: lint and typecheck together take the longer of the two, not the sum. The first failure ends the others and is what the job reports. Independence is declared, never inferred: two checks that share a database, an output directory or all the CPU stay apart. A check that passed is not run again for the same code: after each passing check the job saves a receipt with the tree of the commit it ran on, the base tip, a fingerprint of the repo's environment and whether a person pressed, and any later job in the repo (another move on the same head, another PR whose head has the same tree) over the same base tip skips a check it finds a matching receipt for, logging "not run again" with that job's id. A check that fails leaves the ones before it covered. List under `fresh` the argv that must run every time (one that reads a service or the clock is not a function of the tree). A merge rule with `checks_green:<name>` lets `beforeMerge` drop the suite that CI already ran on the head (lexito: about 4 minutes per merge); a PR whose CI is still running has no due move until it is green, so put a human move after it (`{ "move": "ci", "when": ["approved_current_head"], "who": "author" }`) if the row should say so. The argv run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. When a person started the move (Merge, the move's pill, Retry, Run Next, Take it) rather than the sync, checks and the merge command also see `BTON_PRESSED=1`, so a check that guards a person's decision can let the press through: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" \|\| git diff --quiet origin/develop...HEAD -- migrations/"]`.`cache` is opt-in: before a PR job's checks run, each `paths` directory the worktree lacks is copied in from `~/.bton/cache/<repo>/<key>/` (an APFS clone), the key being a digest of the `key` files' bytes in the worktree; after every check passed, a directory the worktree has and the cache lacks is copied out. A new PR's first run then starts from the last install with the same lockfile. A copy that fails is noted on the job and never fails it; nothing is evicted, so the owner clears the directory (`rm -rf ~/.bton/cache/<repo>`). Worth it where an install takes minutes, not seconds: measured at 2 s on a bun repo, so the team example leaves it off. A check that passed is not run again for the same code: after each passing check the job saves a receipt with the tree of the commit it ran on, the base tip, a fingerprint of the repo's environment and whether a person pressed, and any later job in the repo (another move on the same head, another PR whose head has the same tree) over the same base tip skips a check it finds a matching receipt for, logging "not run again" with that job's id. A check that fails leaves the ones before it covered. List under `fresh` the argv that must run every time (one that reads a service or the clock is not a function of the tree). A merge rule with `checks_green:<name>` lets `beforeMerge` drop the suite that CI already ran on the head (lexito: about 4 minutes per merge); a PR whose CI is still running has no due move until it is green, so put a human move after it (`{ "move": "ci", "when": ["approved_current_head"], "who": "author" }`) if the row should say so. The argv run in the worktree with the repo's environment from Settings > Repos, each stopped after the move's `timeoutMinutes`; their output reaches the job's log as it comes. When a person started the move (Merge, the move's pill, Retry, Run Next, Take it) rather than the sync, checks and the merge command also see `BTON_PRESSED=1`, so a check that guards a person's decision can let the press through: `["bash", "-c", "test -n \"${BTON_PRESSED:-}\" \|\| git diff --quiet origin/develop...HEAD -- migrations/"]`. |
 | `intake` | Optional: how an agent takes a `stage:ready` issue (below). |
 | `caps` | `{ "openPullRequestsPerDeveloper", "openPullRequestsTeam" }`, checked before intake. |
-| `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`. |
+| `stale` | `{ "pingHours", "escalateHours", "escalateTo" }`: a PR move that waits longer than `pingHours` gets one comment pinging its owner from the author's Bton, and past `escalateHours` one mentioning `escalateTo`; the clock is the head commit or the latest comment by a person. In a repo that starts its moves, an open issue someone is assigned to gets the same from the issue author's Bton: its clock is the last assignment or label change, or the latest comment by a person (never Bton's own markers or the triager's line), so a ping is not its own answer and a new assignment, label or comment starts a new wait, pinged once on any Mac: under the issue's lease, before posting, Bton reads every comment of the issue again (the sync reads the last 20) and posts nothing when the notice is there or no longer due. An issue waiting on the owner (a mention, an open Decisions row) is the owner's wait, not the assignee's, and gets no ping. |
 | `decision` | Optional `{ "heading", "move", "by" }`: a ruling that ends a review loop (below). |
 | `decide` | Optional `{ "by", "agent"?, "prompt"?, "timeoutMinutes"?, "except"? }`: the Bton of a login in `by` decides, in their place, the questions put to them on issues (below). |
 | `release` | Optional `{ "from", "to", "who", "when", "blockedBy"?, "checks"?, "merge"?, "timeoutMinutes"? }`: how `from` (develop) is released to `to` (main). `when` is a list of predicates of which the first match makes a release due, with its reason on the page and in the footer (`ahead_commits:N` -> "N commits ahead", `ahead_days:N` -> "N days ahead", counted from the oldest commit `to` lacks, `features_waiting:N` -> "N features waiting", the registry's features in develop); `blockedBy` any match blocks it (`pr_in_review_on_paths:<glob>`: an open, non-draft PR into `from` touching the glob; `release_pr_open` is implied and only keeps a second release PR from opening, never the merge of the open one); `who` is the login whose Bton opens and merges it, everyone else sees the state; `checks` are argv run in a worktree at the release PR's head (the `from` tip) before the merge, each stopped at `timeoutMinutes` (40 by default), failing closed; `merge` is `merge-commit` (default: `gh pr merge <n> --merge --match-head-commit <head>`) or `fast-forward` (`git push origin <head>:refs/heads/<to>`, refused when `to` moved). When due (or on the owner's Release press on the repo's page, which skips `when` but not `blockedBy`), Bton opens the PR `from -> to` titled `Release <from> -> <to>: <n> features` with the release notes from the registry; the open PR merges on the press, or on its own when the repo starts its moves and the release is still due. The release PR gets no flow move. With a `release` section the repo page tells a feature "in develop" from one "live" on `to`. |
@@ -398,6 +398,101 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   and the oldest are not seen. Load more in the Triage tab makes the read one page (50) longer, up
   to 10 pages, and the search in the issue tabs asks GitHub across all open issues, display only. Retry (the owner's press) does not wait for the caps.
 
+## Issue moves
+
+An issue nobody has scored or planned waits for a person, and a backlog of a hundred such issues
+waits forever. `issues` gives open issues moves of their own, the way `moves` gives PRs theirs:
+tried in order on every open issue, the first whose conditions hold is the issue's move, and the
+move's `dispatch` entry runs it. The moves are Bton's triager hat (Settings > Agents > Hats):
+`triage` scores an issue with the Triage tab's three questions, `stage` turns a scored issue into a
+plan ready to build or a question to a person, `restage` reconciles an issue the process lost. The
+flow says when each applies and may give it the repo's own prompt; Bton says how it runs, what it
+may touch and what counts as done.
+
+```json
+"issues": [
+  { "move": "triage", "when": ["no_label:priority:", "no_assignee", "author_writes"] },
+  { "move": "stage", "when": ["label:priority:", "label:stage:triage", "no_assignee", "unassigned_ready_under:3"] },
+  { "move": "stage", "when": ["label:stage:spec", "no_assignee", "quiet_hours:48"] },
+  { "move": "restage", "when": ["label:stage:review", "no_open_pr", "quiet_hours:24"] }
+],
+"dispatch": {
+  "triage": { "agent": "claude", "timeoutMinutes": 15 },
+  "stage": { "agent": "claude", "prompt": "Stage issue #{issue} of {repo} as docs/TRIAGE.md says." },
+  "restage": { "agent": "claude" }
+}
+```
+
+- **Which issues.** The predicates are over the issue as the sync read it: `label:<name>` (a label
+  equal to the name, or starting with it when the name ends in `:`, so `label:priority:` is any
+  priority), `no_label:<name>`, `no_assignee`, `assigned`, `author_writes` (an owner, member or
+  collaborator opened it, as intake requires), `open_pr` and `no_open_pr` (an open PR of the repo
+  names the issue as `#n` in its title or body), `quiet_hours:<n>` (no comment and no opening for
+  that long) and `unassigned_ready_under:<n>` (the repo has fewer than that many unassigned
+  `stage:ready` issues: the stage move stops promoting once enough work is lined up). Text that is
+  not a predicate makes the flow invalid, unlike a PR move's: a typo must not leave every issue
+  with no move. A move name is one of the three, listed once, not also a PR move, and has a
+  `dispatch` entry with one agent for every tier (an issue has no tier) or a command; a move may
+  appear in several rules with different conditions (a stage rule for scored issues and one for
+  quiet spec issues). When the flow has issue moves, the repo's open issues are read ten pages
+  deep (500) every sync, not the newest fifty: the issues nobody looked at are the oldest. A repo
+  with more open issues than that keeps its oldest unseen until the backlog shrinks.
+- **Which one first.** The issue of the earliest rule, the most urgent by the intake's `priority`
+  (Bton's `priority:high|medium|low` without one) and then the oldest. One new issue job per repo
+  per sync, after the PRs, the intake and the decisions; one running per repo at a time; at most
+  20 started per repo in a day, every move together, so a flow that misfires costs that many runs
+  before someone sees it, not a night's worth. These counts are this Mac's: two Macs that start the
+  repo's moves each keep their own, and the lease keeps them off the same issue.
+- **Once per round.** The job's key carries the issue's round for these moves: the time of the
+  newest comment that is not a triager's. Every comment the triager posts ends with the line "Bton's
+  triager wrote this; a comment from a person overrules it.", and a comment carrying that line makes
+  no new round, whichever Mac and login posted it: the move never runs again on its own output, nor
+  on a teammate's Bton's. A person's comment does make a new round, the owner's own answer under
+  the same login included, and so does a hand-back with a word. A person who demotes an issue by
+  label alone (ready back to spec, no comment) is left alone: no round changed. Retry on a failed
+  job in the Jobs tab runs the same key again. Under the lease (`issue-<n>`, the one intake and
+  decide use, so no two Btons work one issue at once), before the agent starts, Bton reads the
+  issue again and does not start on one closed, one that no longer meets the rule's conditions, one
+  with a person's comment since the read (the next sync keys it anew), or one a triager wrote on in
+  the last six hours and nobody answered since, which is another Mac's run that this Mac's read came
+  before; a person's answer after the triager's comment ends the wait. A key whose lease history
+  says another Mac already ran it is remembered as run until Bton restarts, so the next issue gets
+  its turn.
+- **What the agent does.** `agent` must be a Claude Code agent: the job's tools are denied as a
+  decision's are (`gh issue close|reopen|delete|transfer|lock|pin|develop|create`, every `gh pr` and
+  `gh repo`, `git push`), which only Claude Code enforces, and a restage may close, which is what
+  reconciling a lost issue sometimes means. It runs in a worktree at `base` with the issue and
+  its comments in a file, never in the prompt, and the triager hat's playbook: its core, then a
+  paragraph on what the core's PR steps mean on an issue (the code graph and the repo's memory
+  asked before the tree, naming the issue; one comment per move; a person's comment since the
+  read stops the job), then the move's section, which says what each move writes. The feature
+  registry's context for the issue is attached as it is for a PR, when the repo has a registry. A `prompt` of the flow's replaces Bton's line naming the issue and
+  the move; `{issue}`, `{repo}` and `{base}` are filled in. `timeoutMinutes` defaults to 20. A
+  `command` runs instead of an agent in the trusted base worktree, with the same fills.
+- **Triage.** The agent answers the Triage tab's three questions (impact, urgency, could someone
+  start today) with the number of an option, from evidence (the thread, the code, the repo's docs
+  and registry, what shipped), names the product goal the issue serves in a line, posts one comment
+  with the answers and the evidence, and ends its final message with `Impact: n`, `Urgency: n`,
+  `Start: n`, `Goal: ...`. Bton scores the answers exactly as a click in the tab would and sets the
+  `priority:` and `stage:` labels itself, so the labels an agent sets are the ones a person would
+  have. The job's detail says the labels and the score.
+- **Asking a person.** When the evidence to answer is missing, or a question is the owner's in
+  person (product scope, pricing, a promise in copy, a legal page, a new public endpoint, anything
+  the repo's process reserves; a high-risk area), the agent does not guess: it posts the specific
+  question, naming who answers it, sets `stage:spec` (a restage too, since the Triage tab lists
+  no issue in review), and ends with `Question: ...`. The issue then shows "asks you" in the
+  Triage tab with the question under it, and stays there until a person answers; the answer is a
+  new round, and the move runs again on it. A posted question wins over answers in the same
+  report: a report that quotes earlier answers and ends by asking leaves the issue to the person.
+- **Done means seen on GitHub.** A job succeeds when its answers set the labels, when it posted a
+  question, when the issue's labels or comments changed under its login, or when it ends with
+  `Unchanged: <why>` (a plan already complete is staged once). One that did none of these fails,
+  with that as the reason, so a prompt that produces chatter and no change is a red job, not a
+  quiet one. A GitHub that cannot be read back fails the job too.
+- **Where it shows.** The Triage tab's row of the issue is the job: it glows while the triager
+  works, says which move and that a click watches it; a failed move says so with Retry in Jobs.
+  The repo card's flow summary lists the issue moves with their conditions.
+
 ## Deciding issues
 
 A team's issues wait on their owner more than on anyone: a question in a comment, a hand-back to
@@ -406,7 +501,8 @@ answer for the owner to post. With `decide`, the owner's own Bton answers them, 
 blocked while the owner is away:
 
 ```json
-"decide": { "by": ["lead-dev"], "except": ["high-risk"] }
+"decide": { "by": ["lead-dev"], "except": ["high-risk"],
+            "table": { "names": { "Dani": "lead-dev" }, "open": ["open"] } }
 ```
 
 - **Who.** Only a Bton signed in as one of `by` decides, and only in a repo that starts its moves
@@ -414,21 +510,35 @@ blocked while the owner is away:
   agent (Settings > Agents): the denied tools below are its settings, and another agent would
   run with none.
 - **Which asks.** The ones the Issues tab lists for the owner: the newest comment or the body of an
-  open issue asks them, and its author has write access. An issue is skipped when one of `except`
+  open issue asks them, and its author has write access. With `table`, an issue whose body keeps a
+  Decisions table (`| D-n | decision | ... | who | date |`, whatever the columns between) asks the
+  owner too when a row's Date cell is empty or starts with one of `open` (`open` when unset) and
+  its Who cell names the owner's login, or a name `names` maps to it (`Dani`), as a whole word; a
+  row with a date is decided whoever it names. A mention that is not answered still comes first.
+  The table ask is keyed on the open rows' text, so it runs once per wording: an edited or decided
+  row is a new ask, a comment is not, and the tab shows "D-3 open for you in the Decisions table"
+  until the rows are decided in the body. An issue is skipped when one of `except`
   is a label of the issue (whole, or the value after a `:`, so `tier:high-risk` matches) or a word
   in its body: lexito's high-risk issues keep the owner's own ruling and get a draft only. The read
   carries an issue's first 100 labels, so one with that many is excepted too. Under the lease, before
   the agent starts, Bton reads the issue again (state, labels, body, comments) and does not decide
   one closed or excepted since, nor one with a comment after the ask: the owner's answer, or a
-  newer ask, which the next sync reads and keys anew.
+  newer ask, which the next sync reads and keys anew (for a table ask: nor one whose open rows
+  changed since the read).
 - **One run per ask.** The job's key is the asking comment, so a decided ask is not decided again;
   a new comment that asks the owner something else runs it again. The ask stays in the tab, marked
-  "Bton decided", until the sync reads the owner's comment and clears it. Decided means a comment
+  "Bton decided", until the sync reads the owner's comment and clears it. A table ask differs in
+  both: its key is the open rows' wording, so it runs once per wording whatever is commented, and
+  it stays in the tab until the rows read as decided in the body, which the agent is told to write
+  and a reply posted from the tab does not. Decided means a comment
   of the owner's on the issue since the job started: an agent that exits without one (the question
   needs a fact only the owner knows) leaves the ask to the owner, with its last line as the reason,
   and Draft reply stays. A job that fails leaves the ask with Retry decision.
 - **What the agent does.** `agent` (default `claude`) runs in a worktree at the default branch with
-  the issue and its comments in a file, never in the prompt. It decides the newest open question to
+  the issue and its comments in a file, never in the prompt, and the issue's feature context when
+  the repo has a registry. Its playbook is the decider hat's core and the issue paragraph (the
+  code graph and the repo's memory asked first, naming the issue), not the PR decide section,
+  whose review table has no place on an issue. It decides the newest open question to
   the owner: where they must choose, it picks one option with the reason and what would have changed
   it, and answers the rest plainly. It records the ruling the way the repo's process says the owner
   does: one comment whose first line starts with `decision.heading` (`## Decision:` when the flow
@@ -439,7 +549,9 @@ blocked while the owner is away:
   nothing and says so in its report. The never is enforced where a tool can be named, not only
   asked: the job's Claude is denied `gh issue close|reopen|delete|transfer|lock|pin|develop|create`,
   every `gh pr` and `gh repo` command and `git push`, on top of Bton's own list; editing another
-  issue by number is asked of it, not denied. `prompt` replaces this with the team's own text; `{issue}`,
-  `{repo}` and `{heading}` are filled in. `timeoutMinutes` defaults to 20.
+  issue by number is asked of it, not denied. For a table ask it is told the open rows' ids and to
+  write the ruling into the row's cells, the owner's name and the date in Who and Date, so the row
+  reads as decided. `prompt` replaces this with the team's own text; `{issue}`, `{repo}`, `{heading}`
+  and `{rows}` (the open rows' ids, empty for a mention) are filled in. `timeoutMinutes` defaults to 20.
 - **Overruling.** The decision is a comment under the owner's login, so the process reads it as the
   owner's. The owner changes it by commenting: the next ask to them is decided from that thread.

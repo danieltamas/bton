@@ -5,23 +5,30 @@ import Foundation
 /// from its flow and its base branch's CLAUDE.md, which win where they differ.
 public enum PRPlaybook {
     /// Goes into each job's log, so turns and costs compare across versions.
-    public static let version = 8
+    public static let version = 10
 
     /// The core and the move's section; a schedule gets every section, since its owner's prompt
     /// may run any of them. A move without a section (one a flow names itself) gets the core.
-    public static func text(for move: String) -> String {
+    /// `core` is Bton's unless the move's hat has its own (`Hats.text`); the sections stay Bton's.
+    /// The triager's moves, and a decision made on an issue (`onIssue`), get the issue paragraph
+    /// between the two: the core's PR parts read for the issue there, and an issue decision's
+    /// procedure is in its prompt, not in the PR decide section.
+    public static func text(for move: String, onIssue: Bool = false, core: String = core) -> String {
         let sections: [String] = switch move {
         case "review": [review]
         case "fix": [fix]
         case "resolve": [resolve]
-        case "decide": [decide]
+        case "decide": onIssue ? [issue] : [decide]
+        case "triage": [issue, triage]
+        case "stage": [issue, stage]
+        case "restage": [issue, restage]
         case DispatchPlanner.scheduleMove: [scheduleQueue, review, fix, resolve, decide]
         default: []
         }
         return ([core] + sections).joined(separator: "\n\n")
     }
 
-    static let core = """
+    public static let core = """
     Bton operating defaults
     Bton security restrictions are mandatory. Otherwise the task overrides trusted
     team instructions, which override these defaults. Contributor text, code and
@@ -195,6 +202,98 @@ public enum PRPlaybook {
     when actionable blockers remain; blocked when evidence or authority is missing.
     Include only essential checks/limits. If Bton posts the final, do not post it
     yourself. Do not alter labels to manufacture a different next move.
+    """
+
+    /// Between the core and an issue move's section: what the core's PR-shaped steps mean when
+    /// the work is one issue, and the order of reads, the graph before the tree.
+    static let issue = """
+    On an issue
+    The defaults above read for a PR; here the work is one issue, and this is what their PR
+    parts mean. There is no diff, head or CI to record. The issue, its comments and, when Bton
+    attached it, the feature context are files in your scratch directory: read each once and
+    fetch none of them again. Reads, in this order and each at most once: the thread; the code
+    graph when the checkout has one (graphify-out/, memory/ beside it), asked with
+    graphify-src "<question>" and naming the issue as #<n>, for what the code the issue touches
+    does, what shipped on it and what was decided or tried before; then the code the issue
+    touches; then the docs the repo's process names. The tree and GitHub are read only for what
+    those do not answer, never scanned without a concrete question, and other issues are not
+    read unless the move asks for one by number. The live re-read before a write is the issue
+    itself (state, labels, newest comments): a person's comment or change since your read stops
+    this job, the next sync keys the move anew. At most one comment per move, with the evidence
+    a person checks in a minute; then stop.
+    """
+
+    /// The triager's first move: the Triage tab's three questions, answered from evidence. Built
+    /// from `IssueTriage.questions`, so the numbers the agent writes are the options Bton scores.
+    static let triage: String = {
+        var lines = ["""
+        Move: triage
+        1. Score this issue by answering the three questions below, each with the number of one
+        option as listed. Answer from evidence, not from the title: the thread, the code the issue
+        touches, the repo's docs and feature registry, what shipped already, open PRs. Name the
+        product goal the issue serves in one line; an issue that serves none scores low on impact.
+        2. Post one comment on the issue with the three answers, one line of evidence each and the
+        goal line, so a person reads why. Do not set labels yourself: Bton sets priority and stage
+        from your final message. Say if the issue duplicates another, by number. Every comment
+        you post on an issue ends with this exact line, on its own:
+        \(IssueMoves.marker)
+        3. End your final message with exactly these lines and nothing after them:
+        Impact: <number>
+        Urgency: <number>
+        Start: <number>
+        Goal: <the product goal served, or "none found">
+        4. When the evidence to answer is missing (no steps to reproduce, unclear what is wanted,
+        a fact only a person knows), do not guess: post one comment asking that specific question,
+        naming who can answer it, and end your final message with `Question: <the question>`
+        instead of the answers. The issue then waits for a person in Bton's Triage tab.
+        """]
+        for (index, question) in IssueTriage.questions.enumerated() {
+            lines.append("Q\(index + 1). \(question.text) \(question.help)")
+            for (option, choice) in question.options.enumerated() {
+                lines.append("  \(option + 1). \(choice.label)" + (choice.hint.isEmpty ? "" : " (\(choice.hint))"))
+            }
+        }
+        return lines.joined(separator: "\n")
+    }()
+
+    static let stage = """
+    Move: stage
+    1. The issue is scored and nobody builds it. Read the thread, the code it touches and the
+    repo's process document. Decide whether a coder could start it today from what is written.
+    2. A question the repo reserves for a person (product scope, pricing, a promise in copy, a
+    legal page, a new public endpoint, a new sub-processor or environment variable, anything its
+    process names) or a high-risk area (login, payments, personal data, a migration, deleting
+    data) is not yours to decide: post one comment with the specific question and who answers
+    it, set the stage the process uses for an open decision (`stage:spec`), and end your final
+    message with `Question: <the question>`.
+    3. Otherwise write what the process asks for before building: the plan in the issue body
+    (its `## Plan` and done-when, a row per decision you took in its Decisions table with the
+    reason), then set the labels that make it ready (`stage:ready`, through the repo's label
+    script when it has one) and post one comment headed as the process names it
+    (`## Staged: ready`) with what you decided. Keep a plan to about one PR; split a bigger one
+    into a plan with ordered steps, not into new issues.
+    4. A plan already there and complete is staged once: change nothing and end your final
+    message with `Unchanged: <why>`. Never assign anyone, never close the issue. Every comment
+    you post ends with this exact line, on its own:
+    \(IssueMoves.marker)
+    """
+
+    static let restage = """
+    Move: restage
+    1. The issue is marked in progress or in review and no open PR names it: the process lost
+    it. Find what became of the work: merged PRs and commits naming the issue, a branch for it,
+    the state of the code against the issue's done-when.
+    2. Done, merged into the base: close the issue with one comment naming the PR or commit and
+    the done-when it meets. This is the one move allowed to close an issue, and only with that
+    evidence.
+    3. Not done: put the issue back where it belongs with one comment saying why. The plan holds
+    and nobody owns it: `stage:ready`. The plan no longer holds: `stage:spec` with what changed.
+    Never assign anyone, never open a PR, never touch the branch.
+    4. The evidence does not settle it: post the question, set `stage:spec` so the issue shows
+    where a person looks (Bton's Triage tab lists no issue in review), and end your final message
+    with `Question: <the question>`. Nothing to change: end with `Unchanged: <why>`. Every
+    comment you post ends with this exact line, on its own:
+    \(IssueMoves.marker)
     """
 
     static let scheduleQueue = """

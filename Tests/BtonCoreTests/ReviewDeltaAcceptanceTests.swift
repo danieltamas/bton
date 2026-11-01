@@ -273,7 +273,7 @@ struct ReviewDeltaAcceptanceTests {
 
     // g
     @Test func playbookUsesPreviousReviewScope() {
-        #expect(PRPlaybook.version == 8)
+        #expect(PRPlaybook.version == 10)
         #expect(PRPlaybook.text(for: "review").contains("Previous review"))
         #expect(PRPlaybook.text(for: "review").contains("scope"))
     }

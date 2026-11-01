@@ -55,7 +55,7 @@ enum Theme {
         case "finish": neutral
         case "schedule": hue(0x5CC8FF, light: 0x047EAD)
         case "supervise": hue(0xFF8FB1, light: 0xBB436E)
-        case "draft": mint
+        case "draft", "triage", "stage", "restage": mint
         default: neutral
         }
     }
@@ -71,6 +71,7 @@ enum Theme {
         case "schedule": "clock.arrow.circlepath"
         case "supervise": "binoculars"
         case "draft": "text.bubble"
+        case "triage", "stage", "restage": "checklist"
         default: "circle.dashed"
         }
     }

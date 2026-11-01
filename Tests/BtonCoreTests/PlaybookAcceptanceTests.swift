@@ -30,6 +30,20 @@ struct PlaybookAcceptanceTests {
         #expect(text.contains("graphify-out"))
     }
 
+    @Test func aDecisionOnAnIssueReadsTheIssueParagraphInsteadOfThePRDecideSection() {
+        let core = PRPlaybook.text(for: "custom-move")
+        let onIssue = PRPlaybook.text(for: "decide", onIssue: true)
+        #expect(onIssue.hasPrefix(core + "\n\nOn an issue\n"))
+        #expect(!onIssue.contains("Move: decide\n"))
+        #expect(onIssue.contains("graphify-src \"<question>\""))
+        let onPR = PRPlaybook.text(for: "decide")
+        #expect(!onPR.contains("On an issue\n") && onPR.contains("Move: decide\n"))
+        // A PR move never gets it, whatever the flag says about the job.
+        #expect(PRPlaybook.text(for: "fix", onIssue: true) == PRPlaybook.text(for: "fix"))
+        let decided = IssueDecisions.prompt(heading: "## Decision", me: "lead")
+        #expect(decided.contains("graphify-src \"<question>\"") && decided.contains("for what the graph does not answer"))
+    }
+
     @Test func scheduleGetsQueueAndEveryMove() {
         let text = PRPlaybook.text(for: "schedule")
         #expect(text.hasPrefix(PRPlaybook.text(for: "custom-move") + "\n\n"))

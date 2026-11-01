@@ -34,9 +34,10 @@ struct FeatureContextTests {
         IntakePlan(issue: issue, base: "main", terms: IssueIntake.Terms(), claim: [], worktree: [], worktreePath: ".worktrees/x")
     }
 
-    static func candidate(target: DispatchTarget, move: String = "fix", agent: String? = "codex", postComment: Bool = false) -> DispatchCandidate {
+    static func candidate(target: DispatchTarget, move: String = "fix", agent: String? = "codex", postComment: Bool = false,
+                          item: String = "x") -> DispatchCandidate {
         DispatchCandidate(target: target, move: Move(name: move, owner: "owner", ownerFromRotation: false, tier: "", hasDispatch: true),
-                          key: JobKey(repo: repo, item: "x", move: move, head: "h"), agent: agent, prompt: "Synthetic task",
+                          key: JobKey(repo: repo, item: item, move: move, head: "h"), agent: agent, prompt: "Synthetic task",
                           command: nil, postComment: postComment, timeout: .seconds(30))
     }
 
@@ -177,6 +178,22 @@ struct FeatureContextTests {
 
         let supervise = Engine.withFeatureContext(Self.candidate(target: .pullRequest(Self.pr(number: 428, files: [])), move: Supervision.move), report: report)
         #expect(supervise.prompt?.contains("Feature: filing-dedupe") == false)
+
+        // A triage or a decision runs at the base with the issue in its key: the context is that issue's, not the branch's.
+        for move in ["triage", "stage", "restage", IssueDecisions.move] {
+            let atBase = Self.candidate(target: .branch("main"), move: move, agent: "claude", item: "issue-402")
+            #expect(atBase.issue == 402)
+            let made = Engine.withFeatureContext(atBase, report: report)
+            #expect(made.attachments[FeatureContext.file]?.contains("# Feature context for issue #402") == true, Comment(rawValue: move))
+            #expect(made.attachments[FeatureContext.file]?.contains("### `filing-dedupe`") == true, Comment(rawValue: move))
+            #expect(made.prompt?.contains("Feature: filing-dedupe") == false, Comment(rawValue: move))
+        }
+        // A decision on a PR gets the PR's context and, editing nothing, no `Feature:` line either.
+        let decidePR = Engine.withFeatureContext(Self.candidate(target: .pullRequest(Self.pr(number: 428, files: [])), move: IssueDecisions.move), report: report)
+        #expect(decidePR.attachments[FeatureContext.file]?.contains("# Feature context for PR #428") == true)
+        #expect(decidePR.prompt?.contains("Feature: filing-dedupe") == false)
+        #expect(Self.candidate(target: .branch("main")).issue == nil)
+        #expect(Self.candidate(target: .issue(Self.plan(issue: 402))).issue == 402)
 
         for move in [FeatureJob.move, NewIssues.move, IssueDrafts.move] {
             let same = Self.candidate(target: .branch("main"), move: move)

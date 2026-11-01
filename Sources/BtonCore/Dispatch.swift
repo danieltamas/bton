@@ -12,6 +12,12 @@ public enum DispatchTarget: Sendable {
 public struct DispatchCandidate: Sendable {
     /// Var for the retry of an issue already claimed, which skips the claim.
     public var target: DispatchTarget
+    /// The issue this job is about, when it is about one: the intake's plan, or the `issue-<n>`
+    /// item of a move that runs at the base (triage, stage, restage, a decision on an issue).
+    public var issue: Int? {
+        if case let .issue(plan) = target { return plan.issue }
+        return key.item.hasPrefix("issue-") ? Int(key.item.dropFirst("issue-".count)) : nil
+    }
     public let move: Move
     public let key: JobKey
     /// nil for a command move (merge).
@@ -46,6 +52,9 @@ public struct DispatchCandidate: Sendable {
     public var denied: [String] = []
     /// A decision in the owner's place: checked again on the issue under the lease.
     public var decide: IssueDecisions.Plan?
+    /// An issue move (triage, stage, restage): checked again on the issue under the lease, and
+    /// what its outcome is read against.
+    public var issueMove: IssueMoves.Plan?
     /// Files written to a Claude job's scratch directory before it starts, by name: text the agent
     /// reads as data, kept out of its prompt.
     public var attachments: [String: String] = [:]

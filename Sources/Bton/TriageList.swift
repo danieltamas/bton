@@ -125,8 +125,19 @@ private struct TriageRow: View {
     let issue: TriageIssue
     let showRepo: Bool
 
+    /// The triager's newest job on the issue: running, it is this row working; asked, the issue
+    /// waits here for a person; failed, Retry is in the Jobs tab.
+    private var job: Job? { IssueMoves.latestJob(for: issue.number, repo: issue.repo, jobs: store.jobs) }
+    private var asked: String? {
+        guard let detail = job?.detail, job?.status == .succeeded, detail.hasPrefix("asked: ") else { return nil }
+        return String(detail.dropFirst("asked: ".count))
+    }
+
     var body: some View {
-        HoverCard(accent: Theme.mint, action: { withAnimation(Motion.spring) { store.triaging = issue } }) {
+        let working = job?.status == .running ? job : nil
+        HoverCard(accent: Theme.mint, glow: working.map { _ in Theme.color(for: .running) }, action: {
+            if let working { withAnimation(Motion.spring) { store.watchingJob = working.id } } else { withAnimation(Motion.spring) { store.triaging = issue } }
+        }) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Text("#\(issue.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
@@ -134,10 +145,20 @@ private struct TriageRow: View {
                     if showRepo { RepoName(repo: issue.repo) }
                     PriorityChip(priority: issue.priority)
                     StageChip(stage: issue.stage)
+                    if asked != nil { Chip(text: "asks you", symbol: "questionmark.bubble", color: Theme.mint, style: .outline) }
                 }
                 Text(issue.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 RelativeTime(date: issue.createdAt) { "opened \($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
+                if let working {
+                    Text("The triager is on its \(working.key.move) move: click to watch").font(.meta).foregroundStyle(Theme.color(for: .running))
+                } else if let asked {
+                    Text("The triager asks: \(asked)").font(.meta).foregroundStyle(Theme.textSecondary).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let job, [.failed, .cancelled].contains(job.status) {
+                    Text("The triager's \(job.key.move) move stopped: Retry in Jobs" + (job.detail.map { " (\($0))" } ?? ""))
+                        .font(.meta).foregroundStyle(Theme.danger).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

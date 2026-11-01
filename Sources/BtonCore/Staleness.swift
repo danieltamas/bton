@@ -37,4 +37,37 @@ public enum Staleness {
         guard hours >= stale.pingHours, !pr.btonMarkers.contains(ping) else { return nil }
         return Notice(marker: ping, body: "@\(owner): \(waited).\n\n" + BtonMarker.line(ping))
     }
+
+    /// When the issue's current state began: its last assignment or label change, or the latest
+    /// comment by a person, whichever is later; the issue's opening when none. Bton's own
+    /// comments (a marker, the triager's line) never reset it, so a ping is not its own answer.
+    public static func since(_ issue: OpenIssue) -> Date {
+        let spoken = issue.comments.filter { BtonMarker.keys(in: $0.body).isEmpty && !IssueMoves.isTriagers($0) }
+        return ([issue.createdAt, issue.stateChangedAt] + spoken.map(\.createdAt)).compactMap { $0 }.max() ?? issue.createdAt
+    }
+
+    /// The comment due on an issue someone took and nobody moved, if any: its assignees are
+    /// pinged past `pingHours`, `escalateTo` is told past `escalateHours` (then only that, also
+    /// when the ping was never posted). The markers carry when the state began, so a new
+    /// assignment, label or comment is a new wait and the same one is never pinged twice, on any
+    /// Mac. `askedOfMe` is an issue waiting on me (a mention, a Decisions row): that wait is mine,
+    /// not the assignee's, so nothing is posted.
+    public static func notice(for issue: OpenIssue, stale: Stale, askedOfMe: Bool = false, now: Date = .now) -> Notice? {
+        guard !issue.assignees.isEmpty, !askedOfMe else { return nil }
+        let since = since(issue)
+        let hours = now.timeIntervalSince(since) / 3600
+        let episode = String(Int(since.timeIntervalSince1970))
+        let markers = Set(issue.comments.flatMap { BtonMarker.keys(in: $0.body) })
+        let assignees = issue.assignees.map { "@\($0)" }.joined(separator: " ")
+        let waited = "#\(issue.number) has waited \(Int(hours)) hours with nothing changed on it"
+        let escalation = "stale-escalate issue@\(episode)"
+        if hours >= stale.escalateHours {
+            guard !markers.contains(escalation) else { return nil }
+            return Notice(marker: escalation, body: "@\(stale.escalateTo): \(waited), assigned to \(assignees).\n\n" + BtonMarker.line(escalation))
+        }
+        let ping = "stale-ping issue@\(episode)"
+        guard hours >= stale.pingHours, !markers.contains(ping) else { return nil }
+        return Notice(marker: ping, body: "\(assignees): \(waited). Is it still yours? A comment, a label or a hand-off answers this.\n\n"
+            + BtonMarker.line(ping))
+    }
 }

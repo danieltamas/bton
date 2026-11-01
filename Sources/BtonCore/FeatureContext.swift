@@ -27,7 +27,8 @@ public enum FeatureContext {
     /// Nil without a loaded registry. A PR matches by its link in the registry, then by a
     /// `Feature:` line in its body, then by its changed files against feature and area paths;
     /// an issue by its link only.
-    public static func make(for target: DispatchTarget, report: FeatureReport) -> Context? {
+    /// `issue` is the issue a job at the base is about (a triage, a decision), which its target does not say.
+    public static func make(for target: DispatchTarget, issue: Int? = nil, report: FeatureReport) -> Context? {
         guard let registry = report.registry.registry else { return nil }
         let about: String
         var linked: [FeatureRegistry.Feature] = []
@@ -48,7 +49,12 @@ public enum FeatureContext {
             areas = registry.areas.filter { area in pr.changedFiles.contains { path in area.paths.contains { PathGlob.matches($0, path) } } }
             partial = pr.changedFilesTruncated
         case let .branch(branch):
-            about = "work on \(branch)"
+            if let issue {
+                about = "issue #\(issue)"
+                linked = registry.features.filter { $0.issues.contains { $0.number == issue } }
+            } else {
+                about = "work on \(branch)"
+            }
         }
         var lines = [
             "# Feature context for \(about) in \(report.repo)",

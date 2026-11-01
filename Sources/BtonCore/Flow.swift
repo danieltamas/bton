@@ -23,6 +23,16 @@ public struct Flow: Decodable, Sendable {
     /// How `from` reaches `to` (develop to main): the owner's release move, plan and predicates
     /// in docs/FLOW.md "Release". Read here so the repo page can tell "in develop" from "live".
     public let release: Release?
+    /// The moves an open issue has before anyone builds it (docs/FLOW.md "Issue moves"): tried in
+    /// order on every open issue, the first whose conditions hold is the issue's move. Each is run
+    /// by its `dispatch` entry under the triager hat.
+    public let issues: [IssueRule]?
+
+    /// One issue move: `triage`, `stage` or `restage`, and the predicates over the issue.
+    public struct IssueRule: Decodable, Sendable {
+        public let move: String
+        public let when: [String]
+    }
 
     public struct Release: Decodable, Sendable {
         public let from: String
@@ -61,6 +71,23 @@ public struct Flow: Decodable, Sendable {
         /// Words that keep an issue for the owner in person: one of its labels, or a whole word of
         /// its body (`high-risk`).
         public let except: [String]?
+        /// The Decisions table the repo keeps in an issue body: an open row addressed to the owner
+        /// is an ask too, with no mention needed.
+        public let table: DecisionTable?
+    }
+
+    /// How the repo's Decisions table (`| D-n | decision | ... | who | date |`) names people and
+    /// marks a row still open: `names` maps a Who cell's name to a login (`"Dani": "lead-dev"`; a
+    /// login always counts for itself), `open` the Date cell's words for undecided (`open` when
+    /// unset; an empty cell counts too).
+    public struct DecisionTable: Decodable, Hashable, Sendable {
+        public let names: [String: String]?
+        public let open: [String]?
+
+        public init(names: [String: String]? = nil, open: [String]? = nil) {
+            self.names = names
+            self.open = open
+        }
     }
 
     /// nil is a repo without a flow file. Anything that is not a valid version 1 flow is never
@@ -126,6 +153,22 @@ public struct Flow: Decodable, Sendable {
                 }
                 if let helpers = rule.helpers, helpers.count > 3 || !helpers.allSatisfy(BtonConfig.isAgentName) {
                     return .invalid("dispatch.\(move).helpers: up to three agent names")
+                }
+            }
+            if let issues = flow.issues {
+                let prMoves = Set(flow.moves.map(\.move))
+                for (index, rule) in issues.enumerated() {
+                    guard IssueMoves.moves.contains(rule.move) else {
+                        return .invalid("issues[\(index)].move \(rule.move.prefix(100)) is not one of \(IssueMoves.moves.joined(separator: ", "))")
+                    }
+                    if prMoves.contains(rule.move) { return .invalid("issues[\(index)].move \(rule.move) is also a PR move") }
+                    guard let dispatch = flow.dispatch[rule.move] else { return .invalid("issues[\(index)]: dispatch.\(rule.move) is missing") }
+                    // An issue has no tier: the agent is one for every tier or none.
+                    if let agent = dispatch.agent, case .byTier = agent { return .invalid("dispatch.\(rule.move).agent: one agent, not per tier") }
+                    if dispatch.agent == nil, dispatch.command == nil { return .invalid("dispatch.\(rule.move) names no agent and no command") }
+                    if let bad = rule.when.first(where: { IssuePredicate($0) == nil }) {
+                        return .invalid("issues[\(index)].when: \(bad.prefix(100)) is not an issue predicate")
+                    }
                 }
             }
             if let release = flow.release {

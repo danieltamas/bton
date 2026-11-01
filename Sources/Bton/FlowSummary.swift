@@ -119,10 +119,29 @@ struct FlowSummary: View {
                 Line(key: "open PRs", value: "\(caps.openPullRequestsPerDeveloper) per developer, \(caps.openPullRequestsTeam) for the team")
             }
         }
+        if let issues = flow.issues, !issues.isEmpty {
+            Section(title: "Issue moves", note: "Tried in this order on every open issue; the first whose conditions hold is the issue's move, run under the triager hat by a Claude Code agent, one at a time per repo, \(IssueMoves.dailyCap) a day.") {
+                ForEach(Array(issues.enumerated()), id: \.offset) { _, rule in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(rule.move).font(.system(size: 11.5, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                            Text(rule.when.joined(separator: ", ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let dispatch = flow.dispatch[rule.move] { Line(key: "run by", value: runner(dispatch, tiers: tiers)) }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
         if let decide = flow.decide {
             Section(title: "Issues' questions to the owner", note: "Decided by the owner's own Bton, in the owner's name.") {
                 Line(key: "by", value: decide.by.joined(separator: ", ") + (decide.agent.map { ", \($0)" } ?? ""))
                 if let except = decide.except, !except.isEmpty { Line(key: "kept for a person", value: except.joined(separator: ", ")) }
+                if let table = decide.table {
+                    let names = (table.names ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key) is \($0.value)" }
+                    Line(key: "Decisions table", value: "an open row is an ask" + (names.isEmpty ? "" : "; " + names.joined(separator: ", ")))
+                }
             }
         }
         if let release = flow.release {

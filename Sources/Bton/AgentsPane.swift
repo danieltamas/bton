@@ -39,6 +39,10 @@ struct AgentsPane: View {
             ForEach(Array(store.agents.keys.sorted().enumerated()), id: \.element) { index, name in
                 AgentCard(name: name, argv: store.agents[name]?.argv ?? [], isNew: false) {}.riseIn(index)
             }
+            SettingsCard(title: "Hats",
+                         detail: "The roles Bton's agents play in every repo: who runs each one on this Mac and the operating defaults it works by. The flow's prompt adds the repo's own rules; a repo card's Issue work and Reviewer override the coder's pick for its issue work and the reviewer's pick there.") {
+                HatsSettings()
+            }
             SettingsCard(title: "Drafts and new issues",
                          detail: "The Claude model that drafts replies to issue questions and writes new issues. Not your Claude default, which may be the dearest model.") {
                 MenuField(title: ClaudeModel.label(for: store.draftModel), options: ClaudeModel.choices.compactMap { $0.id == nil ? nil : $0.label }) { label in
@@ -93,7 +97,7 @@ private struct AgentCard: View {
                     if users > 0 { Chip(text: "\(users) schedule\(users == 1 ? "" : "s")", color: Theme.color(forMove: "schedule")) }
                     if !isNew, let program = originalArgv.first, Executables.resolve(program) == nil {
                         Chip(text: "\(program) not installed", symbol: "exclamationmark.triangle", color: Theme.danger)
-                            .help("Bton looks for it on PATH and in ~/.local/bin, /opt/homebrew/bin and /usr/local/bin")
+                            .help(AppStore.programSearchHint)
                     }
                     Spacer()
                     if saved { Chip(text: "saved", symbol: "checkmark", color: Theme.success).transition(.opacity) }

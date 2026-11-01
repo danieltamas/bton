@@ -30,6 +30,12 @@ public struct BtonConfig: Codable, Sendable {
     public var graphInstruction: String? = nil
     /// The owner starred Bton on GitHub from the footer (RepoStar): the offer never comes back.
     public var starredRepo: Bool? = nil
+    /// This Mac's hats by role name (`Hat.rawValue`): how each role runs here and the operating
+    /// defaults it works by. Absent, or a role left out: the flow's agent with Bton's playbook.
+    public var hats: [String: HatSettings]? = nil
+
+    /// The hats as set, with no entry for a role left to Bton.
+    public var hatSettings: [String: HatSettings] { hats ?? [:] }
 
     /// Whether Bton keeps and uses the repo's code graph: this switch and the repo's both on.
     public func buildsGraph(_ repo: WatchedRepo) -> Bool { codeGraphs && repo.buildsGraph }
@@ -126,11 +132,12 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// A label on each PR while a Bton, on any Mac, holds its lease: teammates without Bton see
     /// which PRs an agent works on. Display only; nothing reads it back. Nil is off.
     public var workLabel: String?
-    /// How this Mac runs the repo's issue work, as `AgentPick` text (`claude:sonnet medium`). Nil
-    /// runs the flow's intake agent with that agent's own model.
+    /// How this Mac runs the repo's issue work (a ready issue, the registry), as `AgentPick` text
+    /// (`claude:sonnet medium`), over the coder hat's pick there; a PR's fix and resolve are the
+    /// hat's alone. Nil runs the hat's pick, else the flow's intake agent with its own model.
     public var work: String?
-    /// How this Mac runs the repo's reviews (`codex:gpt-5 high`) and the rules it adds to the
-    /// review prompt. Nil runs the flow's reviewer as the flow says.
+    /// How this Mac runs the repo's reviews (`codex:gpt-5 high`), over the reviewer hat's pick, and
+    /// the rules it adds to every review prompt here. Nil runs the hat's pick, else the flow's.
     public var reviewer: String?
     public var reviewRules: String?
     /// true: after a sync, Bton keeps a graphify graph of the branch PRs merge into under

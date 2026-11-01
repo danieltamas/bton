@@ -77,9 +77,12 @@ extension Engine {
                          revision: issueRevisions[slug] ?? 0)
     }
 
-    func issueAsks(in repos: [WatchedRepo], me: String?) -> [IssueAsk] {
+    /// `flows` as read this tick: a repo's Decisions table makes its open rows for me asks too.
+    func issueAsks(in repos: [WatchedRepo], me: String?, flows: [String: FlowStatus]) -> [IssueAsk] {
         guard let me else { return [] }
-        return IssueAsks.asks(repos.flatMap { openIssues[$0.slug.lowercased()] ?? [] }, me: me)
+        return repos.flatMap { repo in
+            IssueAsks.asks(openIssues[repo.slug.lowercased()] ?? [], me: me, table: flows[repo.slug]?.flow?.decide?.table)
+        }.sorted { $0.askedAt > $1.askedAt }
     }
 
     /// Drafts the owner's reply to an ask at the next sync, first in line.
@@ -93,13 +96,13 @@ extension Engine {
     /// whose ask is gone or changed, or whose draft already ran, ends here; one whose issues were
     /// not read this tick waits for a read, rather than start on a thread that may be answered.
     func draftCandidates(repo: String, defaultBranch: String, me: String, agents: [String: AgentTemplate],
-                         model: String) -> [DispatchCandidate] {
+                         model: String, table: Flow.DecisionTable?) -> [DispatchCandidate] {
         guard issuesReadThisTick.contains(repo.lowercased()) else { return [] }
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
         let ran = Set(all.map(\.key))
         // A draft I pressed Retry on asks again, as long as its comment is still the ask.
-        for ask in IssueAsks.asks(issues, me: me)
+        for ask in IssueAsks.asks(issues, me: me, table: table)
         where DispatchPlanner.isRetry(IssueDrafts.key(for: ask), jobs: all) && !draftRequests.contains(where: { $0.id == ask.id }) {
             draftRequests.append(ask)
         }
@@ -107,7 +110,8 @@ extension Engine {
         draftRequests.removeAll { ask in
             guard ask.repo.caseInsensitiveCompare(repo) == .orderedSame else { return false }
             guard let issue = issues.first(where: { $0.number == ask.number }),
-                  let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch, me: me, model: model),
+                  let candidate = IssueDrafts.candidate(ask: ask, issue: issue, agents: agents, defaultBranch: defaultBranch,
+                                                        me: me, model: model, table: table),
                   !ran.contains(candidate.key) || DispatchPlanner.isRetry(candidate.key, jobs: all) else { return true }
             made.append(candidate)
             return false
@@ -123,12 +127,21 @@ extension Engine {
         let issues = openIssues[repo.lowercased()] ?? []
         let all = jobs.all()
         let ran = Set(all.filter { $0.retry != true }.map(\.key))
-        return IssueAsks.asks(issues, me: me).compactMap { ask in
+        return IssueAsks.asks(issues, me: me, table: flow.decide?.table).compactMap { ask in
             guard let issue = issues.first(where: { $0.number == ask.number }),
                   let candidate = IssueDecisions.candidate(ask: ask, issue: issue, flow: flow, agents: agents, defaultBranch: defaultBranch, me: me),
                   !ran.contains(candidate.key) else { return nil }
             return candidate
         }
+    }
+
+    /// The repo's next issue move (triage, stage, restage), when the repo starts its moves and
+    /// its issues were read this tick: one new per sync, after the PRs, the intake and the decisions.
+    func issueMoveCandidates(repo: String, flow: Flow, pullRequests: [PullRequest], me: String,
+                             agents: [String: AgentTemplate]) -> [DispatchCandidate] {
+        guard flow.issues?.isEmpty == false, issuesReadThisTick.contains(repo.lowercased()) else { return [] }
+        return [IssueMoves.candidate(issues: openIssues[repo.lowercased()] ?? [], flow: flow, pullRequests: pullRequests,
+                                     jobs: jobs.all(), repo: repo, me: me, agents: agents, ranElsewhere: issueMovesRanElsewhere)].compactMap { $0 }
     }
 
     /// Asks the agent for the next turn of a new issue, first in line at the next sync.

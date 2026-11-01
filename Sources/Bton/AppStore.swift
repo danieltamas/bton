@@ -87,6 +87,16 @@ final class AppStore {
     var repos: [WatchedRepo] { config.repos }
     var schedules: [ScheduleEntry] { config.schedules }
     var agents: [String: AgentTemplate] { config.agents }
+
+    /// The program of a configured agent that this Mac does not have, or nil when it runs here
+    /// (or is not configured at all). A pick of it fails its job at start, so every pick says so.
+    func missingProgram(of agent: String) -> String? {
+        guard let program = agents[agent]?.argv.first, Executables.resolve(program) == nil else { return nil }
+        return program
+    }
+
+    /// Where `missingProgram` looked, for the hint beside the warning.
+    static let programSearchHint = "Bton looks for it on PATH and in ~/.local/bin, /opt/homebrew/bin and /usr/local/bin"
     var supervisor: SupervisorSettings? { config.supervisor }
     /// Set by `showDemo`: the screenshots never read this Mac's voice models.
     private(set) var isDemo = false
@@ -95,6 +105,7 @@ final class AppStore {
     var graphifyPython: String? { config.graphifyPython }
     var codeGraphs: Bool { config.codeGraphs }
     var graphInstruction: String? { config.graphInstruction }
+    var hats: [String: HatSettings] { config.hatSettings }
     var pollSeconds: Int { config.pollSeconds }
     /// The poll interval as the footer and the repo page word it: "2m" or "45s".
     var pollEvery: String { Duration.seconds(pollSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow)) }

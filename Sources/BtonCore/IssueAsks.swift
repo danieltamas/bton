@@ -16,12 +16,16 @@ public struct OpenIssue: Hashable, Sendable {
     public let labels: [String]
     /// Logins of whoever has taken the issue.
     public let assignees: [String]
+    /// When the issue was last assigned, unassigned, labeled or unlabeled; nil when never, or on a
+    /// read that did not ask. With the latest person's comment, it is when the issue's state began.
+    public let stateChangedAt: Date?
 
     public init(repo: String, number: Int, title: String, url: URL, createdAt: Date, author: String?,
                 authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = [],
-                assignees: [String] = []) {
+                assignees: [String] = [], stateChangedAt: Date? = nil) {
         self.labels = labels
         self.assignees = assignees
+        self.stateChangedAt = stateChangedAt
         self.repo = repo
         self.number = number
         self.title = title
@@ -31,6 +35,13 @@ public struct OpenIssue: Hashable, Sendable {
         self.authorAssociation = authorAssociation
         self.body = body
         self.comments = comments
+    }
+
+    /// The same issue with its comments read again, all of them.
+    public func with(comments: [IssueComment]) -> OpenIssue {
+        OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
+                  authorAssociation: authorAssociation, body: body, comments: comments.sorted { $0.createdAt < $1.createdAt },
+                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt)
     }
 }
 
@@ -84,11 +95,15 @@ public struct IssueAsk: Identifiable, Hashable, Sendable {
     /// The whole conversation the ask sits in, for reading while the reply is edited: the issue
     /// body first (id "body"), then its comments oldest first, the asking one at `commentID`.
     public let thread: [IssueComment]
+    /// The ids of the Decisions table's rows open for me (`D-3`), when the table is the ask and no
+    /// comment mentions me; `commentID` is then the rows' revision.
+    public let rows: [String]
 
     public init(repo: String, number: Int, title: String, url: URL, asker: String, askedAt: Date, commentID: String,
-                draftable: Bool = true, handoff: Bool = false, thread: [IssueComment] = []) {
+                draftable: Bool = true, handoff: Bool = false, thread: [IssueComment] = [], rows: [String] = []) {
         self.handoff = handoff
         self.thread = thread
+        self.rows = rows
         self.repo = repo
         self.number = number
         self.title = title
@@ -179,26 +194,36 @@ public enum IssueAsks {
         (try? NSRegularExpression(pattern: pattern))?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
-    public static func ask(in issue: OpenIssue, me: String) -> IssueAsk? {
+    /// The newest mention of me by someone with write access that I have not answered; with
+    /// `table`, the body's Decisions rows open for me when no comment asks. The table ask stands
+    /// until the rows are decided, whatever is commented: the row is where the process keeps it.
+    public static func ask(in issue: OpenIssue, me: String, table: Flow.DecisionTable? = nil) -> IssueAsk? {
         let isMe = { (login: String?) in login?.caseInsensitiveCompare(me) == .orderedSame }
         let entries = [IssueComment(id: "body", author: issue.author, authorAssociation: issue.authorAssociation,
                                     body: issue.body, createdAt: issue.createdAt, url: nil)]
             + issue.comments.sorted { $0.createdAt < $1.createdAt }
+        let draftable = FlowEngine.trustedAssociations.contains(issue.authorAssociation)
+        let fromTable: IssueAsk? = table.flatMap { table in
+            let rows = DecisionRows.open(in: issue.body, for: me, table: table)
+            guard !rows.isEmpty else { return nil }
+            return IssueAsk(repo: issue.repo, number: issue.number, title: issue.title, url: issue.url,
+                            asker: issue.author ?? "ghost", askedAt: issue.createdAt, commentID: DecisionRows.revision(rows),
+                            draftable: draftable, thread: entries, rows: rows.map(\.id))
+        }
         guard let index = entries.lastIndex(where: { entry in
             guard let author = entry.author, !isMe(author),
                   entry.authorAssociation.map(FlowEngine.trustedAssociations.contains) == true else { return false }
             return mentions(entry.body, login: me)
-        }) else { return nil }
-        guard !entries[(index + 1)...].contains(where: { isMe($0.author) }) else { return nil }
+        }) else { return fromTable }
+        guard !entries[(index + 1)...].contains(where: { isMe($0.author) }) else { return fromTable }
         let entry = entries[index]
         return IssueAsk(repo: issue.repo, number: issue.number, title: issue.title, url: entry.url ?? issue.url,
                         asker: entry.author ?? "ghost", askedAt: entry.createdAt, commentID: entry.id,
-                        draftable: FlowEngine.trustedAssociations.contains(issue.authorAssociation),
-                        handoff: Handoff.isHandoff(entry.body, to: me), thread: entries)
+                        draftable: draftable, handoff: Handoff.isHandoff(entry.body, to: me), thread: entries)
     }
 
-    public static func asks(_ issues: [OpenIssue], me: String) -> [IssueAsk] {
-        issues.compactMap { ask(in: $0, me: me) }.sorted { $0.askedAt > $1.askedAt }
+    public static func asks(_ issues: [OpenIssue], me: String, table: Flow.DecisionTable? = nil) -> [IssueAsk] {
+        issues.compactMap { ask(in: $0, me: me, table: table) }.sorted { $0.askedAt > $1.askedAt }
     }
 }
 
@@ -224,6 +249,9 @@ extension GitHubClient {
         labels(first: 100) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
+        timelineItems(last: 1, itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) { nodes {
+          ... on AssignedEvent { createdAt } ... on UnassignedEvent { createdAt }
+          ... on LabeledEvent { createdAt } ... on UnlabeledEvent { createdAt } } }
     """
 
     static let openIssuesQuery = """
@@ -253,7 +281,9 @@ extension GitHubClient {
             let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?, assignees: Nodes<Author>?
             /// Only the lookup by number asks for it: the other connections are open by query.
             let state: String?
+            let timelineItems: Nodes<Event>?
         }
+        struct Event: Decodable { let createdAt: Date? }
         struct Label: Decodable { let name: String }
         struct Comment: Decodable {
             let databaseId: Int?, author: Author?, authorAssociation: String?, body: String, createdAt: Date, url: URL?
@@ -285,7 +315,8 @@ extension GitHubClient {
                                    authorAssociation: $0.authorAssociation, body: $0.body,
                                    createdAt: $0.createdAt, url: $0.url)
                   }.sorted { $0.createdAt < $1.createdAt },
-                  labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [])
+                  labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [],
+                  stateChangedAt: row.timelineItems?.nodes.compactMap(\.createdAt).max())
     }
 
     // MARK: search

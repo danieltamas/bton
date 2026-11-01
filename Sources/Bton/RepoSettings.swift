@@ -44,6 +44,23 @@ extension AppStore {
         }
     }
 
+    /// How a hat runs on this Mac and the playbook it works by; both empty leaves the role to Bton.
+    func setHat(_ hat: Hat, pick text: String, playbook: String) throws {
+        let pick = try validPick(text)
+        if let pick, let problem = Hats.problem(pick: pick, for: hat, agents: agents) { throw SettingsError.invalid(problem) }
+        let playbook = playbook.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard playbook.count <= 20_000 else { throw SettingsError.invalid("A playbook is 20000 characters at most.") }
+        if let file = Hats.file(in: playbook), !FileManager.default.isReadableFile(atPath: file.path) {
+            throw SettingsError.invalid("No readable file at \(file.path).")
+        }
+        let settings = HatSettings(pick: pick?.text, playbook: playbook.isEmpty ? nil : playbook)
+        try update { config in
+            var hats = config.hatSettings
+            hats[hat.rawValue] = settings.isEmpty ? nil : settings
+            config.hats = hats.isEmpty ? nil : hats
+        }
+    }
+
     private func validPick(_ text: String) throws -> AgentPick? {
         let text = text.trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return nil }

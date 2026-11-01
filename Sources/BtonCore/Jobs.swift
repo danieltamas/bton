@@ -85,6 +85,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var queueHeads: [String]?
     /// A review's second reviewer, run beside the first agent in this job; nil on every other job.
     public var second: SecondRun?
+    /// An issue move's plan (triage, stage, restage): the labels as read, for what the job changed.
+    public var issueMove: IssueMoves.Plan?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
@@ -120,7 +122,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
 
     public func canRetry(among jobs: [Job]) -> Bool {
         [.failed, .cancelled].contains(status) && retry != true
-            && (key.item.hasPrefix("pr-") || key.item.hasPrefix("issue-") && (key.move == IssueDrafts.move || key.move == IssueDecisions.move || key.move == IssueIntake.move))
+            && (key.item.hasPrefix("pr-") || key.item.hasPrefix("issue-")
+                && (key.move == IssueDrafts.move || key.move == IssueDecisions.move || key.move == IssueIntake.move || IssueMoves.moves.contains(key.move)))
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
     }
 }

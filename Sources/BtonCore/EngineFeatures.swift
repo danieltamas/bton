@@ -149,7 +149,7 @@ extension Engine {
         let make = { (teamLast: Date?) -> DispatchCandidate? in
             FeatureJob.candidate(jobs: self.jobs.all(), repo: slug, flow: read.flow,
                                  defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
-                                 agents: agents, work: read.repo.work.flatMap(AgentPick.init),
+                                 agents: agents, work: Self.coderPick(read.repo, config: config),
                                  registry: self.featureStates[slug.lowercased()]?.report?.registry ?? .none,
                                  pullRequests: read.pullRequests, merged: read.merged,
                                  issues: self.openIssues[slug.lowercased()] ?? [],
@@ -164,8 +164,9 @@ extension Engine {
 
 extension Engine {
     /// The moves that get no feature context: the one that builds the registry, and the drafts
-    /// and decisions, which read the code map instead.
-    static let movesWithoutContext: Set = [FeatureJob.move, NewIssues.move, IssueDrafts.move, IssueDecisions.move]
+    /// of the owner's own words, which read the code map instead. A decision gets it: what the
+    /// registry knows of the issue or PR in question is evidence for the ruling.
+    static let movesWithoutContext: Set = [FeatureJob.move, NewIssues.move, IssueDrafts.move]
 
     /// The candidate with the registry's knowledge of its work attached, for an agent job of a
     /// repo whose registry loads. The prompt gains Bton's line naming the file and, for a job that
@@ -173,10 +174,14 @@ extension Engine {
     static func withFeatureContext(_ candidate: DispatchCandidate, report: FeatureReport?) -> DispatchCandidate {
         guard candidate.agent != nil, let prompt = candidate.prompt, !Self.movesWithoutContext.contains(candidate.key.move),
               candidate.attachments[FeatureContext.file] == nil,
-              let report, let context = FeatureContext.make(for: candidate.target, report: report) else { return candidate }
+              let report, let context = FeatureContext.make(for: candidate.target, issue: candidate.issue, report: report) else { return candidate }
         var made = candidate
         made.attachments[FeatureContext.file] = context.text
-        let writes = !candidate.postComment && candidate.key.move != Supervision.move
+        // The `Feature:` line is for a job that edits a PR: not a comment-posting move, not the
+        // supervisor, not a decision (which edits nothing, on a PR or an issue) and not a move
+        // that works an issue from the base (a triage).
+        let atBase = if case .branch = candidate.target { candidate.issue != nil } else { false }
+        let writes = !candidate.postComment && ![Supervision.move, IssueDecisions.move].contains(candidate.key.move) && !atBase
         made.prompt = prompt + "\n\n" + FeatureContext.promptLine(feature: context.feature, writes: writes)
         return made
     }

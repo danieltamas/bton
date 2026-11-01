@@ -200,26 +200,28 @@ private struct StoredGraphsList: View {
         .task { await load() }
     }
 
+    /// The repo on its own line, its facts in one line under it, the buttons at the right: the
+    /// slug never wraps to make room for the facts.
     private func row(_ graph: CodeGraph.StoredGraph) -> some View {
-        HStack(spacing: 8) {
-            Text(graph.slug).font(.system(size: 11.5, weight: .medium, design: .monospaced)).foregroundStyle(Theme.textPrimary)
-            Text(Self.size(graph.bytes)).font(.meta).foregroundStyle(Theme.textSecondary).monospacedDigit()
-            if let marker = graph.marker {
-                RelativeTime(date: marker.at) { "built from \(marker.commit.prefix(8)) \($0) ago" }
-                    .font(.meta).foregroundStyle(Theme.textTertiary)
-                if let memoryAt = marker.memoryAt {
-                    RelativeTime(date: memoryAt) { "memory to \($0) ago" }.font(.meta).foregroundStyle(Theme.textTertiary)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(graph.slug).font(.system(size: 11.5, weight: .medium, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1).truncationMode(.middle)
+                // One Text, so a narrow pane wraps the facts in order instead of cutting each one.
+                TimelineView(.everyMinute) { context in
+                    Text(Self.facts(graph, now: context.date))
+                        .font(.meta).foregroundStyle(Theme.textTertiary).monospacedDigit()
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
-            } else {
-                Text("no finished build").font(.meta).foregroundStyle(Theme.textTertiary)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
             PillButton(title: "View", symbol: "circle.grid.2x2", prominent: false, disabled: !CodeGraph.isBuilt(graph.url)) {
                 ModuleMapWindow.open(graph)
             }
             .help(ModuleMapWindow.help)
             AsyncIconButton(symbol: "trash", help: "Delete this graph", size: 22, id: "delete-graph:\(graph.slug)") { await delete(graph) }
         }
+        .padding(.vertical, 2)
     }
 
     private func load() async {
@@ -239,6 +241,20 @@ private struct StoredGraphsList: View {
         }.value
         problem = failure
         await load()
+    }
+
+    /// "456 MB · built from 3c1c8763 10 min ago · memory to 14 min ago".
+    private static func facts(_ graph: CodeGraph.StoredGraph, now: Date) -> String {
+        var parts = [size(graph.bytes)]
+        if let marker = graph.marker {
+            parts.append("built from \(marker.commit.prefix(8)) \(RelativeTime.text(marker.at, now: now)) ago")
+            if let memoryAt = marker.memoryAt {
+                parts.append("memory to \(RelativeTime.text(memoryAt, now: now)) ago")
+            }
+        } else {
+            parts.append("no finished build")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static func size(_ bytes: Int64) -> String {

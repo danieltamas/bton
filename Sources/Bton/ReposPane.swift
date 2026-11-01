@@ -76,10 +76,14 @@ struct ReposPane: View {
                         BranchPicker(repo: repo, problem: $problem)
                         EnvironmentEditor(repo: repo)
                         WorkLabelEditor(repo: repo)
-                        AgentPickEditor(title: "Issue work", symbol: "hammer", current: repo.work) { line, _ in
+                        AgentPickEditor(title: "Issue work", symbol: "hammer", current: repo.work,
+                                        fallback: store.hats[Hat.coder.rawValue]?.pick.map { "the coder hat (\($0))" } ?? "the flow's agent",
+                                        clearTitle: "Use the hat's") { line, _ in
                             try store.setWork(line, for: repo.slug)
                         }
-                        AgentPickEditor(title: "Reviewer", symbol: "checkmark.seal", current: repo.reviewer, rules: repo.reviewRules,
+                        AgentPickEditor(title: "Reviewer", symbol: "checkmark.seal", current: repo.reviewer,
+                                        fallback: store.hats[Hat.reviewer.rawValue]?.pick.map { "the reviewer hat (\($0))" } ?? "the flow's agent",
+                                        clearTitle: "Use the hat's", rules: repo.reviewRules,
                                         rulesPrompt: "Review rules: added to every review this Mac runs here. Empty adds none.") { line, rules in
                             try store.setReviewer(line, rules: rules, for: repo.slug)
                         }
