@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.24.2 (2026-11-01)
 
 **The triager's own comment is not activity for `quiet_hours`.** Since 0.24.1 triage leaves a plannable issue at `stage:spec`, and lexito's stage rule for spec issues waits `quiet_hours:48`; the triager's comment counted as activity, so an issue triaged at noon was planned two days later for no reason. Now `quiet_hours` counts comments by anyone but the triager, the rule the round and the stale clock already follow: a freshly triaged spec issue is quiet, the stage move plans it on the next sync, and a person's comment still holds it the full time. For that next sync to happen, the triager's hidden marker now names the move (`<!-- bton:triager:triage -->`): the six-hour hold after a triager comment, which keeps two Macs off the same move, now holds a repeat of the same move only, and an issue the hold would refuse is not picked in the first place, so it no longer stands in front of the eligible issues until the hold ends. Playbook v12.
 
