@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.29.1 (2026-11-02)
 
 **A long pill no longer widens the card.** 0.29.0 put the move's pill on the row's top line, sized to its text; a pill the line could not hold (a review waiting for its gate, owned by a long login, beside a `high-risk` chip) pushed the whole card past the list's edge, so cards came out wider or narrower by row. Now the pill sits on the top line when it fits whole and otherwise on its own line under the number and chips, still above the title; every card has the list's width.
 
