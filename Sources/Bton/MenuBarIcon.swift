@@ -9,7 +9,7 @@ import SwiftUI
 /// it, the only drawing done frame by frame; a sync that failed leaves it orange until the next good one.
 @MainActor @Observable
 final class MenuBarIcon {
-    enum Mode: Equatable { case idle, working, problem }
+    enum Mode: Equatable { case idle, working, problem, paused }
 
     private(set) var image: NSImage = .btonTemplate
     @ObservationIgnored private var mode: Mode = .idle
@@ -24,6 +24,7 @@ final class MenuBarIcon {
     private static var working: NSColor { NSColor(Theme.color(for: .running)) }
     private static var synced: NSColor { NSColor(Theme.mint) }
     private static var problem: NSColor { NSColor(Theme.unassigned) }
+    private static var paused: NSColor { NSColor(Theme.textTertiary) }
 
     init() { followLook() }
 
@@ -74,6 +75,7 @@ final class MenuBarIcon {
         let color = switch mode {
         case .working: Self.working
         case .problem: Self.problem
+        case .paused: Self.paused
         case .idle: Self.synced
         }
         let ripple = rippling ? CGFloat(Self.rippleFrames - (rippleUntil - frame)) / CGFloat(Self.rippleFrames) : nil
@@ -91,6 +93,11 @@ final class MenuBarIcon {
                 arc.lineCapStyle = .round
                 color.setStroke()
                 arc.stroke()
+            }
+            // Two bars at the bottom right: the glyph is paused, not merely idle.
+            if mode == .paused {
+                color.setFill()
+                for x in [14.0, 17.0] { NSRect(x: x, y: 2, width: 2, height: 6).fill() }
             }
             if let ripple {
                 let ring = NSBezierPath(ovalIn: NSRect(x: center.x - 6 - 4.5 * ripple, y: center.y - 6 - 4.5 * ripple,

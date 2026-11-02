@@ -274,6 +274,15 @@ final class AppStore {
         config = next
     }
 
+    /// The header's Pause switch. On: the next sync, run now, stops this Mac's jobs and reads
+    /// nothing; every sync after it does the same until the switch is flipped back.
+    var isPaused: Bool { config.isPaused }
+
+    func setPaused(_ paused: Bool) async {
+        do { try update { $0.paused = paused ? true : nil } } catch { problem = error.localizedDescription; return }
+        await refresh()
+    }
+
     func setPollSeconds(_ seconds: Int) throws {
         try update { $0.pollSeconds = seconds.clamped(to: BtonConfig.pollSecondsRange) }
     }
@@ -676,7 +685,10 @@ final class AppStore {
         }
         isRefreshing = true
         defer { isRefreshing = false }
-        defer { icon.update(mode: problem != nil ? .problem : runningJobs > 0 ? .working : .idle, synced: problem == nil) }
+        defer {
+            icon.update(mode: isPaused ? .paused : problem != nil ? .problem : runningJobs > 0 ? .working : .idle,
+                        synced: problem == nil && !isPaused)
+        }
         let before = Before(moves: Set(humanMovesForMe.map(\.id)), jobs: jobs, merged: Set(merged.map(\.id)),
                             outages: Set(outages.keys), first: lastRefresh == nil)
         // The lists show as soon as GitHub is read; cleanup and starting jobs can take minutes.
@@ -699,7 +711,8 @@ final class AppStore {
     /// without a full sync; a second press while a repo loads is nothing. A failed read leaves
     /// the list as it was, and the pill comes back for the next press.
     func loadMoreIssues(repos: [String]) async {
-        guard let engine else { return }
+        // Paused reads nothing, the next page included.
+        guard let engine, !isPaused else { return }
         let repos = repos.filter { !issuesLoading.contains($0.lowercased()) }
         guard !repos.isEmpty else { return }
         issuesLoading.formUnion(repos.map { $0.lowercased() })
@@ -715,7 +728,8 @@ final class AppStore {
     }
 
     private func apply(_ snapshot: Engine.Snapshot) {
-        flows = snapshot.flows
+        // A paused tick read no flow: the last read ones keep the lists' controls.
+        if !snapshot.paused { flows = snapshot.flows }
         me = snapshot.me ?? me
         // The engine may have refreshed the feed during the tick.
         prices = PriceList.load(home: home)
@@ -726,7 +740,16 @@ final class AppStore {
         problem = snapshot.problem
         loggedOut = snapshot.loggedOut
         // A failed read keeps the last good lists rather than blanking them: every list when the
-        // tick itself failed, an unread repo's own entries otherwise.
+        // tick itself failed, an unread repo's own entries otherwise. A paused tick read nothing:
+        // the lists and the sync time stay those of the last sync, with the stopped jobs' rows at rest.
+        if snapshot.paused {
+            openPullRequests = openPullRequests.map { pr in
+                var pr = pr
+                pr.isWorking = snapshot.jobs.contains { $0.status == .running && $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" }
+                return pr
+            }
+            return
+        }
         guard snapshot.problem == nil || !snapshot.unread.isEmpty else { return }
         let unread = { (repo: String) in snapshot.unread.contains(repo.lowercased()) }
         openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }

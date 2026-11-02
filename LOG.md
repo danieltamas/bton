@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A Pause switch stops everything.** There was no way to make Bton hold still: a wrong flow, a runaway agent or a day of maintenance meant quitting the app, and the teammates' Btons on the same repos kept going. Now a pause button sits in the menu's header beside the gear. Pressed, it stops this Mac's running jobs (each ends `cancelled`, `paused`, its agent terminated) and from then on Bton reads nothing from GitHub, starts no job, posts nothing and lets the refresh button rest, until play is pressed: the menu bar icon shows two bars, the sync line reads `paused`, a notice says so, and the lists stay as they were at the last sync. Play reads again at once, and a job the pause ended is dispatched again at the next sync, from the start, if the PR or issue still calls for it. The switch is per Mac and kept in `~/.bton/config.json` (`"paused": true`), so a Bton restarted while paused stays paused, `bton watch` holds the same way, and `bton prs` says `paused` instead of printing empty lists. A teammate's Bton is not paused by yours.
+
 ## 0.28.1 (2026-11-02)
 
 **A review of a head that moved is dropped, not posted.** A review agent started on a PR's head kept running after the author pushed over it, and posted what it had: on lexito PR 738 (2026-11-02) a push 30 seconds into the owner's review got a "blocked: stale head" comment on the old head, that comment counted as a round of changes, and after the real review of the new head found something the PR went to the owner's decision instead of a fix. Now a review whose head moved while it ran posts nothing: the sync that reads the new head stops this Mac's review of the old one, and a review that finishes first is posted only after one more read of the PR's head shows it unchanged. The job ends with `head moved from <old> to <new> during the review; nothing posted`, costs no supervisor, and the new head gets its own review at the next sync. A head GitHub will not confirm posts nothing either, and that job offers Retry.

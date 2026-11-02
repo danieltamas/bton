@@ -11,6 +11,8 @@ public actor Engine {
         public var jobs: [Job] = []
         public var problem: String?
         public var at: Date?
+        /// The Pause switch is on: nothing was read or started, and the lists are not this tick's.
+        public var paused = false
         /// The owner's run-next picks still waiting, `owner/name#item`, first to start first.
         public var next: [String] = []
         /// Why a pick in `next` has not started yet, by pick: what the last sync found.
@@ -231,6 +233,12 @@ public actor Engine {
         do {
             // Read every tick: the app's Repos panel and a hand edit both change it.
             let config = try BtonConfig.loadOrCreate(home: home)
+            // Paused: GitHub is not read, nothing starts, and what this Mac runs is stopped now.
+            if config.isPaused {
+                await pause()
+                snapshot.paused = true
+                return decorated(snapshot)
+            }
             // Every repo is read before anything starts, so the agents go where the work is.
             var reads: [RepoRead] = []
             var failures: [String] = [], unread: Set<String> = []
@@ -277,6 +285,9 @@ public actor Engine {
             }
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
+            // Pressed while the repos were read: what was read is shown, nothing starts, and the
+            // sync the press queued stops the rest.
+            if (try? BtonConfig.loadOrCreate(home: home))?.isPaused == true { return decorated(snapshot) }
             await refreshPricesIfDue()
             applyVerdicts()
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
@@ -424,6 +435,11 @@ public actor Engine {
         var snapshot = Snapshot()
         do {
             let config = try BtonConfig.loadOrCreate(home: home)
+            // Paused: the turn waits in its request until the switch is flipped back.
+            if config.isPaused {
+                snapshot.paused = true
+                return decorated(snapshot)
+            }
             let maxAge = TimeInterval(config.pollSeconds)
             let wanted = Set(composeRequests.map { $0.repo.lowercased() })
             for slug in wanted {
@@ -725,6 +741,36 @@ public actor Engine {
 
     private static func labelKey(_ repo: String, _ number: Int) -> String { "\(repo)#\(number)" }
     private func lastRead(_ repo: String, _ number: Int) -> Date { labelReadAt[Self.labelKey(repo, number)] ?? .distantPast }
+
+    /// Stops every job this instance runs, each ending cancelled as "paused". Before this
+    /// instance has a dispatcher (started paused), a job an earlier instance left behind is ended
+    /// here, its agents signalled; one another live instance on this Mac runs is left to that
+    /// instance, which reads the same switch.
+    private func pause() async {
+        let running = jobs.all().filter { $0.status == .running }
+        guard let dispatcher else {
+            for var job in running {
+                guard let lock = LocalLock(jobs.lockURL(job.id)) else { continue }
+                defer { lock.release() }
+                for pid in [job.pid, job.second?.pid].compactMap({ $0 }) { kill(-pid, SIGTERM) }
+                job.status = .cancelled
+                job.detail = Dispatcher.pausedReason
+                job.retry = true
+                job.endedAt = .now
+                try? jobs.save(job)
+                jobs.note(job.id, "cancelled: paused (left by an earlier Bton)")
+                log("\(job.key): paused")
+            }
+            return
+        }
+        for job in running { log("\(job.key): paused") }
+        // Together: each stop waits out the agent's poll, and the switch answers in one of them.
+        await withTaskGroup(of: Void.self) { group in
+            for job in running {
+                group.addTask { await dispatcher.stopAndWait(job.id, reason: Dispatcher.pausedReason) }
+            }
+        }
+    }
 
     func dispatcher(me: String, config: BtonConfig) async throws -> Dispatcher {
         if let dispatcher {

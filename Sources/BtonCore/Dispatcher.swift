@@ -27,6 +27,10 @@ actor Dispatcher {
     private var expiryWatches: [UUID: Task<Void, Never>] = [:]
     private var locks: [UUID: LocalLock] = [:]
     private var work: [UUID: Task<Void, Never>] = [:]
+    /// The poll of each agent this instance runs, from its spawn to the job's end.
+    private var watches: [UUID: Task<Void, Never>] = [:]
+    /// The stop reason of the Pause switch: the job it ends is dispatched again after play.
+    static let pausedReason = "paused"
     var lost: [UUID: String] = [:]
     var stopping: Set<UUID> = []
     /// Why Bton itself stopped a job (a review of a head that moved): the detail in place of "stopped".
@@ -97,7 +101,7 @@ actor Dispatcher {
             }
             // An agent that ended meanwhile goes through `watch` too, so its review is still posted.
             hold(lease, for: job.id)
-            Task { await self.watch(job) }
+            startWatching(job)
         }
     }
 
@@ -213,6 +217,15 @@ actor Dispatcher {
         if let reason { stopReasons[id] = reason }
         work[id]?.cancel()
         if let job { await terminateAll(job) }
+    }
+
+    /// `stop`, then the job's end, whether its checks or its agent were running: the caller (the
+    /// Pause switch) reports nothing running once it returns. A job another instance runs is only
+    /// asked to stop, as in `stop`.
+    func stopAndWait(_ id: UUID, reason: String) async {
+        await stop(id, reason: reason)
+        if let task = work[id] { await task.value }
+        if let task = watches[id] { await task.value }
     }
 
     /// Links the repo's built graph into the job's worktree and says what the agent is told about
@@ -423,12 +436,21 @@ actor Dispatcher {
             jobs.note(job.id, "\(agent) (\(template.argv.first ?? "?")) running, pid \(job.pid.map(String.init) ?? "?"), \(Hats.describe(move: candidate.key.move, settings: hats))")
             if let second = job.second { jobs.note(job.id, "second reviewer \(second.agent) running, pid \(second.pid.map(String.init) ?? "?")") }
             let started = job
-            Task { await self.watch(started) }
+            startWatching(started)
         } catch {
             // An agent whose job could not be recorded must not run on without its lease.
             await terminateAll(job)
             if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             await finish(job, status: .failed, detail: lost[job.id].map { "lease lost: \($0)" } ?? error.localizedDescription)
+        }
+    }
+
+    /// Not awaited by the dispatch: the agent runs for minutes. Kept, so a stop can wait for the
+    /// job's end.
+    private func startWatching(_ job: Job) {
+        watches[job.id] = Task {
+            await self.watch(job)
+            self.watches[job.id] = nil
         }
     }
 
@@ -626,6 +648,8 @@ actor Dispatcher {
         } else {
             job.status = status
             job.detail = status == .cancelled ? stopReasons[job.id] ?? detail : detail
+            // Paused, not stopped: the work is wanted again once play is pressed.
+            if status == .cancelled, stopReasons[job.id] == Self.pausedReason { job.retry = true }
         }
         stopReasons[job.id] = nil
         job.endedAt = .now

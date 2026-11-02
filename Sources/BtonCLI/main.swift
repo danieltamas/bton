@@ -191,6 +191,8 @@ do {
         guard arguments.count == 1 else { fail(usage) }
         let snapshot = await (try Engine(home: BtonHome())).tick(dispatching: false)
         if let problem = snapshot.problem { fail(problem, status: 3) }
+        // Empty lists would read as no PRs: the switch is the answer.
+        if snapshot.paused { fail("paused: Bton reads nothing from GitHub until play is pressed in the menu", status: 3) }
         let money = { (cost: Decimal?) in cost.map { "$\($0)" } ?? "-" }
         for pr in snapshot.openPullRequests {
             print("open\t\(pr.repo)#\(pr.number)\t\(pr.move.map { "\($0.name) \($0.owner ?? "unassigned")" } ?? "-")\t\(money(pr.cost))")

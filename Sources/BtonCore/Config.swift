@@ -33,6 +33,12 @@ public struct BtonConfig: Codable, Sendable {
     /// This Mac's hats by role name (`Hat.rawValue`): how each role runs here and the operating
     /// defaults it works by. Absent, or a role left out: the flow's agent with Bton's playbook.
     public var hats: [String: HatSettings]? = nil
+    /// The Pause switch in the menu's header: on, Bton reads nothing from GitHub, starts nothing
+    /// and stops the jobs this Mac runs, until it is flipped back. Kept in the file so a restart
+    /// stays paused and the CLI pauses with the app.
+    public var paused: Bool? = nil
+
+    public var isPaused: Bool { paused == true }
 
     /// The hats as set, with no entry for a role left to Bton.
     public var hatSettings: [String: HatSettings] { hats ?? [:] }

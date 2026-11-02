@@ -46,7 +46,12 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if let problem = store.problem { notice(problem) }
+            if store.isPaused {
+                notice("Paused: Bton reads nothing from GitHub and runs no job on this Mac until you press play. The lists are from the last sync.",
+                       symbol: "pause.fill", color: Theme.textTertiary)
+            } else if let problem = store.problem {
+                notice(problem)
+            }
             ForEach(store.loggedOut, id: \.self) { LoginNotice(agent: $0) }
             bento.padding(.horizontal, 14).padding(.top, 4)
             tabIsland.padding(.top, 14).padding(.bottom, 10)
@@ -98,8 +103,14 @@ struct RootView: View {
             }
             // No spinner: the sync line's dot pulses while a sync runs, and a sync can last as long as a check.
             // Dimmed while any sync runs: refresh() returns at once then, so the press alone would undim too early.
-            AsyncIconButton(symbol: "arrow.clockwise", help: "Check GitHub now", disabled: store.isRefreshing,
+            AsyncIconButton(symbol: "arrow.clockwise", help: "Check GitHub now", disabled: store.isRefreshing || store.isPaused,
                             id: "refresh") { await store.refresh() }
+            // One switch for all of it: paused, no sync reads GitHub, no job starts, and the jobs
+            // this Mac runs are stopped; the state stays through a restart until it is flipped back.
+            AsyncIconButton(symbol: store.isPaused ? "play.fill" : "pause.fill",
+                            help: store.isPaused ? "Paused: nothing syncs or runs. Resume" : "Pause everything: syncs, jobs, agents",
+                            tint: store.isPaused ? Theme.unassigned : Theme.textSecondary,
+                            id: "pause") { await store.setPaused(!store.isPaused) }
             IconButton(symbol: "gearshape", help: "Settings") { openSettings(.general) }
         }
         .padding(.horizontal, 14)
@@ -109,9 +120,12 @@ struct RootView: View {
 
     private var syncLine: some View {
         HStack(spacing: 5) {
-            PulseDot(color: store.problem == nil ? Theme.success : Theme.unassigned, pulsing: store.isRefreshing)
+            PulseDot(color: store.isPaused ? Theme.textTertiary : store.problem == nil ? Theme.success : Theme.unassigned,
+                     pulsing: store.isRefreshing && !store.isPaused)
             Group {
-                if let last = store.lastRefresh {
+                if store.isPaused {
+                    Text("\(repoCount) · paused")
+                } else if let last = store.lastRefresh {
                     RelativeTime(date: last) { "\(repoCount) · synced \($0) ago" }
                 } else {
                     Text(repoCount)
@@ -129,11 +143,11 @@ struct RootView: View {
         }
     }
 
-    private func notice(_ problem: String) -> some View {
-        Bezel(radius: 13, fill: Theme.unassigned.opacity(0.10)) {
+    private func notice(_ problem: String, symbol: String = "exclamationmark.triangle", color: Color = Theme.unassigned) -> some View {
+        Bezel(radius: 13, fill: color.opacity(0.10)) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.unassigned)
+                Image(systemName: symbol).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(color)
                 Text(problem).font(.meta).foregroundStyle(Theme.textSecondary).lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if store.repos.isEmpty {
