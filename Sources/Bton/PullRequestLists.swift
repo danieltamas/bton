@@ -54,6 +54,41 @@ private struct PullRequestRow: View {
     let jobs: [Job]
     private var job: Job? { jobs.first }
 
+    /// The number, repo and tier, draft and conflict chips.
+    private var chips: some View {
+        HStack(spacing: 6) {
+            Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.textTertiary).fixedSize()
+            if showRepo { RepoName(repo: pr.repo) }
+            if let tier = pr.move?.tier, !tier.isEmpty {
+                Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
+                    .help(pr.move?.tierReason.map { "\(tier): \($0)" } ?? tier)
+            }
+            if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
+            if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
+        }
+    }
+
+    /// The PR's move as its pill: a button when the move is mine to start, a chip otherwise.
+    @ViewBuilder
+    private func pill(pillStart: String?, unchanged: Job?, busy: Bool) -> some View {
+        if let move = pr.move {
+            if !move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
+                HumanMoveButton(pr: pr, move: move, me: me)
+            } else if let pillStart, let me {
+                // The agent's move runs here, in Bton: the pill starts it.
+                AsyncPress(id: "run:\(pr.repo)#\(pr.number):\(pillStart)", action: { await store.runNow(pr, move: pillStart) }) { running, press in
+                    StartMoveButton(move: move, me: me, failed: store.failedOnHead(pr, move: pillStart) != nil,
+                                    again: unchanged != nil, action: press)
+                        .disabled(running)
+                        .opacity(running ? 0.6 : 1)
+                }
+            } else {
+                MoveChip(move: move, me: me, working: busy)
+            }
+        }
+    }
+
     var body: some View {
         let moveColor = pr.move.map { Theme.color(forMove: $0.name) }
         let mine = pr.move.flatMap { move in me.map(move.isMine) } ?? false
@@ -78,37 +113,17 @@ private struct PullRequestRow: View {
                 // The move's pill shares the top line with the number and chips, so the title
                 // below it has the card's width: beside the title, a long pill (a review waiting
                 // for its gate, with its owner) folded the title and the number into a sliver.
-                HStack(alignment: .center, spacing: 10) {
-                    HStack(spacing: 6) {
-                        Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.textTertiary).fixedSize()
-                        if showRepo { RepoName(repo: pr.repo) }
-                        if let tier = pr.move?.tier, !tier.isEmpty {
-                            Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
-                                .help(pr.move?.tierReason.map { "\(tier): \($0)" } ?? tier)
-                        }
-                        if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
-                        if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
+                // A pill too long for that line goes under the chips, whole, still above the
+                // title: forced onto the line it widened the card past the list.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 10) {
+                        chips
+                        Spacer(minLength: 4)
+                        pill(pillStart: pillStart, unchanged: unchanged, busy: busy).fixedSize()
                     }
-                    Spacer(minLength: 4)
-                    if let move = pr.move {
-                        Group {
-                            if !move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
-                                HumanMoveButton(pr: pr, move: move, me: me)
-                            } else if let pillStart, let me {
-                                // The agent's move runs here, in Bton: the pill starts it.
-                                AsyncPress(id: "run:\(pr.repo)#\(pr.number):\(pillStart)", action: { await store.runNow(pr, move: pillStart) }) { running, press in
-                                    StartMoveButton(move: move, me: me, failed: store.failedOnHead(pr, move: pillStart) != nil,
-                                                    again: unchanged != nil, action: press)
-                                        .disabled(running)
-                                        .opacity(running ? 0.6 : 1)
-                                }
-                            } else {
-                                MoveChip(move: move, me: me, working: busy)
-                            }
-                        }
-                        .fixedSize()
-                        .layoutPriority(1)
+                    VStack(alignment: .leading, spacing: 6) {
+                        chips
+                        pill(pillStart: pillStart, unchanged: unchanged, busy: busy)
                     }
                 }
                 Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
@@ -174,6 +189,11 @@ private struct PullRequestRow: View {
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // The card has the list's width whatever a chip measures: a chip never truncates, so
+            // a pill wider than the card on its own (several pending checks named) is cut at the
+            // edge rather than widening the card.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
         .contextMenu {
             // Only a move this Mac's agent takes can start; the rest are people's.
