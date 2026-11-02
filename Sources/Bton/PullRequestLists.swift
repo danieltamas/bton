@@ -74,35 +74,25 @@ private struct PullRequestRow: View {
         HoverCard(accent: mine ? moveColor : nil, glow: job.map { _ in Theme.color(for: .running) }, action: {
             if let job { withAnimation(Motion.spring) { store.watchingJob = job.id } } else { NSWorkspace.shared.open(pr.url) }
         }) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Theme.textTertiary)
-                            if showRepo { RepoName(repo: pr.repo) }
-                            if let tier = pr.move?.tier, !tier.isEmpty {
-                                Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
-                                    .help(pr.move?.tierReason.map { "\(tier): \($0)" } ?? tier)
-                            }
-                            if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
-                            if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
+            VStack(alignment: .leading, spacing: 6) {
+                // The move's pill shares the top line with the number and chips, so the title
+                // below it has the card's width: beside the title, a long pill (a review waiting
+                // for its gate, with its owner) folded the title and the number into a sliver.
+                HStack(alignment: .center, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text("#\(pr.number)").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.textTertiary).fixedSize()
+                        if showRepo { RepoName(repo: pr.repo) }
+                        if let tier = pr.move?.tier, !tier.isEmpty {
+                            Chip(text: tier, color: Theme.color(forTier: tier), style: .outline)
+                                .help(pr.move?.tierReason.map { "\(tier): \($0)" } ?? tier)
                         }
-                        Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        // One line: a long login truncates, the time never wraps.
-                        HStack(spacing: 6) {
-                            Avatar(login: pr.author)
-                            Text(pr.author).foregroundStyle(Theme.textSecondary).truncationMode(.tail)
-                            Text("·").foregroundStyle(Theme.textTertiary)
-                            RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary).fixedSize()
-                        }
-                        .font(.meta).lineLimit(1)
+                        if pr.isDraft { Chip(text: "draft", color: Theme.neutral, style: .outline) }
+                        if pr.conflicting { Chip(text: "conflicts", color: Theme.danger, style: .outline) }
                     }
-                    .layoutPriority(1)
                     Spacer(minLength: 4)
-                    VStack(alignment: .trailing, spacing: 6) {
-                        if let move = pr.move {
+                    if let move = pr.move {
+                        Group {
                             if !move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
                                 HumanMoveButton(pr: pr, move: move, me: me)
                             } else if let pillStart, let me {
@@ -116,6 +106,25 @@ private struct PullRequestRow: View {
                             } else {
                                 MoveChip(move: move, me: me, working: busy)
                             }
+                        }
+                        .fixedSize()
+                        .layoutPriority(1)
+                    }
+                }
+                Text(pr.title).font(.rowTitle).foregroundStyle(Theme.textPrimary).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .bottom, spacing: 10) {
+                    // One line: a long login truncates, the time never wraps.
+                    HStack(spacing: 6) {
+                        Avatar(login: pr.author)
+                        Text(pr.author).foregroundStyle(Theme.textSecondary).truncationMode(.tail)
+                        Text("·").foregroundStyle(Theme.textTertiary)
+                        RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary).fixedSize()
+                    }
+                    .font(.meta).lineLimit(1)
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if let move = pr.move {
                             // A start already asked for still shows while another agent works it.
                             if starting {
                                 StartingLabel(repo: pr.repo, reason: store.waitingReason(repo: pr.repo, item: "pr-\(pr.number)"))
@@ -141,10 +150,10 @@ private struct PullRequestRow: View {
                         }
                         if let cost = pr.cost { Cost(value: cost) }
                     }
-                    // Its own width, like an issue row's action: a two-line title wraps around it
-                    // instead of squeezing the cost into one character per line.
+                    // Its own width: the author's login truncates before the cost is squeezed
+                    // into one character per line.
                     .fixedSize()
-                    .layoutPriority(2)
+                    .layoutPriority(1)
                 }
                 ForEach(jobs) { job in
                     WorkingLine(job: job) { withAnimation(Motion.spring) { store.watchingJob = job.id } }
