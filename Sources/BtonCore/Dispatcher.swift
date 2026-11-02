@@ -29,6 +29,8 @@ actor Dispatcher {
     private var work: [UUID: Task<Void, Never>] = [:]
     var lost: [UUID: String] = [:]
     var stopping: Set<UUID> = []
+    /// Why Bton itself stopped a job (a review of a head that moved): the detail in place of "stopped".
+    private var stopReasons: [UUID: String] = [:]
     /// Each watched repo's environment, by lowercased slug, to redact what a job posts.
     var environments: [String: [String: String]] = [:]
     /// Each watched repo's work label, by lowercased slug.
@@ -195,10 +197,12 @@ actor Dispatcher {
 
     /// Stops a job; the lease is released as the job finishes. A job another instance on this
     /// home runs is stopped through its agent, and that instance finishes it; an orphan is
-    /// adopted first.
-    func stop(_ id: UUID) async {
+    /// adopted first. `reason` is Bton's own (a head that moved), kept as the job's detail and
+    /// noted in its log, where a press leaves "stopped".
+    func stop(_ id: UUID, reason: String? = nil) async {
         if locks[id] == nil, LocalLock(jobs.lockURL(id)).map({ $0.release() }) != nil { await adopt() }
         let job = jobs.all().first(where: { $0.id == id })
+        if let reason { jobs.note(id, reason) }
         guard locks[id] != nil else {
             // Another instance owns the job: it reads the request before it spawns or posts anything more.
             jobs.requestStop(id)
@@ -206,6 +210,7 @@ actor Dispatcher {
             return
         }
         stopping.insert(id)
+        if let reason { stopReasons[id] = reason }
         work[id]?.cancel()
         if let job { await terminateAll(job) }
     }
@@ -620,8 +625,9 @@ actor Dispatcher {
             job.detail = "lease lost: \(reason)"
         } else {
             job.status = status
-            job.detail = detail
+            job.detail = status == .cancelled ? stopReasons[job.id] ?? detail : detail
         }
+        stopReasons[job.id] = nil
         job.endedAt = .now
         await refreshCost(&job)
         if let count = await graphQueries(of: job) { jobs.note(job.id, "graph queries: \(count)") }

@@ -174,6 +174,31 @@ public actor Engine {
         merged.filter { pr in !pr.headSha.isEmpty && tried[pr.id].map { now.timeIntervalSince($0) >= 3_600 } ?? true }
     }
 
+    /// The running reviews of a head the PR no longer has: a push during the review makes it
+    /// nobody's, and every minute it runs on is paid for nothing. A fix moves the head itself and
+    /// is not one; a PR the sync did not read says nothing about its reviews.
+    static func staleReviews(_ jobs: [Job], pullRequests: [PullRequest]) -> [Job] {
+        jobs.filter { job in
+            guard job.status == .running, job.review != nil, let pr = Self.pullRequest(of: job, in: pullRequests) else { return false }
+            return pr.headSha != job.key.head
+        }
+    }
+
+    private static func pullRequest(of job: Job, in pullRequests: [PullRequest]) -> PullRequest? {
+        guard job.key.item.hasPrefix("pr-"), let number = Int(job.key.item.dropFirst("pr-".count)) else { return nil }
+        return pullRequests.first { $0.number == number && $0.repo.lowercased() == job.key.repo.lowercased() }
+    }
+
+    /// Stops this Mac's reviews of a head that moved, before they post; the next sync starts the new head's.
+    private func stopStaleReviews(_ pullRequests: [PullRequest], dispatcher: Dispatcher) async {
+        for job in Self.staleReviews(jobs.all(), pullRequests: pullRequests) {
+            let live = Self.pullRequest(of: job, in: pullRequests)?.headSha ?? ""
+            let reason = DispatchPlanner.headMovedDuringReview(from: job.key.head, to: live)
+            log("\(job.key.repo)#\(job.key.item): \(reason)")
+            await dispatcher.stop(job.id, reason: reason)
+        }
+    }
+
     /// Each merged PR at most hourly: the worktrees it leaves go, with their branch, when nothing
     /// is left in them (`Worktrees.removeMerged`). Running jobs' trees are busy too.
     private func clearMerged(_ merged: [MergedPullRequest], clone: URL) async {
@@ -265,6 +290,7 @@ public actor Engine {
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, config: config)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
+                    await stopStaleReviews(read.pullRequests, dispatcher: dispatcher)
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         if read.repo.takesMoves {

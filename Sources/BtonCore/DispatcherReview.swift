@@ -29,13 +29,19 @@ extension Dispatcher {
         await postReview(job, text: text, review: review)
     }
 
-    /// Posts `text` as the PR's review when its first line is a review heading of the PR's tier
-    /// naming the current head; anything else fails the job and posts nothing. Then mirrors the
-    /// verdict as a GitHub review and clears the move's labels.
+    /// Posts `text` as the PR's review when the PR is still at the head it reviewed and its first
+    /// line is a review heading of the PR's tier naming that head; anything else fails the job and
+    /// posts nothing. Then mirrors the verdict as a GitHub review and clears the move's labels.
     func postReview(_ job: Job, text output: String, review: ReviewTarget, detail: String? = nil) async {
         guard let body = DispatchPlanner.reviewComment(fromFinalMessage: output, headings: review.headings,
                                                        head: review.head) else {
             return await finish(job, status: .failed, detail: "the review's first line names no review heading for the current head")
+        }
+        // Read live right before the post: a head pushed while the review ran makes it nobody's.
+        if let stale = await DispatchPlanner.staleReviewDetail(reviewedHead: review.head, liveHead: { [github] in
+            try await github.pullRequestHead(repo: job.key.repo, number: review.number)
+        }) {
+            return await finish(job, status: .failed, detail: stale)
         }
         guard lost[job.id] == nil, !stopRequested(job.id) else {
             return await finish(job, status: .cancelled, detail: "stopped")

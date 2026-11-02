@@ -187,6 +187,25 @@ public enum DispatchPlanner {
                         unmoved: "\(endedWithoutPushing): the PR is still at \(head.prefix(12)); the agent's report says what it did instead")
     }
 
+    /// Why a finished review must not be posted, or nil while the PR is still at the head it
+    /// reviewed. A review of a head the author has since replaced has no reader, and its comment
+    /// would count as a round against the PR (lexito 738: a "stale head" note plus one real review
+    /// sent the PR to a decision). An unread head posts nothing either.
+    public static func staleReviewDetail(reviewedHead head: String, liveHead: () async throws -> String) async -> String? {
+        do {
+            let live = try await liveHead()
+            return live == head ? nil : headMovedDuringReview(from: head, to: live)
+        } catch {
+            return "could not confirm the head before posting: \(error.localizedDescription); nothing posted"
+        }
+    }
+
+    /// The one detail for a review dropped for a moved head, whether it was stopped at a sync or
+    /// held back at its post; the same words for both, so a row and the docs name one thing.
+    public static func headMovedDuringReview(from head: String, to live: String) -> String {
+        "head moved from \(head.prefix(7)) to \(live.prefix(7)) during the review; nothing posted"
+    }
+
     private static func headMoved(from head: String, liveHead: () async throws -> String,
                                   unmoved: String) async -> (status: Job.Status, detail: String?) {
         do {

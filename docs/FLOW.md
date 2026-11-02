@@ -220,6 +220,13 @@ agent's review would be posted as the author and ignored.
   as it already held its merge, for good. A review without a dispatch entry (a person's) is
   never held, and no other move is. A review run by a schedule's agent is held by its playbook:
   a PR whose checks are still running is not eligible work.
+- **A review of a head that moved is dropped, not posted.** A push while a review agent runs
+  makes its review nobody's: a sync that reads the new head stops this Mac's review of the old
+  one, and a review that finishes before that is posted only after one more read of the PR's head
+  shows it unchanged. Either way nothing is posted, no round is counted, and the job ends with
+  `head moved from <old> to <new> during the review; nothing posted`, which needs no supervisor:
+  the new head gets its own review at the next sync. A head GitHub will not confirm posts nothing
+  either (`could not confirm the head before posting`), and that job can be retried.
 - `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`, `{tier}` (the PR's tier, floored by
   `tier.paths`). Nothing else is
   substituted: PR and issue text never goes into a prompt or an argv.

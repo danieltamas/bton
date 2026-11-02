@@ -328,11 +328,19 @@ private struct SecondReviewerFixture {
         let root = base.leases.root
         let gh = root.appendingPathComponent("gh")
         let original = try String(contentsOf: gh, encoding: .utf8)
+        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
+        try #require(result.status == 0)
+        let head = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         // NUL-delimited arguments and an empty argument between calls preserve spaces, quotes,
-        // shell syntax and newlines, unlike the shared fixture's human-readable $* log.
+        // shell syntax and newlines, unlike the shared fixture's human-readable $* log. The PR
+        // stays at its head: the read before the post sees it unchanged.
         let handler = """
         printf '%s\\0' "$@" >> "$(dirname "$0")/mirror-argv"
         printf '\\0' >> "$(dirname "$0")/mirror-argv"
+        if [ "${1-}" = pr ] && [ "${2-}" = view ]; then
+          printf '%s\\n' '{"headRefOid":"\(head)","state":"OPEN"}'
+          exit 0
+        fi
         if [ "${1-}" = pr ] && [ "${2-}" = comment ]; then
           cp "$7" "$(dirname "$0")/posted-comment"
           touch "$(dirname "$0")/comment-succeeded"
@@ -348,9 +356,6 @@ private struct SecondReviewerFixture {
         try original.replacingOccurrences(of: "set -eu", with: "set -eu\n" + handler)
             .write(to: gh, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
-        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
-        try #require(result.status == 0)
-        let head = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         let push = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(120))
         try #require(push.status == 0)
         let github = GitHubClient(ghPath: gh.path)
