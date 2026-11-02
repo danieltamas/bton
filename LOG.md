@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.30.0 (2026-11-03)
 
 **One Mac works a repo's issues.** Since 0.24.0 every Mac that started a flow's moves also ran its issue moves: a teammate's Bton staged the issues and mentioned the owner, the owner's Bton approved and relabeled them within minutes, the teammate's Bton built them, and nobody had asked for any of it; on 2026-11-01 that was 20 specs, 8 builds with no PR and $75 on one teammate's Mac in a day. The repo card gets "Work the issues here", under "Start the flow's moves on every sync": on by default for the repo's owner, off for a teammate, and either can choose. Off, this Mac shows the issues and runs its PR moves, and triages, stages, builds, decides and stale-pings nothing.
 
