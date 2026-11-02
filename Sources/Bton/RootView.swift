@@ -381,31 +381,45 @@ struct RootView: View {
         }
     }
 
-    /// The issue viewer is one level deeper than a draft or a triage. Both pages move by offset,
-    /// not by a transition: the page it covers stays mounted and slides left as the viewer comes
-    /// in from the right, back from the left as it goes out to the right. A transition on the
+    /// Three depths: the tab, a page over it (a session, a triage, a draft, a repo, a new issue)
+    /// and the issue viewer over either. A covered page stays mounted and moves by offset, not
+    /// by a transition: it slides left as the deeper one comes in from the right and back from
+    /// the left as that one goes out to the right. The tab in particular keeps its scroll position
+    /// and the rows it had shown, so going back lands where the click was. A transition on the
     /// covered page would be fixed at its last render and leave the wrong way, and the selectable
     /// text of the viewer does not follow a move transition: it appeared in place while its box
     /// slid in.
     @ViewBuilder private var content: some View {
         // A screenshot is one render: the demo shows the viewer where it ends up.
-        let shown = store.isDemo ? store.viewingIssue != nil : issueShown
+        let viewer = store.isDemo ? store.viewingIssue != nil : issueShown
+        let covered = viewer || pageOpen
         ZStack {
-            pages
-                .offset(x: shown ? -Self.width : 0)
-                .opacity(shown ? 0 : 1)
-                .disabled(shown)
-                .accessibilityHidden(shown)
+            tabContent(showRepo: store.repos.count > 1)
+                .offset(x: covered ? -Self.width : 0)
+                .opacity(covered ? 0 : 1)
+                .disabled(covered)
+                .accessibilityHidden(covered)
+            page
+                .offset(x: viewer ? -Self.width : 0)
+                .opacity(viewer ? 0 : 1)
+                .disabled(viewer)
+                .accessibilityHidden(viewer)
             if let ask = store.viewingIssue {
                 IssueView(ask: ask, close: closeIssue)
                     .id(ask.id)
-                    .offset(x: shown ? 0 : Self.width)
-                    .opacity(shown ? 1 : 0)
+                    .offset(x: viewer ? 0 : Self.width)
+                    .opacity(viewer ? 1 : 0)
                     .transition(.identity)
                     .onAppear { withAnimation(Motion.spring) { issueShown = true } }
                     .onDisappear { issueShown = false }
             }
         }
+    }
+
+    /// A page is over the tab: the same reading as `page`, so the tab is covered exactly when one shows.
+    private var pageOpen: Bool {
+        store.readingDraft != nil || store.composing != nil || store.triaging != nil || store.viewingRepo != nil
+            || store.watchingJob.map { id in store.jobs.contains { $0.id == id } } == true
     }
 
     /// The viewer slides out first; it leaves the tree once it is off screen.
@@ -417,8 +431,8 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder private var pages: some View {
-        let showRepo = store.repos.count > 1
+    /// The page over the tab, one at a time; nothing when the tab is on top.
+    @ViewBuilder private var page: some View {
         if let ask = store.readingDraft {
             DraftView(ask: ask) { withAnimation(Motion.spring) { store.readingDraft = nil } }
                 .transition(.push)
@@ -439,8 +453,6 @@ struct RootView: View {
                 withAnimation(Motion.spring) { store.watchingJob = nil }
             }
             .transition(.push)
-        } else {
-            tabContent(showRepo: showRepo).transition(.pushed)
         }
     }
 
