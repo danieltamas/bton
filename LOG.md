@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.29.0 (2026-11-02)
 
 **A Pause switch stops everything.** There was no way to make Bton hold still: a wrong flow, a runaway agent or a day of maintenance meant quitting the app, and the teammates' Btons on the same repos kept going. Now a pause button sits in the menu's header beside the gear. Pressed, it stops this Mac's running jobs (each ends `cancelled`, `paused`, its agent terminated) and from then on Bton reads nothing from GitHub, starts no job, posts nothing and lets the refresh button rest, until play is pressed: the menu bar icon shows two bars, the sync line reads `paused`, a notice says so, and the lists stay as they were at the last sync. Play reads again at once, and a job the pause ended is dispatched again at the next sync, from the start, if the PR or issue still calls for it. The switch is per Mac and kept in `~/.bton/config.json` (`"paused": true`), so a Bton restarted while paused stays paused, `bton watch` holds the same way, and `bton prs` says `paused` instead of printing empty lists. A teammate's Bton is not paused by yours.
 
