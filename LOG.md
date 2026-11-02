@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.28.1 (2026-11-02)
 
 **A review of a head that moved is dropped, not posted.** A review agent started on a PR's head kept running after the author pushed over it, and posted what it had: on lexito PR 738 (2026-11-02) a push 30 seconds into the owner's review got a "blocked: stale head" comment on the old head, that comment counted as a round of changes, and after the real review of the new head found something the PR went to the owner's decision instead of a fix. Now a review whose head moved while it ran posts nothing: the sync that reads the new head stops this Mac's review of the old one, and a review that finishes first is posted only after one more read of the PR's head shows it unchanged. The job ends with `head moved from <old> to <new> during the review; nothing posted`, costs no supervisor, and the new head gets its own review at the next sync. A head GitHub will not confirm posts nothing either, and that job offers Retry.
 
