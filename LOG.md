@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.27.0 (2026-11-02)
 
 **A high-risk mention in prose no longer keeps the issue from Bton.** The flow's `decide.except` words matched anywhere in an issue's body, as whole words: a plan whose rationale said "would make this high-risk", a Decisions row reading "Risk: not high-risk" or a cross-reference to a high-risk bug excepted the issue as if it were classified so, and every such issue stayed in Waiting on you for a draft, 23 of them at once on lexito. Now a word of `except` excepts an issue only when a line of the body states it: as the line's heading (`High-risk: data deletion`) or as the whole value of a marker (`Risk: high-risk`, `**Tier:** high-risk.`, in a bullet or a quote too). A mention in prose, a negated or conditional value and a table cell are not the issue's classification. Labels match as before.
 
