@@ -194,6 +194,15 @@ public enum IssueAsks {
         (try? NSRegularExpression(pattern: pattern))?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
+    /// A notice Bton posts on its own (a stale ping or escalation, a failed check): it mentions a
+    /// person to tell them, not to ask them, and a Bton reading it is not asked anything. A
+    /// hand-off or a triager's line keeps its question.
+    static let noticeMarkers = ["stale-ping", "stale-escalate", "check-failed"]
+
+    public static func isNotice(_ body: String) -> Bool {
+        BtonMarker.keys(in: body).contains { key in noticeMarkers.contains { key.hasPrefix($0) } }
+    }
+
     /// The newest mention of me by someone with write access that I have not answered; with
     /// `table`, the body's Decisions rows open for me when no comment asks. The table ask stands
     /// until the rows are decided, whatever is commented: the row is where the process keeps it.
@@ -212,10 +221,12 @@ public enum IssueAsks {
         }
         guard let index = entries.lastIndex(where: { entry in
             guard let author = entry.author, !isMe(author),
-                  entry.authorAssociation.map(FlowEngine.trustedAssociations.contains) == true else { return false }
+                  entry.authorAssociation.map(FlowEngine.trustedAssociations.contains) == true,
+                  !isNotice(entry.body) else { return false }
             return mentions(entry.body, login: me)
         }) else { return fromTable }
-        guard !entries[(index + 1)...].contains(where: { isMe($0.author) }) else { return fromTable }
+        // A notice my Bton posted after the question is not my answer to it.
+        guard !entries[(index + 1)...].contains(where: { isMe($0.author) && !isNotice($0.body) }) else { return fromTable }
         let entry = entries[index]
         return IssueAsk(repo: issue.repo, number: issue.number, title: issue.title, url: entry.url ?? issue.url,
                         asker: entry.author ?? "ghost", askedAt: entry.createdAt, commentID: entry.id,

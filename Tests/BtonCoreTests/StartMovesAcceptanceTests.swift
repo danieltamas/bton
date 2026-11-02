@@ -4,6 +4,73 @@ import Testing
 
 @Suite(ProcessBound())
 struct StartMovesAcceptanceTests {
+    @Test(arguments: [
+        (Optional<Bool>.none, Optional("SyNtHeTiC"), true),
+        (nil, "teammate", false), (nil, nil, false),
+        (false, "synthetic", false), (true, "teammate", true)
+    ])
+    func issueWorkDefaultsToTheOwnerAndHonorsAnExplicitChoice(workIssues: Bool?, me: String?, expected: Bool) {
+        var repo = WatchedRepo(slug: "synthetic/project", path: nil)
+        repo.startMoves = true
+        repo.workIssues = workIssues
+        #expect(repo.worksIssues(me: me) == expected)
+    }
+
+    @Test(arguments: [Optional<Bool>.none, false], [Optional<Bool>.none, false, true])
+    func issueWorkRequiresStartMoves(startMoves: Bool?, workIssues: Bool?) {
+        var repo = WatchedRepo(slug: "synthetic/project", path: nil)
+        repo.startMoves = startMoves
+        repo.workIssues = workIssues
+        for me in [Optional("synthetic"), "teammate", nil] {
+            #expect(!repo.worksIssues(me: me))
+        }
+    }
+
+    @Test(arguments: ["false", "true", "absent", "null"])
+    func configRoundTripsWorkIssues(value: String) throws {
+        let field = value == "absent" ? "" : ",\"workIssues\":\(value)"
+        let data = Data("""
+        {"repos":[{"slug":"synthetic/project","startMoves":true\(field)}],"pollSeconds":60,"maxAgents":2,"agents":{},"schedules":[]}
+        """.utf8)
+        let config = try JSONDecoder().decode(BtonConfig.self, from: data)
+        let expected: Bool? = (value == "absent" || value == "null") ? nil : value == "true"
+        #expect(config.repos.first?.workIssues == expected)
+        let encoded = try JSONEncoder().encode(config)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let repo = try #require((object["repos"] as? [[String: Any]])?.first)
+        if let expected { #expect(repo["workIssues"] as? Bool == expected) }
+        let roundTrip = try JSONDecoder().decode(BtonConfig.self, from: encoded)
+        #expect(roundTrip.repos.first?.workIssues == expected)
+    }
+
+    @Test(arguments: ["triage", "stage"])
+    func issueWorkOffStillReadsIssuesAndStartsPRReview(move: String) async throws {
+        let f = try await StartMovesFixture.make(startMoves: true, maxAgents: 8)
+        defer { f.remove() }
+        let (flow, issues) = try f.prepareIssueWork(move: move)
+        var config = try BtonConfig.loadOrCreate(home: f.home)
+        config.repos[0].workIssues = false
+        try config.save(to: f.home.configURL)
+        let engine = try f.engine()
+        let snapshot = await engine.tick()
+        #expect(snapshot.problem == nil)
+        #expect(snapshot.issueAsks.map(\.number) == [8])
+        #expect(snapshot.issuesMore == [f.repo])
+        #expect(snapshot.jobs.map(\.key.move) == ["review"])
+        #expect(snapshot.jobs.map(\.key.item) == ["pr-7"])
+        // Prove these inputs offer both kinds of issue work; dispatch must suppress them.
+        let ask = try #require(snapshot.issueAsks.first)
+        let asked = try #require(issues.first { $0.number == 8 })
+        #expect(IssueDecisions.candidate(ask: ask, issue: asked, flow: flow, agents: config.agents,
+                                       defaultBranch: "main", me: "owner") != nil)
+        #expect(IssueMoves.candidate(issues: issues, flow: flow, pullRequests: [], jobs: [], repo: f.repo,
+                                    me: "owner", agents: config.agents)?.key.move == move)
+        let staleIssue = try #require(issues.first { $0.number == 10 })
+        #expect(Staleness.notice(for: staleIssue, stale: try #require(flow.stale)) != nil)
+        try await f.waitForJobs()
+        #expect(!FileManager.default.fileExists(atPath: f.root.appendingPathComponent("issue-notice").path))
+    }
+
     @Test(arguments: [Optional<Bool>.none, false])
     func syncOnlyStillReportsMyFlowMove(startMoves: Bool?) async throws {
         let f = try await StartMovesFixture.make(startMoves: startMoves)
@@ -287,6 +354,50 @@ struct StartMovesFixture {
         payload["data"] = data
         let replacement = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
         try script.replacingOccurrences(of: line, with: replacement).write(to: gh, atomically: true, encoding: .utf8)
+    }
+
+    func prepareIssueWork(move: String) throws -> (Flow, [OpenIssue]) {
+        let gh = root.appendingPathComponent("gh")
+        let original = try String(contentsOf: gh, encoding: .utf8)
+        let oldFlow = try #require(original.components(separatedBy: "\n").first { $0.hasPrefix("{\"version\":") })
+        var object = try #require(JSONSerialization.jsonObject(with: Data(oldFlow.utf8)) as? [String: Any])
+        object["moves"] = [["move": "review", "when": ["no_review_or_response_newer"], "who": "author"]]
+        object["dispatch"] = ["review": ["agent": "synthetic", "prompt": "Review"], move: ["agent": "claude"]]
+        object["decide"] = ["by": ["owner"]]
+        object["issues"] = [["move": move, "when": ["label:acceptance-work", "no_assignee"]]]
+        object["stale"] = ["pingHours": 24, "escalateHours": 48, "escalateTo": "lead"]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let flow = try #require(Flow.load(data).flow)
+        let issues = [
+            IssueAskFixture.issue(body: "@owner can you decide?", number: 8),
+            IssueAskFixture.issue(body: "Work on this", number: 9, labels: ["acceptance-work"]),
+            IssueAskFixture.issue(body: "Work in progress", author: "owner", number: 10, assignees: ["teammate"])
+        ]
+        let issueData = try IssueAskFixture.payload(issues, next: "C2")
+        try issueData.write(to: root.appendingPathComponent("issues.json"))
+        for issue in issues {
+            let live: [String: Any] = ["state": "OPEN", "body": issue.body, "comments": [],
+                "labels": issue.labels.map { ["name": $0] }, "assignees": issue.assignees.map { ["login": $0] }]
+            try JSONSerialization.data(withJSONObject: live)
+                .write(to: root.appendingPathComponent("issue-\(issue.number)-live.json"))
+        }
+        let handler = """
+        if [ "$1" = api ] && [ "$2" = graphql ]; then
+          case "$*" in *'issues('*) cat "$(dirname "$0")/issues.json"; exit 0 ;; esac
+        fi
+        if [ "$1" = issue ] && [ "$2" = view ]; then cat "$(dirname "$0")/issue-$3-live.json"; exit 0; fi
+        if [ "$1" = issue ] && [ "$2" = comment ]; then touch "$(dirname "$0")/issue-notice"; exit 0; fi
+        """
+        try original.replacingOccurrences(of: oldFlow, with: String(decoding: data, as: UTF8.self))
+            .replacingOccurrences(of: "case \"$2\" in", with: handler + "\ncase \"$2\" in")
+            .write(to: gh, atomically: true, encoding: .utf8)
+        let agent = root.appendingPathComponent("claude")
+        try "#!/bin/sh\nexit 0\n".write(to: agent, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: agent.path)
+        var config = try BtonConfig.loadOrCreate(home: home)
+        config.agents["claude"] = AgentTemplate(argv: [agent.path, "-p", "{prompt}"])
+        try config.save(to: home.configURL)
+        return (flow, try GitHubClient.decodeOpenIssues(issueData, repo: repo).issues)
     }
 
     func engine() throws -> Engine {

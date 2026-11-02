@@ -32,7 +32,7 @@ struct IssueStalenessAcceptanceTests {
         #expect(Staleness.notice(for: F.issue(), stale: stale, now: F.at(23)) == nil)
         #expect(Staleness.notice(for: F.issue(assignees: []), stale: stale, now: F.at(30)) == nil)
         let ping = try #require(Staleness.notice(for: F.issue(assignees: ["lee", "kim"]), stale: stale, now: F.at(25)))
-        #expect(ping.marker == "stale-ping issue@\(Int(F.at(0).timeIntervalSince1970))")
+        #expect(ping.marker == "stale-ping issue")
         #expect(ping.body.hasPrefix("@lee @kim: #7 has waited 25 hours"))
         #expect(ping.body.contains(BtonMarker.line(ping.marker)))
         // Posted (the marker is in a comment of mine): not again, and the ping never resets the clock.
@@ -40,7 +40,7 @@ struct IssueStalenessAcceptanceTests {
         #expect(Staleness.notice(for: pinged, stale: stale, now: F.at(30)) == nil)
         // Past the escalation only the escalation, also when the ping was never posted.
         let escalation = try #require(Staleness.notice(for: F.issue(), stale: stale, now: F.at(49)))
-        #expect(escalation.marker == "stale-escalate issue@\(Int(F.at(0).timeIntervalSince1970))")
+        #expect(escalation.marker == "stale-escalate issue")
         #expect(escalation.body.hasPrefix("@lead: #7 has waited 49 hours"))
         #expect(escalation.body.contains("@lee"))
         let escalated = F.issue(comments: [F.comment("1", author: "dani", body: ping.body, hours: 25),
@@ -55,7 +55,7 @@ struct IssueStalenessAcceptanceTests {
         #expect(Staleness.since(spoken) == F.at(20))
         #expect(Staleness.notice(for: spoken, stale: stale, now: F.at(30)) == nil)
         let later = try #require(Staleness.notice(for: spoken, stale: stale, now: F.at(45)))
-        #expect(later.marker == "stale-ping issue@\(Int(F.at(20).timeIntervalSince1970))")
+        #expect(later.marker == "stale-ping issue")
         // An assignment or label change at hour 40 is a new wait too; the triager's line is not.
         #expect(Staleness.since(F.issue(stateChangedAt: F.at(40))) == F.at(40))
         let triaged = F.issue(comments: [F.comment("1", author: "dani", body: "Impact: 1\n\n" + IssueMoves.marker, hours: 40)])
@@ -73,6 +73,36 @@ struct IssueStalenessAcceptanceTests {
         #expect(read.body != claim.body)
         // An issue waiting on me is my wait, not the assignee's.
         #expect(Staleness.notice(for: F.issue(), stale: stale, askedOfMe: true, now: F.at(30)) == nil)
+    }
+
+    @Test(arguments: [("stale-ping issue", 25.0, 30.0), ("stale-escalate issue", 49.0, 60.0)])
+    func twoReadsWithStateClocksTwoMinutesApartFindTheNoticeAlreadyPosted(marker: String, posted: Double, now: Double) throws {
+        let comment = F.comment("1", author: "dani", body: BtonMarker.line(marker), hours: posted)
+        for since in [F.at(0), F.at(0).addingTimeInterval(120)] {
+            let issue = F.issue(comments: [comment], stateChangedAt: since)
+            #expect(Staleness.notice(for: issue, stale: try F.stale(), now: F.at(now)) == nil)
+        }
+    }
+
+    @Test(arguments: [("stale-ping issue", 25.0, 55.0), ("stale-escalate issue", 49.0, 100.0)])
+    func aNoticeBeforeANewAssignmentDoesNotCountForTheNewWait(marker: String, posted: Double, now: Double) throws {
+        let comment = F.comment("1", author: "dani", body: BtonMarker.line(marker), hours: posted)
+        let issue = F.issue(comments: [comment], stateChangedAt: F.at(posted + 1))
+        let notice = try #require(Staleness.notice(for: issue, stale: try F.stale(), now: F.at(now)))
+        #expect(notice.marker == marker)
+    }
+
+    @Test(arguments: [("stale-ping issue", 24.0), ("stale-escalate issue", 48.0)])
+    func aNoticeAtTheStartOfTheWaitAlreadyCounts(marker: String, hours: Double) throws {
+        let comment = F.comment("1", author: "dani", body: BtonMarker.line(marker), hours: 0)
+        #expect(Staleness.notice(for: F.issue(comments: [comment], stateChangedAt: F.at(0)),
+                                 stale: try F.stale(), now: F.at(hours)) == nil)
+    }
+
+    @Test(arguments: [("stale-ping issue@1793537797", 25.0, 30.0), ("stale-escalate issue@1793537797", 49.0, 60.0)])
+    func legacyEpisodeMarkersCountForTheCurrentWait(marker: String, posted: Double, now: Double) throws {
+        let issue = F.issue(comments: [F.comment("1", author: "dani", body: BtonMarker.line(marker), hours: posted)])
+        #expect(Staleness.notice(for: issue, stale: try F.stale(), now: F.at(now)) == nil)
     }
 
     @Test func theReadCarriesTheLastAssignmentOrLabelEvent() throws {

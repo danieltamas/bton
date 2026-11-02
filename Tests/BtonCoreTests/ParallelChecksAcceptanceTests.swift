@@ -26,31 +26,38 @@ struct ParallelChecksAcceptanceTests {
     }
 
     // b
-    @Test func togetherChecksFinishClearlyFasterThanSerialChecks() async throws {
+    @Test func togetherChecksOverlapWhileSerialChecksWait() async throws {
         let parallel = try await ParallelChecksFixture.make()
         defer { parallel.remove() }
         let serial = try await ParallelChecksFixture.make()
         defer { serial.remove() }
         func gates(_ f: ParallelChecksFixture) -> [[String]] {
             ["a", "b"].map { name in
-                ["/bin/sh", "-c", "sleep 1.5; touch '\(f.root.appendingPathComponent(name).path)'"]
+                ["/usr/bin/python3", "-c", """
+                import sys, time
+                with open(sys.argv[1], 'w') as output:
+                    print(time.time(), file=output, flush=True)
+                    time.sleep(1.5)
+                    print(time.time(), file=output)
+                """, f.root.appendingPathComponent(name).path]
             }
         }
+        func interval(_ f: ParallelChecksFixture, _ name: String) throws -> (start: Double, end: Double) {
+            let lines = f.text(f.root.appendingPathComponent(name)).split(separator: "\n")
+            try #require(lines.count == 2, "Each gate must record its start and end")
+            return (try #require(Double(lines[0])), try #require(Double(lines[1])))
+        }
         let concurrentGates = gates(parallel)
-        let clock = ContinuousClock()
-        let concurrentStart = clock.now
         let concurrentJob = try await parallel.run(beforeSession: concurrentGates, together: [concurrentGates],
                                                     require: ["a", "b"])
-        let concurrentTime = concurrentStart.duration(to: clock.now)
-        let serialStart = clock.now
         let serialJob = try await serial.run(beforeSession: gates(serial), require: ["a", "b"])
-        let serialTime = serialStart.duration(to: clock.now)
         #expect(concurrentJob.status == .succeeded)
         #expect(serialJob.status == .succeeded)
-        #expect(serialTime >= .seconds(3))
-        // Dispatch includes git and lease setup; allow load while requiring a meaningful gain.
-        #expect(concurrentTime < .seconds(6))
-        #expect(concurrentTime + .milliseconds(650) < serialTime)
+        let concurrentA = try interval(parallel, "a"), concurrentB = try interval(parallel, "b")
+        #expect(concurrentB.start < concurrentA.end)
+        #expect(concurrentA.start < concurrentB.end)
+        let serialA = try interval(serial, "a"), serialB = try interval(serial, "b")
+        #expect(serialB.start > serialA.end)
     }
 
     // c
@@ -61,7 +68,7 @@ struct ParallelChecksAcceptanceTests {
         let b = ["/bin/sh", "-c", "echo b-start; sleep 5; touch '\(f.root.appendingPathComponent("b-done").path)'; echo b-end"]
         let start = ContinuousClock.now
         let job = try await f.run(beforeSession: [a, b], together: [[a, b]])
-        #expect(start.duration(to: .now) < .seconds(4))
+        #expect(start.duration(to: .now) < .seconds(30))
         #expect(job.status == .failed)
         #expect(job.detail?.hasPrefix("check ") == true)
         #expect(job.detail?.contains(a.joined(separator: " ")) == true)

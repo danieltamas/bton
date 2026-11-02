@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-private enum IssueAskFixture {
+enum IssueAskFixture {
     static let repo = "synthetic/project"
     static let title = "ISSUE_TITLE_DATA"
     static let body = "ISSUE_BODY_DATA @owner which option?"
@@ -15,10 +15,12 @@ private enum IssueAskFixture {
                      body: body, createdAt: date(second), url: url)
     }
     static func issue(body: String = body, author: String? = "teammate", association: String = "OWNER",
-                      comments: [IssueComment] = [], number: Int = 7) -> OpenIssue {
+                      comments: [IssueComment] = [], number: Int = 7,
+                      labels: [String] = [], assignees: [String] = []) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: title,
                   url: URL(string: "https://example.invalid/issues/\(number)")!, createdAt: date(0),
-                  author: author, authorAssociation: association, body: body, comments: comments)
+                  author: author, authorAssociation: association, body: body, comments: comments,
+                  labels: labels, assignees: assignees)
     }
     static let agents = ["claude": AgentTemplate(argv: ["claude", "-p", "{prompt}"])]
     static func candidate(_ issue: OpenIssue, ask: IssueAsk? = nil,
@@ -28,13 +30,15 @@ private enum IssueAskFixture {
     }
 
     // Shaped from the spec's GitHub GraphQL query, not captured from a live repository.
-    static func payload(_ issues: [OpenIssue]) throws -> Data {
+    static func payload(_ issues: [OpenIssue], next: String? = nil) throws -> Data {
         let formatter = ISO8601DateFormatter()
         let nodes: [[String: Any]] = issues.map { issue in
             ["number": issue.number, "title": issue.title, "url": issue.url.absoluteString,
              "createdAt": formatter.string(from: issue.createdAt), "body": issue.body,
              "author": issue.author.map { ["login": $0] } as Any? ?? NSNull(),
              "authorAssociation": issue.authorAssociation,
+             "labels": ["nodes": issue.labels.map { ["name": $0] }],
+             "assignees": ["nodes": issue.assignees.map { ["login": $0] }],
              "comments": ["nodes": issue.comments.map { comment -> [String: Any] in
                  ["databaseId": Int(comment.id)!, "author": comment.author.map { ["login": $0] } as Any? ?? NSNull(),
                   "authorAssociation": comment.authorAssociation as Any? ?? NSNull(), "body": comment.body,
@@ -42,12 +46,45 @@ private enum IssueAskFixture {
                   "url": comment.url?.absoluteString as Any? ?? NSNull()]
              }]]
         }
-        return try JSONSerialization.data(withJSONObject: ["data": ["repository": ["issues": ["nodes": nodes]]]])
+        return try JSONSerialization.data(withJSONObject: ["data": ["repository": ["issues": [
+            "nodes": nodes, "pageInfo": ["hasNextPage": next != nil, "endCursor": next as Any? ?? NSNull()]
+        ]]]])
     }
 }
 
 @Suite(ProcessBound())
 struct IssueAskAcceptanceTests {
+    @Test(arguments: ["stale-ping issue", "stale-escalate issue", "check-failed review@head"])
+    func btonsNoticesAreNotAsks(marker: String) {
+        let notice = IssueAskFixture.comment(body: "@dani: #7 has waited 48 hours ...\n\n" + BtonMarker.line(marker))
+        let issue = IssueAskFixture.issue(body: "No question", comments: [notice])
+        #expect(IssueAsks.ask(in: issue, me: "dani") == nil)
+    }
+
+    @Test func aPlainQuestionAfterANoticeIsStillAnAsk() throws {
+        let notice = IssueAskFixture.comment(body: "@dani: #7 has waited 48 hours ...\n\n" + BtonMarker.line("stale-ping issue"))
+        let question = IssueAskFixture.comment("22", body: "@dani can you decide?", second: 2)
+        let issue = IssueAskFixture.issue(body: "No question", comments: [notice, question])
+        #expect(try #require(IssueAsks.ask(in: issue, me: "dani")).commentID == "22")
+    }
+
+    @Test(arguments: [Handoff.marker(to: "dani"), IssueMoves.marker])
+    func handoffAndTriagerMarkersDoNotHideAnAsk(marker: String) throws {
+        let comment = IssueAskFixture.comment(body: "@dani can you decide?\n\n" + marker)
+        let issue = IssueAskFixture.issue(body: "No question", comments: [comment])
+        let ask = try #require(IssueAsks.ask(in: issue, me: "dani"))
+        #expect(ask.commentID == comment.id)
+        #expect(ask.handoff == (marker == Handoff.marker(to: "dani")))
+    }
+
+    @Test(arguments: ["stale-ping issue", "stale-escalate issue", "check-failed review@head"])
+    func myOwnNoticeDoesNotAnswerAnAsk(marker: String) throws {
+        let question = IssueAskFixture.comment(body: "@dani can you decide?")
+        let notice = IssueAskFixture.comment("22", author: "dani", body: "@lee: notice\n\n" + BtonMarker.line(marker), second: 2)
+        let issue = IssueAskFixture.issue(body: "No question", comments: [question, notice])
+        #expect(try #require(IssueAsks.ask(in: issue, me: "dani")).commentID == question.id)
+    }
+
     @Test(arguments: [
         ("@owner", true), ("hello @OwNeR!", true), ("(@owner)", true),
         ("a@owner", false), ("1@owner", false), ("_@owner", false),

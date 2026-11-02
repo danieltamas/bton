@@ -46,36 +46,65 @@ extension AppStore {
         try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
         postedAsks.insert(ask.notice)
         var incomplete: [String] = []
-        do {
-            try await github.editIssueLabels(add: draft.add, remove: draft.remove, repo: ask.repo, number: ask.number)
-        } catch {
-            incomplete.append("the labels were not set (\((draft.add.map { "+" + $0 } + draft.remove.map { "-" + $0 }).joined(separator: " "))): \(error.localizedDescription)")
+        // The issue as it is now, once, for the labels and the rows: a reply drafted on the sync's
+        // read lands on an issue that may have moved since.
+        var live: IssueDecisions.Live?
+        do { live = try await github.issueLive(repo: ask.repo, number: ask.number) } catch {
+            incomplete.append("the issue could not be read back: \(error.localizedDescription)")
         }
-        if !ask.rows.isEmpty {
+        if !draft.add.isEmpty || !draft.remove.isEmpty {
+            let labels = (draft.add.map { "+" + $0 } + draft.remove.map { "-" + $0 }).joined(separator: " ")
+            // No read, no label change: not knowing who holds the issue is the case to stay out of.
+            if live == nil || me == nil {
+                incomplete.append("the labels were not set (\(labels)): the issue's assignees are not known")
+            } else if let live, let reason = me.flatMap({ IssueDrafts.labelsApply(to: live.now, me: $0) }) {
+                incomplete.append("\(reason) (\(labels) not applied)")
+                log("\(ask.repo)#\(ask.number): \(reason)")
+            } else {
+                do {
+                    try await github.editIssueLabels(add: draft.add, remove: draft.remove, repo: ask.repo, number: ask.number)
+                } catch {
+                    incomplete.append("the labels were not set (\(labels)): \(error.localizedDescription)")
+                }
+            }
+        }
+        if let live {
             do {
-                try await decideRows(of: ask, bodyFile: output.appendingPathExtension("body"))
+                if let left = try await decideRows(of: ask, live: live, bodyFile: output.appendingPathExtension("body")) {
+                    incomplete.append(left)
+                }
             } catch {
-                incomplete.append("\(ask.rows.joined(separator: ", ")) stay open in the Decisions table: \(error.localizedDescription)")
+                incomplete.append("my rows stay open in the Decisions table: \(error.localizedDescription)")
             }
         }
         await refresh()
         if !incomplete.isEmpty { throw PostReplyError.incomplete(incomplete) }
     }
 
-    /// Writes "<today>, see reply" in the Date cell of the ask's rows, in the body read from GitHub
-    /// at that moment so an edit since the sync is kept (GitHub has no conditional issue edit, so
-    /// the read-to-write window is the one `gh` call), and only when a row of mine is still open:
-    /// a row decided meanwhile leaves the body alone. Without my login or the flow that reads the
-    /// table there is nothing to write by, and that is reported, not passed over.
-    private func decideRows(of ask: IssueAsk, bodyFile: URL) async throws {
-        guard let github, let me else { throw RowsError.noLogin }
-        guard let table = flows[ask.repo]?.flow?.decide?.table else { throw RowsError.noTable }
-        let live = try await github.issueLive(repo: ask.repo, number: ask.number)
-        let body = DecisionRows.decided(live.body, rows: ask.rows, for: me, table: table, date: Day.text(Date(), in: .current))
-        guard body != live.body else { return }
+    /// Writes "<today>, see reply" in the Date cell of every row open for me in the body read
+    /// from GitHub at that moment (an edit since the sync is kept; GitHub has no conditional issue
+    /// edit, so the read-to-write window is the one `gh` call). Every row, whatever the ask was: a
+    /// reply to a mention answers the table too, and a row left open came back as a new ask and
+    /// was answered again. No open row of mine writes nothing. Returns what stays open when the
+    /// edit changed nothing, so a send is never quietly half done.
+    private func decideRows(of ask: IssueAsk, live: IssueDecisions.Live, bodyFile: URL) async throws -> String? {
+        guard let me else { throw RowsError.noLogin }
+        // A flow not loaded, invalid or unsupported is reported; a flow without a Decisions
+        // table has no rows to date.
+        guard let flow = flows[ask.repo]?.flow else { throw RowsError.noTable }
+        guard let table = flow.decide?.table else { return nil }
+        let rows = DecisionRows.open(in: live.body, for: me, table: table).map(\.id)
+        guard !rows.isEmpty else { return nil }
+        let body = DecisionRows.decided(live.body, rows: rows, for: me, table: table, date: Day.text(Date(), in: .current))
+        guard body != live.body else { return "\(rows.joined(separator: ", ")) stay open in the Decisions table: the rows were not matched" }
         try write(body, to: bodyFile)
-        try await github.editIssueBody(repo: ask.repo, number: ask.number, bodyFile: bodyFile)
+        try await github?.editIssueBody(repo: ask.repo, number: ask.number, bodyFile: bodyFile)
+        log("\(ask.repo)#\(ask.number): dated \(rows.joined(separator: ", ")) in the Decisions table")
+        return nil
     }
+
+    /// A line in the engine's log for what a send did or left alone on the issue.
+    private func log(_ message: String) { EngineLog.sink(home: home)(message) }
 
     private enum RowsError: LocalizedError {
         case noLogin, noTable

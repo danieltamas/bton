@@ -62,6 +62,23 @@ private enum DecisionTableFixture {
 struct DecisionTableAcceptanceTests {
     private typealias F = DecisionTableFixture
 
+    @Test func datingAllLiveOpenRowsDecidesEveryRowOfMine() {
+        let second = "| D-5 | NEW_ROW_DATA | Pick B | Dani | open |"
+        let body = F.body(rows: [F.decidedByMe, F.openForMe, F.openForBogdan, second])
+        let rows = DecisionRows.open(in: body, for: F.me, table: F.table).map(\.id)
+        #expect(rows == ["D-3", "D-5"])
+        let decided = DecisionRows.decided(body, rows: rows, for: F.me, table: F.table, date: "2026-11-02")
+        #expect(decided == F.body(rows: [F.decidedByMe,
+            "| D-3 | ROW_THREE_TEXT_DATA | Pick A | Dani | 2026-11-02, see reply |", F.openForBogdan,
+            "| D-5 | NEW_ROW_DATA | Pick B | Dani | 2026-11-02, see reply |"]))
+        #expect(DecisionRows.open(in: decided, for: F.me, table: F.table).isEmpty)
+    }
+
+    @Test func anUnmatchedRowIDLeavesTheBodyUnchanged() {
+        let body = F.body(rows: [F.decidedByMe, F.openForMe, F.openForBogdan])
+        #expect(DecisionRows.decided(body, rows: ["D-99"], for: F.me, table: F.table, date: "2026-11-02") == body)
+    }
+
     @Test func theTableDecodesAndAFlowWithoutItStillHasNoTableAsk() throws {
         let flow = try F.flow()
         #expect(flow.decide?.table?.names == ["Dani": "dani"])

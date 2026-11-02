@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The release build: dist/Bton-<version>.zip and dist/SHA256SUMS, the same bytes for anyone who
 # builds the tag v<version> with the toolchain named in Support/toolchain. --verify builds the
-# tag twice, from two copies at different paths, and fails if one byte differs.
+# tag twice, from two copies at different paths, and fails if one byte differs; the release
+# runs without it (one universal build; the proof costs four minutes and is for a doubt, not
+# every release), so run `scripts/release.sh <x.y.z> --verify` on a tag when it matters.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -31,13 +33,16 @@ export SOURCE_DATE_EPOCH
 stamp=$(TZ=UTC date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)
 work=$(mktemp -d -t bton-release)
 trap 'rm -rf "$work"' EXIT
+# The build caches outlive the release: the second release of the day compiles what changed,
+# not the two universal builds from nothing (eight minutes on the Mac that releases).
+scratch=${BTON_RELEASE_SCRATCH:-$HOME/.cache/bton-release}
 
-# Builds the tagged tree, copied to $1/src, into $1/Bton-<version>.zip.
+# Builds the tagged tree, copied to $1/src, into $1/Bton-<version>.zip, with the cache named $2.
 build_copy() {
-  mkdir -p "$1/src"
+  mkdir -p "$1/src" "$scratch/$2"
   git archive HEAD | tar -x -C "$1/src"
   (cd "$1/src" && scripts/bundle.sh --universal --version "$version" --build "$build" \
-    --scratch "$1/scratch" --out "$1/out" >/dev/null)
+    --scratch "$scratch/$2" --out "$1/out" >/dev/null)
   chmod -R u=rwX,go=rX "$1/out/Bton.app"
   xattr -cr "$1/out/Bton.app"
   find "$1/out/Bton.app" -exec env TZ=UTC touch -h -t "$stamp" {} +
@@ -45,9 +50,9 @@ build_copy() {
   (cd "$1/out" && find Bton.app | LC_ALL=C sort | TZ=UTC zip -q -X -D -y -@ "$1/Bton-$version.zip")
 }
 
-build_copy "$work/a"
+build_copy "$work/a" a
 if [[ -n $verify ]]; then
-  build_copy "$work/b"
+  build_copy "$work/b" b
   if ! cmp -s "$work/a/Bton-$version.zip" "$work/b/Bton-$version.zip"; then
     for copy in a b; do
       (cd "$work/$copy/out" && find Bton.app -type f -exec shasum -a 256 {} + | LC_ALL=C sort -k2) > "$work/$copy.sums"

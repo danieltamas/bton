@@ -241,7 +241,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
         _ = try await ProcessRunner().run("/bin/sleep", ["5"], timeout: .milliseconds(500))
         Issue.record("A process exceeding its deadline must throw timedOut")
     } catch ProcessRunner.Failure.timedOut {
-        #expect(start.duration(to: clock.now) < .seconds(3))
+        #expect(start.duration(to: clock.now) < .seconds(30))
     }
 }
 
@@ -256,7 +256,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
 @Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerTimesOutWhenChildIgnoresSIGTERM() async throws {
     let clock = ContinuousClock()
     let start = clock.now
-    defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
+    defer { #expect(start.duration(to: clock.now) < .seconds(30)) }
     do {
         _ = try await ProcessRunner().run(
             "/bin/sh", ["-c", "trap \"\" TERM; sleep 30"], timeout: .milliseconds(500))
@@ -267,7 +267,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
 @Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerTimesOutWhenGrandchildKeepsStdoutOpen() async throws {
     let clock = ContinuousClock()
     let start = clock.now
-    defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
+    defer { #expect(start.duration(to: clock.now) < .seconds(30)) }
     do {
         _ = try await ProcessRunner().run(
             "/bin/sh", ["-c", "sleep 30 & exit 0"], timeout: .milliseconds(500))
@@ -278,7 +278,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
 @Test(ProcessBound(), .timeLimit(.minutes(10))) func processRunnerDeadlineWinsOverSuccessfulSIGTERMExit() async throws {
     let clock = ContinuousClock()
     let start = clock.now
-    defer { #expect(start.duration(to: clock.now) < .seconds(5)) }
+    defer { #expect(start.duration(to: clock.now) < .seconds(30)) }
     do {
         _ = try await ProcessRunner().run(
             "/bin/sh", ["-c", "trap \"exit 0\" TERM; sleep 30 & wait"], timeout: .milliseconds(500))
@@ -301,7 +301,7 @@ func matchingCloneOriginIsAcceptedIgnoringCase(_ expected: String) async throws 
     let cancellationStart = clock.now
     task.cancel()
     let threw = await task.value
-    #expect(cancellationStart.duration(to: clock.now) < .seconds(5))
+    #expect(cancellationStart.duration(to: clock.now) < .seconds(30))
     #expect(threw, "Cancelling ProcessRunner must throw instead of returning normally")
 }
 

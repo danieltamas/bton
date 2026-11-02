@@ -88,9 +88,10 @@ public enum IssueDecisions {
 
     public static func decodeLive(_ data: Data) throws -> Live {
         struct Name: Decodable { let name: String }
-        struct Row: Decodable { let state: String, labels: [Name], body: String }
+        struct Login: Decodable { let login: String }
+        struct Row: Decodable { let state: String, labels: [Name], assignees: [Login]?, body: String }
         let row = try JSONDecoder().decode(Row.self, from: data)
-        return Live(now: IssueNow(state: row.state, labels: row.labels.map(\.name), assignees: []), body: row.body,
+        return Live(now: IssueNow(state: row.state, labels: row.labels.map(\.name), assignees: (row.assignees ?? []).map(\.login)), body: row.body,
                     comments: try decodeComments(data))
     }
 
@@ -107,7 +108,8 @@ public enum IssueDecisions {
             }
             return nil
         }
-        if live.comments.contains(where: { $0.createdAt > plan.askedAt.addingTimeInterval(1) }) {
+        // Bton's own notice after the ask is no comment on it: the ask stands.
+        if live.comments.contains(where: { $0.createdAt > plan.askedAt.addingTimeInterval(1) && !IssueAsks.isNotice($0.body) }) {
             return "a comment came after the ask; the next sync reads it"
         }
         return nil

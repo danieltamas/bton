@@ -135,6 +135,10 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// true, with `startMoves`: a sync takes a teammate's move that Take it could take (assigns the
     /// PR to me on GitHub) once per PR, owner and head, then starts it. Nil is off.
     public var takeMoves: Bool?
+    /// Whether this Mac works the repo's issues (triage, specs, builds, decisions, their stale
+    /// notices) when it starts the flow's moves. Nil is the default: on for the repo's owner,
+    /// off for a teammate, so one team's issues run on one Mac unless someone chooses otherwise.
+    public var workIssues: Bool?
     /// A label on each PR while a Bton, on any Mac, holds its lease: teammates without Bton see
     /// which PRs an agent works on. Display only; nothing reads it back. Nil is off.
     public var workLabel: String?
@@ -155,6 +159,13 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     public var startsMoves: Bool { startMoves == true }
     public var takesMoves: Bool { startsMoves && takeMoves == true }
     public var buildsGraph: Bool { codeGraph == true }
+    /// Whether `me` works the repo's issues here: `workIssues` when set, else only the slug's owner.
+    public func worksIssues(me: String?) -> Bool {
+        guard startsMoves else { return false }
+        if let workIssues { return workIssues }
+        guard let me, !me.isEmpty, let owner = slug.split(separator: "/").first else { return false }
+        return owner.caseInsensitiveCompare(me) == .orderedSame
+    }
 
     public init(slug: String, path: String?, branch: String? = nil, environment: [String: String]? = nil) {
         self.slug = slug

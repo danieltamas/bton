@@ -109,6 +109,11 @@ struct ReposPane: View {
                             RepoSwitch(symbol: "hand.raised", title: "Take teammates' moves automatically",
                                        help: "A sync assigns a PR to you on GitHub when its move is one Take it could take, then starts it. Once per PR and head. Off: the row's Take it does it.",
                                        isOn: repo.takesMoves, problem: $problem) { try store.setTakeMoves($0, for: repo.slug) }
+                            if flow?.flow?.issues?.isEmpty == false {
+                                RepoSwitch(symbol: "tray.full", title: "Work the issues here",
+                                           help: "Triage, specs, builds, decisions and stale notices on this repo's issues run on this Mac. On by default for the repo's owner, off for a teammate. Off: the issues are only shown.",
+                                           isOn: repo.worksIssues(me: store.me), problem: $problem) { try store.setWorkIssues($0, for: repo.slug) }
+                            }
                         }
                     } else {
                         Text("No folder yet: nothing is started here until it has one.").font(.meta).foregroundStyle(Theme.unassigned)

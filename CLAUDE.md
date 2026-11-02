@@ -28,9 +28,13 @@ prints nothing):
 - Work in a worktree, `.worktrees/<branch>`, branched from main. The main checkout is for
   merging and releasing only. Before the first write: `repo-sync peers`, then
   `repo-sync claim --task "<what>" <paths>`; stage by path, commit only hunks you wrote.
-- A change lands on main by `git merge --ff-only` of a branch rebased onto main, with the full
-  suite green on the rebased tip, and never while `repo-sync peers` shows a task starting with
-  `release`: the `reference-transaction` hook refuses to move main then. Wait for the release.
+- A change lands on main by `git merge --ff-only` of a branch rebased onto main, and never while
+  `repo-sync peers` shows a task starting with `release`: the `reference-transaction` hook
+  refuses to move main then. Wait for the release.
+- The test suite runs once, in the release (`release` runs it): never per feature, per branch, per
+  fix round or before a merge. While building a change, run only the one test file the change
+  touches (`--filter <TestClass>`), and only when it exists. A feature's branch is done when it
+  builds and its own test file passes; the suite's verdict comes with the release.
 - LOG.md: a change adds its paragraph under one `## Unreleased` heading at the top of LOG.md, in
   the voice of the entries below. Never write a `## x.y.z` heading in a feature commit; the
   release turns `## Unreleased` into the version heading. The `pre-commit` hook refuses a second

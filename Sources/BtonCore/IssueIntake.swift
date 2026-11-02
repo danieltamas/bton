@@ -286,7 +286,7 @@ extension GitHubClient {
 
     /// The issue's state, labels, body and comments as they are now.
     public func issueLive(repo: String, number: Int) async throws -> IssueDecisions.Live {
-        try IssueDecisions.decodeLive(try await gh(["issue", "view", String(number), "--repo", repo, "--json", "state,labels,body,comments"]))
+        try IssueDecisions.decodeLive(try await gh(["issue", "view", String(number), "--repo", repo, "--json", "state,labels,assignees,body,comments"]))
     }
 
     static func decodeIssueNow(_ data: Data) throws -> IssueNow {

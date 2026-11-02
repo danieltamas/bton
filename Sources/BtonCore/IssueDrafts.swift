@@ -36,6 +36,15 @@ public enum IssueDrafts {
     /// The last line's prefix for the labels the reply moves the issue with.
     public static let labelsPrefix = "Labels:"
 
+    /// Why a reply's label line is not applied to the issue as it is now, or nil when it is: an
+    /// issue assigned to someone else is theirs to move (their Bton holds it at stage:in-progress;
+    /// a reply putting stage:ready back on it made the issue carry both and started it twice).
+    public static func labelsApply(to now: IssueNow, me: String) -> String? {
+        let others = now.assignees.filter { $0.caseInsensitiveCompare(me) != .orderedSame }
+        guard !others.isEmpty else { return nil }
+        return "labels left as they are: the issue is assigned to \(others.map { "@" + $0 }.joined(separator: ", "))"
+    }
+
     /// A drafted reply split from its label line: the text to post, and the labels to add and
     /// remove with it. A draft without the line, or with an unreadable one, posts as it is.
     public static func split(_ text: String) -> (reply: String, add: [String], remove: [String]) {

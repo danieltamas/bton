@@ -48,6 +48,20 @@ private enum IssueDecisionsFixture {
 struct IssueDecisionsAcceptanceTests {
     private typealias F = IssueDecisionsFixture
 
+    @Test(arguments: [[String](), ["dani"], ["DaNi"]])
+    func replyLabelsApplyToAnUnassignedIssueOrMyOwn(assignees: [String]) {
+        let now = IssueNow(state: "OPEN", labels: ["stage:spec"], assignees: assignees)
+        #expect(IssueDrafts.labelsApply(to: now, me: "dani") == nil)
+    }
+
+    @Test(arguments: [["lee"], ["dani", "lee"]])
+    func replyLabelsAreLeftAloneWhenSomeoneElseHoldsTheIssue(assignees: [String]) throws {
+        let now = IssueNow(state: "OPEN", labels: ["stage:in-progress"], assignees: assignees)
+        let reason = try #require(IssueDrafts.labelsApply(to: now, me: "dani"))
+        #expect(reason.contains("assigned to"))
+        #expect(reason.contains("lee"))
+    }
+
     @Test func decodesDecideWithOptionalDefaultsUnset() throws {
         let flow = try F.flow(decide: #"{"by":["dani"],"except":["high-risk"]}"#)
         #expect(flow.decide?.by == ["dani"])
@@ -225,6 +239,12 @@ struct IssueDecisionsAcceptanceTests {
 }
 
 extension IssueDecisionsAcceptanceTests {
+    @Test func liveIssueDecodesItsAssignees() throws {
+        let data = Data(#"{"state":"OPEN","labels":[{"name":"stage:in-progress"}],"assignees":[{"login":"lee"},{"login":"kim"}],"body":"Live body","comments":[]}"#.utf8)
+        let live = try IssueDecisions.decodeLive(data)
+        #expect(live.now.assignees == ["lee", "kim"])
+    }
+
     @Test func candidateCarriesDeniedCommandsAndDecisionPlan() throws {
         let candidate = try #require(try F.candidate(
             decide: #"{"by":["dani"],"except":["high-risk","private"]}"#))

@@ -2,6 +2,20 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**One Mac works a repo's issues.** Since 0.24.0 every Mac that started a flow's moves also ran its issue moves: a teammate's Bton staged the issues and mentioned the owner, the owner's Bton approved and relabeled them within minutes, the teammate's Bton built them, and nobody had asked for any of it; on 2026-11-01 that was 20 specs, 8 builds with no PR and $75 on one teammate's Mac in a day. The repo card gets "Work the issues here", under "Start the flow's moves on every sync": on by default for the repo's owner, off for a teammate, and either can choose. Off, this Mac shows the issues and runs its PR moves, and triages, stages, builds, decides and stale-pings nothing.
+
+**Bton's own notices are not asks.** A stale ping ("@lee: #7 has waited 48 hours"), an escalation or a failed-check comment mentions a person to tell them, and the mentioned person's Bton read it as a question and started a decide on it: 21 decides in two days that each reported there was nothing to decide, and 14 of the notices sat in Waiting on you. A comment carrying one of those markers is never an ask; a hand-off and a triager's line keep theirs.
+
+**One stale ping per wait.** The ping's marker carried the second the issue's wait began, and two reads of one issue disagreed on that second (the last label event, the last comment and the opening were compared from reads a minute apart), so the same wait was pinged twice, ten minutes or eighty apart, on every Mac that ran it. The marker now names the notice alone, and a notice counts as posted when it was posted after the wait began: a new assignment, label or comment is a new wait, as before, and a wait is pinged once. A ping from an earlier Bton counts too.
+
+**A reply dates every open row of mine.** A reply sent from Draft reply dated the Decisions table only when the ask was the table itself; a reply to a mention left the row "open", the row came back as a new ask, and the same decision was sent again, three times on one issue. Now every send dates every row that is mine and open in the issue's body as it is at that moment, and a row that could not be matched is named in the send's result instead of staying open quietly. The engine log has a line per edit.
+
+**A reply does not move an issue another Mac holds.** A sent reply applied its draft's `Labels:` line whatever the issue's state, and put `stage:ready` back on issues a teammate's Bton held at `stage:in-progress`, so they carried both and were started twice. When the issue is assigned to someone else, the labels stay as they are, and the send's result says so.
+
+**Releases in a quarter of the time.** The suite had four assertions on wall-clock time (one that parallel checks beat serial checks by 650 ms), which failed under the full suite's load, and the release's answer to any failure was the whole suite again, one test at a time: eleven minutes for a flake. The timing assertions now check order and overlap, not durations; `scripts/test.sh` runs only the suites that failed again, serially; the release build keeps its caches under `~/.cache/bton-release`, so the second release of a day compiles what changed; and the release builds the app once instead of twice (the second build only proved the first's bytes reproducible, four minutes a release; `scripts/release.sh <version> --verify` still does that on demand). The release of 0.29.1 took 24 minutes; the next ones should take under 10.
+
 ## 0.29.1 (2026-11-02)
 
 **A long pill no longer widens the card.** 0.29.0 put the move's pill on the row's top line, sized to its text; a pill the line could not hold (a review waiting for its gate, owned by a long login, beside a `high-risk` chip) pushed the whole card past the list's edge, so cards came out wider or narrower by row. Now the pill sits on the top line when it fits whole and otherwise on its own line under the number and chips, still above the title; every card has the list's width.

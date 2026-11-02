@@ -266,7 +266,7 @@ public actor Engine {
                     lastReads[repo.slug.lowercased()] = kept
                     // A flow with issue moves is about the issues nobody looked at, which are the
                     // oldest: every page is read, not the newest one.
-                    if repo.startsMoves, status.flow?.issues?.isEmpty == false { issuePages[repo.slug.lowercased()] = Self.issuePageCap }
+                    if repo.worksIssues(me: read.viewer), status.flow?.issues?.isEmpty == false { issuePages[repo.slug.lowercased()] = Self.issuePageCap }
                     await readIssues(repo.slug)
                     snapshot.features[repo.slug] = await readFeatures(repo: repo, flow: status.flow, defaultBranch: read.defaultBranch,
                                                                       viewer: read.viewer, merged: merged, pullRequests: pullRequests)
@@ -309,7 +309,7 @@ public actor Engine {
                         }
                         if let stale = flow.stale {
                             await postStaleNotices(read.pullRequests, stale: stale, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
-                            if read.repo.startsMoves, issuesReadThisTick.contains(read.repo.slug.lowercased()) {
+                            if read.repo.worksIssues(me: read.viewer), issuesReadThisTick.contains(read.repo.slug.lowercased()) {
                                 await postIssueStaleNotices(openIssues[read.repo.slug.lowercased()] ?? [], stale: stale, flow: flow,
                                                             repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                             }
@@ -326,7 +326,8 @@ public actor Engine {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
                         }
                         pending += candidates.map { ($0, clone, flow) }
-                        // A repo that starts its moves also takes the next ready issue, once its PRs have their turn.
+                        // The Mac that works the repo's issues also takes the next ready one, once its PRs have
+                        // their turn; any other Mac only resumes what it holds or what the owner pressed.
                         let requested = taken[read.repo.slug.lowercased()]
                         if let intake = flow.intake,
                            issuesReadThisTick.contains(read.repo.slug.lowercased()),
@@ -334,13 +335,14 @@ public actor Engine {
                                                             caps: flow.caps, pullRequests: read.pullRequests, jobs: jobs.all(),
                                                             repo: read.repo.slug, base: flow.base, me: read.viewer, agents: config.agents,
                                                             work: Self.coderPick(read.repo, config: config), requested: requested,
-                                                            resumeOnly: !read.repo.startsMoves && requested == nil) {
+                                                            resumeOnly: !read.repo.worksIssues(me: read.viewer) && requested == nil) {
                             pending.append((made, clone, flow))
                         }
                         // An unread repo keeps the press for the next sync.
                         if issuesReadThisTick.contains(read.repo.slug.lowercased()) { taken[read.repo.slug.lowercased()] = nil }
-                        // The owner's Bton answers what the team asks the owner, after the PRs and the intake.
-                        if read.repo.startsMoves {
+                        // The issues run on the Mac that works them (the repo owner's unless the card
+                        // says otherwise): the asks of me, after the PRs and the intake, then the moves.
+                        if read.repo.worksIssues(me: read.viewer) {
                             pending += decideCandidates(repo: read.repo.slug, flow: flow, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                         me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
                             // The issues' own moves, last: the triager sorts what nobody is building.
@@ -846,10 +848,13 @@ public actor Engine {
                                        dispatcher: Dispatcher) async {
         for issue in issues where issue.author?.caseInsensitiveCompare(me) == .orderedSame {
             let askedOfMe = IssueAsks.ask(in: issue, me: me, table: flow.decide?.table) != nil
+            // Remembered per wait, not per marker: the marker is the same for every wait of the
+            // issue, and a new wait after a ping must get its own.
+            let remembered = "\(repo)#\(issue.number) \(Int(Staleness.since(issue).timeIntervalSince1970))"
             guard let notice = Staleness.notice(for: issue, stale: stale, askedOfMe: askedOfMe), let item = LeaseItem("issue-\(issue.number)"),
-                  noticed.insert("\(repo)#\(issue.number) \(notice.marker)").inserted else { continue }
+                  noticed.insert("\(remembered) \(notice.marker)").inserted else { continue }
             guard case let .claimed(lease)? = try? await dispatcher.leases.claim(item, in: repo) else {
-                noticed.remove("\(repo)#\(issue.number) \(notice.marker)")
+                noticed.remove("\(remembered) \(notice.marker)")
                 continue
             }
             // Under the lease, every comment of the issue, not the read's last 20: a notice another
@@ -866,7 +871,7 @@ public actor Engine {
                 try await github.commentOnIssue(repo: repo, number: issue.number, bodyFile: file)
                 log("\(repo)#\(issue.number): posted \(notice.marker)")
             } catch {
-                noticed.remove("\(repo)#\(issue.number) \(notice.marker)")
+                noticed.remove("\(remembered) \(notice.marker)")
                 log("\(repo)#\(issue.number): could not post \(notice.marker): \(error.localizedDescription)")
             }
             try? FileManager.default.removeItem(at: file)

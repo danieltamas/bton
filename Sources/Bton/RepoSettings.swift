@@ -86,6 +86,12 @@ extension AppStore {
         try updateRepo(slug) { $0.takeMoves = on ? true : nil }
     }
 
+    /// Whether this Mac works the repo's issues (needs startMoves). Both choices are stored: nil
+    /// is the default that follows the repo's owner, and a choice made is kept.
+    func setWorkIssues(_ on: Bool, for slug: String) throws {
+        try updateRepo(slug) { $0.workIssues = on }
+    }
+
     /// Whether Bton keeps a code graph of the repo for its agents; nil is off.
     func setCodeGraph(_ on: Bool, for slug: String) throws {
         try updateRepo(slug) { $0.codeGraph = on ? true : nil }
