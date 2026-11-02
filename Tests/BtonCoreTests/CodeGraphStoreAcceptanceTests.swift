@@ -18,6 +18,31 @@ struct CodeGraphStoreAcceptanceTests {
         #expect(try String(contentsOf: f.link.appendingPathComponent("graph.json"), encoding: .utf8) == "sentinel")
     }
 
+    @Test func linkReplacesALinkToASiblingStore() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let sibling = f.store.deletingLastPathComponent().appendingPathComponent("owner__oldname")
+        let file = sibling.appendingPathComponent("graph.json")
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        try "preserved".write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: sibling)
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .relinked(from: sibling.path))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == f.store.path)
+        #expect(try FileManager.default.attributesOfItem(atPath: sibling.path)[.type] as? FileAttributeType == .typeDirectory)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(try String(contentsOf: file, encoding: .utf8) == "preserved")
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .alreadyLinked)
+
+        try FileManager.default.removeItem(at: f.link)
+        let elsewhere = f.root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: elsewhere)
+        guard case .kept = try CodeGraph.link(into: f.checkout, store: f.store) else {
+            Issue.record("expected kept for a symlink outside the graphs parent"); return
+        }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == elsewhere.path)
+    }
+
     @Test func linkMovesExistingGraphIntoEmptyStore() throws {
         let f = try fixture()
         defer { try? FileManager.default.removeItem(at: f.root) }

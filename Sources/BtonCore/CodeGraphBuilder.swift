@@ -155,6 +155,7 @@ public actor CodeGraphBuilder {
         switch try CodeGraph.link(into: clone, store: store) {
         case .moved: log("graph \(slug): moved \(clone.path)/\(CodeGraph.linkName) into \(store.path)")
         case let .kept(reason): log("graph \(slug): \(clone.path): \(reason)")
+        case let .relinked(from): log("graph \(slug): \(clone.path)/\(CodeGraph.linkName) led to \(from), now to \(store.path)")
         case .linked, .alreadyLinked: break
         }
         let staging = try stage(store)

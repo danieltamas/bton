@@ -235,9 +235,14 @@ actor Dispatcher {
     private func graphLine(for repo: String, in worktree: URL, base: String, job: UUID, tool: String? = nil) -> String? {
         guard let store = graphStores[repo.lowercased()], CodeGraph.isBuilt(store), let marker = CodeGraph.marker(in: store) else { return nil }
         do {
-            if case let .kept(reason) = try CodeGraph.link(into: worktree, store: store) {
+            switch try CodeGraph.link(into: worktree, store: store) {
+            case let .kept(reason):
                 jobs.note(job, "\(CodeGraph.linkName) kept: \(reason)")
                 return nil
+            case let .relinked(from):
+                jobs.note(job, "\(CodeGraph.linkName) led to \(from), now to the repo's graph")
+            case .linked, .alreadyLinked, .moved:
+                break
             }
         } catch {
             jobs.note(job, "\(CodeGraph.linkName) kept: \(error.localizedDescription)")

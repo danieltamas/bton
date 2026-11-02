@@ -175,13 +175,18 @@ public enum CodeGraph {
         case linked, alreadyLinked
         /// The checkout's own graph moved into the empty store, and the link took its place.
         case moved
+        /// The link led to another of Bton's own stores (the repo's old name, before a rename on
+        /// GitHub) and now leads to this one.
+        case relinked(from: String)
         /// Something else has the name; nothing was changed, for this reason.
         case kept(String)
     }
 
     /// Makes `<checkout>/graphify-out` a link to the store. A graph the checkout already has (a
     /// person's hand-built one, lexito's today) moves into an empty store rather than being lost;
-    /// one the store cannot take, a file, or a link elsewhere is left as it is.
+    /// one the store cannot take, a file, or a link elsewhere is left as it is. A link to a sibling
+    /// store under the same `graphs` directory is Bton's own, left by a repo renamed on GitHub, and
+    /// is replaced: kept, it failed every job that needs the graph (kazu, 2026-11-02).
     @discardableResult
     public static func link(into checkout: URL, store: URL) throws -> LinkOutcome {
         let files = FileManager.default
@@ -193,8 +198,27 @@ public enum CodeGraph {
                 // Followed to the end: a team's own hook may link the worktree to the clone's
                 // graphify-out, which is itself a link to the store.
                 let target = try files.destinationOfSymbolicLink(atPath: path.path)
-                let same = path.resolvingSymlinksInPath().standardizedFileURL.path == store.resolvingSymlinksInPath().standardizedFileURL.path
-                return same ? .alreadyLinked : .kept("\(linkName) links to \(target)")
+                let resolved = path.resolvingSymlinksInPath().standardizedFileURL
+                let wanted = store.resolvingSymlinksInPath().standardizedFileURL
+                if resolved.path == wanted.path { return .alreadyLinked }
+                // A sibling store: a directory straight under the same `graphs`, named as a slug
+                // (`owner__repo`), so a staging directory or a stray file there does not count.
+                let graphs = wanted.deletingLastPathComponent().path + "/"
+                var isDirectory: ObjCBool = false
+                guard resolved.path.hasPrefix(graphs), !resolved.path.dropFirst(graphs.count).contains("/"),
+                      resolved.lastPathComponent.contains("__"), !resolved.lastPathComponent.hasPrefix("."),
+                      files.fileExists(atPath: resolved.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    return .kept("\(linkName) links to \(target)")
+                }
+                // Swapped in one rename, so a job resolving the link meanwhile never finds it gone.
+                let fresh = checkout.appendingPathComponent(".\(linkName).\(UUID().uuidString)")
+                try files.createSymbolicLink(atPath: fresh.path, withDestinationPath: store.path)
+                guard rename(fresh.path, path.path) == 0 else {
+                    let code = errno
+                    try? files.removeItem(at: fresh)
+                    throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+                }
+                return .relinked(from: target)
             case .typeDirectory:
                 guard !isBuilt(store) else { return .kept("\(linkName) is a directory and the store already has a graph") }
                 for name in try files.contentsOfDirectory(atPath: path.path) {
