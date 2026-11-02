@@ -161,7 +161,7 @@ private struct ParallelChecksFixture {
         PullRequest(repo: "synthetic/project", number: 7, title: "Synthetic", author: "owner",
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/7")!,
             headSha: head, headRef: "feature", baseRef: "main", body: "", isDraft: false,
-            labels: [], assignees: [], comments: [], updatedAt: .now)
+            labels: [], assignees: [], comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
     }
 
     static func flow(move: String = "review", checks: Any? = nil,

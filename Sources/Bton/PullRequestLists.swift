@@ -432,7 +432,8 @@ struct MoveChip: View {
             Chip(text: title, symbol: symbol ?? Theme.symbol(forMove: move.name), color: color, style: .filled)
         } else if let owner = move.owner {
             let mine = me.map(move.isMine) ?? false
-            let held = move.redChecks.isEmpty ? "" : " · \(move.redChecks.joined(separator: ", ")) red"
+            let held = !move.redChecks.isEmpty ? " · \(move.redChecks.joined(separator: ", ")) red"
+                : !move.pendingChecks.isEmpty ? " · waiting for \(move.pendingChecks.joined(separator: ", "))" : ""
             Chip(text: "\(move.name)\(held) · \(mine ? "you" : owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
                  color: mine ? color : color.opacity(0.85), style: mine && !working ? .filled : .tinted)
         } else {
@@ -492,6 +493,8 @@ private struct HumanMoveButton: View {
                     Text(rerun != nil ? "Asked GitHub to run \(rerun!.joined(separator: ", ")) again on this head. The flow runs \(move.name) once a sync reads it green."
                          : !move.redChecks.isEmpty
                          ? "Held by a red check on this head: \(move.redChecks.joined(separator: ", ")). Re-run it when the failure was not this PR's, or fix what it found and push; the flow runs \(move.name) once it is green."
+                         : !move.pendingChecks.isEmpty
+                         ? "Waiting for CI on this head: \(move.pendingChecks.joined(separator: ", ")). The \(move.name) agent starts at the sync that reads every check complete; nothing to do here."
                          : move.labels.isEmpty
                          ? "Yours to do on GitHub. Bton sees it at the next sync."
                          : "Yours to do on GitHub. When it is done, remove \(move.labels.joined(separator: ", ")) and the flow moves on.")
@@ -506,9 +509,12 @@ private struct HumanMoveButton: View {
                             }
                             .help("Runs the failed workflow on this exact commit again; nothing else changes")
                         }
-                        ForEach(move.labels, id: \.self) { label in
-                            PillButton(title: clearing == label ? "Removing..." : "Done · remove \(label)", symbol: "checkmark",
-                                       disabled: clearing != nil) { remove(label) }
+                        // A review held by CI is not done by hand: removing its label would skip it.
+                        if move.pendingChecks.isEmpty {
+                            ForEach(move.labels, id: \.self) { label in
+                                PillButton(title: clearing == label ? "Removing..." : "Done · remove \(label)", symbol: "checkmark",
+                                           disabled: clearing != nil) { remove(label) }
+                            }
                         }
                     }
                     if let problem { ProblemText(text: problem) }

@@ -208,6 +208,18 @@ agent's review would be posted as the author and ignored.
 
 - `agent` names an entry in this Mac's `agents` config. A Mac without that entry never starts
   the move.
+- **A review waits for CI.** A `review` with a dispatch entry does not start while a check on
+  the PR's head is still running, or while a check named by any `checks_green:` in the flow is not
+  yet on the head (a workflow queued but not registered in the seconds after a push): the row
+  says `review · waiting for gate`, nobody's agent runs, and it is not counted as waiting on
+  you. The review starts at the sync that reads every check complete. A red check is complete:
+  the review still says what the code needs. A flow that names no check cannot tell that gap
+  from a repo without CI, so a head with no checks is held as `checks to register` for two
+  minutes after the PR last changed and reviewed after that. Name only checks that run on every
+  PR of the base: a path-filtered workflow that never appears on some PR holds that PR's review,
+  as it already held its merge, for good. A review without a dispatch entry (a person's) is
+  never held, and no other move is. A review run by a schedule's agent is held by its playbook:
+  a PR whose checks are still running is not eligible work.
 - `prompt` may use `{repo}`, `{number}`, `{head}`, `{base}`, `{issue}`, `{tier}` (the PR's tier, floored by
   `tier.paths`). Nothing else is
   substituted: PR and issue text never goes into a prompt or an argv.

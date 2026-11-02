@@ -14,7 +14,7 @@ private enum DocsTierFixture {
         var pr = PullRequest(repo: "synthetic/project", number: 7, title: "Synthetic PR", author: "owner",
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/7")!,
             headSha: "abcdef0123456789abcdef0123456789abcdef0123", headRef: "feature", baseRef: "main",
-            body: body, isDraft: false, labels: [], assignees: [], comments: [], updatedAt: .now)
+            body: body, isDraft: false, labels: [], assignees: [], comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
         pr.changedFiles = files
         pr.changedFilesTruncated = truncated
         pr.mergeable = true
@@ -224,7 +224,7 @@ private struct DocsTierCommandFixture {
             var pr = PullRequest(repo: base.leases.repo, number: 7, title: "Synthetic PR", author: "owner",
                 authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/7")!,
                 headSha: sha, headRef: "feature", baseRef: "main", body: "", isDraft: false,
-                labels: [], assignees: [], comments: [], updatedAt: .now)
+                labels: [], assignees: [], comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
             pr.mergeable = true
             let gh = base.leases.root.appendingPathComponent("gh")
             let original = try String(contentsOf: gh, encoding: .utf8)

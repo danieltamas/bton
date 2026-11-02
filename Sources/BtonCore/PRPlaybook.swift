@@ -309,7 +309,9 @@ public enum PRPlaybook {
     bton lease claim <repo> pr-<number>
     Save the returned job ID. A held lease means skip; a lease error means no
     authority to act. Re-read head, base, state and next move after claiming.
-    Skip closed, stale, ineligible or already-completed work.
+    Skip closed, stale, ineligible or already-completed work. A PR whose checks on
+    its head are still running (`gh pr checks <number>`) is not eligible for a
+    review: CI judges the head first; come back to it after the others.
     3. Renew before expiry using:
     bton lease renew <repo> pr-<number> --job <id>
     Bound long operations so renewal remains possible. Lost or uncertain ownership

@@ -32,7 +32,7 @@ private enum PullRequestHelpersFixture {
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pull/12")!,
             headSha: String(repeating: "a", count: 40), headRef: "synthetic", baseRef: "main",
             body: "Tier: feature", isDraft: false, labels: [], assignees: ["author-dev"],
-            comments: [], updatedAt: Date(timeIntervalSince1970: 1_800_000_000))
+            comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
     }
 }
 

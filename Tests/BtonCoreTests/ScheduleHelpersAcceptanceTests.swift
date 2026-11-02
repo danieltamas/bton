@@ -466,7 +466,7 @@ struct ScheduleHelpersAcceptanceTests {
         let pr = PullRequest(repo: "synthetic/widget", number: 12, title: "Synthetic PR", author: "octo",
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pull/12")!,
             headSha: String(repeating: "a", count: 40), headRef: "synthetic", baseRef: "main",
-            body: "Tier: feature", isDraft: false, labels: [], assignees: ["octo"], comments: [], updatedAt: .now)
+            body: "Tier: feature", isDraft: false, labels: [], assignees: ["octo"], comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
         let candidates = DispatchPlanner.candidates([pr], flow: flow, me: "octo", repo: "synthetic/widget")
         #expect(candidates.count == 1)
         #expect(try #require(candidates.first).helpers == [])

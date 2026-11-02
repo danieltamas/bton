@@ -236,7 +236,7 @@ private struct CacheAcceptanceFixture {
         let pr = PullRequest(repo: Self.repo, number: number, title: "Synthetic", author: "owner",
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/\(number)")!,
             headSha: head, headRef: "feature", baseRef: "main", body: "", isDraft: false,
-            labels: [], assignees: [], comments: [], updatedAt: .now)
+            labels: [], assignees: [], comments: [], updatedAt: Date(timeIntervalSinceNow: -3_600))
         let candidate = try #require(DispatchPlanner.candidates([pr], flow: flow, me: "owner", repo: pr.repo).first)
         #expect(candidate.skipsChecks == skip)
         let before = Set(store.all().map(\.id))

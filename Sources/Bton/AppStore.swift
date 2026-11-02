@@ -122,11 +122,12 @@ final class AppStore {
     @ObservationIgnored private lazy var jobStore = try? JobStore(home: home)
 
     /// Moves that wait for me as a person: mine without a dispatch entry, or an unassigned move
-    /// on a PR I opened, or a review only someone else can give on a PR I opened.
+    /// on a PR I opened, or a review only someone else can give on a PR I opened. A review held
+    /// by running CI waits on GitHub, not on me.
     var humanMovesForMe: [PullRequest] {
         guard let me else { return [] }
         return openPullRequests.filter { pr in
-            guard let move = pr.move else { return false }
+            guard let move = pr.move, move.pendingChecks.isEmpty else { return false }
             if let owner = move.owner, !move.ownerWroteIt { return owner.caseInsensitiveCompare(me) == .orderedSame && !move.hasDispatch }
             return pr.author.caseInsensitiveCompare(me) == .orderedSame
         }

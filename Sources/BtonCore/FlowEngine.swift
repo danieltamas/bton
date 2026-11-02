@@ -50,11 +50,16 @@ public struct Move: Hashable, Sendable {
     /// The `checks_green:` checks that are red on the head, when they are all that holds the
     /// move: nobody's agent runs it, its owner re-runs the check or fixes the base.
     public let redChecks: [String]
+    /// The checks on the head that have not completed (running, or named by the flow and not yet
+    /// registered), when they are all that holds an agent's review: no agent reads a PR whose CI
+    /// is still judging it, the review starts at the sync that reads them complete.
+    public let pendingChecks: [String]
 
     public init(name: String, owner: String?, ownerFromRotation: Bool, tier: String, hasDispatch: Bool, labels: [String] = [],
-                ownerWroteIt: Bool = false, tierReason: String? = nil, redChecks: [String] = []) {
+                ownerWroteIt: Bool = false, tierReason: String? = nil, redChecks: [String] = [], pendingChecks: [String] = []) {
         self.tierReason = tierReason
         self.redChecks = redChecks
+        self.pendingChecks = pendingChecks
         self.name = name
         self.owner = owner
         self.ownerFromRotation = ownerFromRotation
@@ -159,7 +164,9 @@ public enum FlowEngine {
         return nil
     }
 
-    public static func move(for pr: PullRequest, flow: Flow) -> Move? {
+    /// `now` only tells a head pushed moments ago, whose checks GitHub has not registered yet,
+    /// from one that has none.
+    public static func move(for pr: PullRequest, flow: Flow, now: Date = .now) -> Move? {
         let verdict = tierVerdict(of: pr, rule: flow.tier)
         let tier = verdict.tier
         guard !Release.isRelease(pr, flow: flow) else { return nil }
@@ -176,10 +183,43 @@ public enum FlowEngine {
         let ownerWroteIt = rule.who.value(for: tier).map(takableKinds.contains) ?? false && rule.when.contains("no_review_or_response_newer")
             && !counting.isEmpty && counting.allSatisfy(\.notByAuthor)
             && owner?.caseInsensitiveCompare(pr.author) == .orderedSame
+        let hasDispatch = flow.dispatch[rule.move] != nil
+        // An agent's review waits for the head's CI: a review of a head its checks reject is
+        // paid for twice, once now and once on the push that fixes it. A person's review is theirs
+        // to time, and a red check is complete: the review still says what the code needs.
+        let pending = rule.move == reviewMove && hasDispatch ? pendingChecks(of: pr, flow: flow, now: now) : []
         return Move(name: rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier,
-                    hasDispatch: flow.dispatch[rule.move] != nil,
-                    labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt, tierReason: verdict.reason)
+                    hasDispatch: hasDispatch && pending.isEmpty,
+                    labels: completionLabels(of: rule, in: flow), ownerWroteIt: ownerWroteIt, tierReason: verdict.reason,
+                    pendingChecks: pending)
     }
+
+    static let reviewMove = "review"
+
+    /// The head's checks still running, in GitHub's order, then the checks the flow's
+    /// `checks_green:` predicates name that the head has none of: a workflow GitHub has queued but
+    /// not yet registered as a run shows as nothing for some seconds after a push. A flow that
+    /// names no check cannot tell that gap from a repo without CI, so a head with no checks is
+    /// held as `checks to register` for `registration` after the PR last changed, and judged
+    /// complete after that.
+    static func pendingChecks(of pr: PullRequest, flow: Flow, now: Date) -> [String] {
+        var names: [String] = []
+        for check in pr.checks where check.state == .pending && !names.contains(check.name) { names.append(check.name) }
+        let present = Set(pr.checks.map(\.name))
+        var named = false
+        for rule in flow.moves {
+            for name in requiredChecks(of: rule) {
+                named = true
+                if !present.contains(name), !names.contains(name) { names.append(name) }
+            }
+        }
+        if !named, pr.checks.isEmpty, now.timeIntervalSince(pr.updatedAt) < registration { names.append(unregistered) }
+        return names
+    }
+
+    /// How long after a push GitHub may still be registering the head's workflow runs.
+    static let registration: TimeInterval = 120
+    static let unregistered = "checks to register"
 
     static let checksPredicate = "checks_green"
 
