@@ -220,6 +220,12 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["issue", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }
 
+    /// The issue's body, whole, read from a file: what marks a Decisions-table row decided after
+    /// the owner's reply.
+    public func editIssueBody(repo: String, number: Int, bodyFile: URL) async throws {
+        _ = try await gh(["issue", "edit", String(number), "--repo", repo, "--body-file", bodyFile.path])
+    }
+
     public func addAssignee(_ login: String, repo: String, number: Int) async throws {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--add-assignee", login])
     }

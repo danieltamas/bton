@@ -87,8 +87,19 @@ struct IssueDecisionsAcceptanceTests {
         #expect(IssueDecisions.isExcepted(F.issue(labels: [label]), words: ["high-risk"]))
     }
 
-    @Test func wholeWordBodyMatchIsCaseInsensitive() {
-        #expect(IssueDecisions.isExcepted(F.issue(body: "This is High-risk: data deletion"), words: ["high-risk"]))
+    @Test(arguments: ["High-risk: data deletion", "Risk: high-risk", "- **Tier:** HIGH-RISK.", "> risk: high-risk", "Risk:high-risk",
+                      "## Risk: high-risk", "> - Risk: **high-risk**", "### Risk\n\nhigh-risk", "## Tier\r\n`high-risk`.",
+                      "- ## Risk\n  high-risk", "1. ## Risk\n   high-risk"])
+    func aLineThatStatesTheWordIsExcepted(line: String) {
+        #expect(IssueDecisions.isExcepted(F.issue(body: "Intro.\n\(line)\nMore."), words: ["high-risk"]))
+    }
+
+    @Test(arguments: ["(b) and (c) are auth changes and would make this high-risk.", "Risk: not high-risk.",
+                      "Risk: high-risk if D-1 is option 1", "| D-2 | Risk: high-risk | Dani | open |",
+                      "High-risk (auth, PII): Dani's stage:ready per child", "Three gaps are filed as their own high-risk bug, #476",
+                      "This is High-risk: data deletion", "## Risk\nNot high-risk", "## Plan\n\n## Risk\n\nLow.\nhigh-risk"])
+    func aMentionInProseIsNotAnException(line: String) {
+        #expect(!IssueDecisions.isExcepted(F.issue(body: "Intro.\n\(line)\nMore."), words: ["high-risk"]))
     }
 
     @Test(arguments: ["high-risky", "nonhigh-risk", "high-risk2", "2high-risk", "high-risk-extra"])

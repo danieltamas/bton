@@ -127,11 +127,5 @@ public enum FeatureStatuses {
             .min { $0.1 < $1.1 }
     }
 
-    static func day(_ text: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.date(from: text)
-    }
+    static func day(_ text: String) -> Date? { Day.date(text) }
 }

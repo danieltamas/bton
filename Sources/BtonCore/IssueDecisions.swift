@@ -154,8 +154,8 @@ public enum IssueDecisions {
         JobKey(repo: ask.repo, item: "issue-\(ask.number)", move: move, head: ask.commentID)
     }
 
-    /// The issue is the owner's in person: a label is one of `words` (or ends in `:word`), or
-    /// the body says one as a whole word ("High-risk: data deletion").
+    /// The issue is the owner's in person: a label is one of `words` (or ends in `:word`), or a
+    /// line of the body states one ("High-risk: data deletion", "Risk: high-risk").
     public static func isExcepted(_ issue: OpenIssue, words: [String]) -> Bool {
         let words = words.map { $0.lowercased() }.filter { !$0.isEmpty }
         guard !words.isEmpty else { return false }
@@ -166,12 +166,35 @@ public enum IssueDecisions {
         return bodyExcepted(issue.body, words: words)
     }
 
-    /// The body says one of `words` as a whole word ("High-risk: data deletion").
+    /// A line of the body states one of `words`: as its heading ("High-risk: data deletion"), as
+    /// the whole value of a marker ("Risk: high-risk", "**Tier:** high-risk.") or as the whole first
+    /// line under a Markdown heading ("## Risk" then "high-risk"); heading marks, list bullets, quote
+    /// marks and emphasis aside, however nested. A mention in prose ("would make this high-risk"),
+    /// a negated or conditional value ("Risk: not high-risk", "Risk: high-risk if ...") and a table
+    /// row are not the issue's own classification: those left the owner every issue whose plan
+    /// weighed the risk.
     static func bodyExcepted(_ body: String, words: [String]) -> Bool {
-        let body = body.lowercased()
-        return words.map { $0.lowercased() }.filter { !$0.isEmpty }.contains { word in
-            let pattern = "(?<![a-z0-9-])" + NSRegularExpression.escapedPattern(for: word) + "(?![a-z0-9-])"
-            return body.range(of: pattern, options: .regularExpression) != nil
+        let words = words.map { $0.lowercased() }.filter { !$0.isEmpty }
+        guard !words.isEmpty else { return false }
+        var underHeading = false
+        let lines: [(text: String, underHeading: Bool)] = body.lowercased().split(whereSeparator: \.isNewline).compactMap { raw in
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            let prefix = trimmed.range(of: "^(?:(?:#+|[-*+]|[0-9]+[.)])\\s+|>\\s*)+", options: .regularExpression)
+            let line = trimmed[(prefix?.upperBound ?? trimmed.startIndex)...].replacingOccurrences(of: "[*_`]", with: "", options: .regularExpression)
+            guard !line.isEmpty else { return nil }
+            defer { underHeading = prefix.map { trimmed[$0].contains("#") } ?? false }
+            return (line, underHeading)
+        }
+        return words.contains { word in
+            let escaped = NSRegularExpression.escapedPattern(for: word)
+            let heading = "^" + escaped + "\\s*:"
+            let marker = "^[a-z][a-z /-]{0,30}:\\s*" + escaped + "\\s*[.!]?$"
+            let value = "^" + escaped + "\\s*[.!]?$"
+            return lines.contains { line in
+                line.text.range(of: heading, options: .regularExpression) != nil
+                    || line.text.range(of: marker, options: .regularExpression) != nil
+                    || (line.underHeading && line.text.range(of: value, options: .regularExpression) != nil)
+            }
         }
     }
 

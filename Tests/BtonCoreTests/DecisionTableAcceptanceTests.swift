@@ -97,6 +97,31 @@ struct DecisionTableAcceptanceTests {
         #expect(DecisionRows.cells(of: "| D-11 | `a | b` and `c` | Dani | open |") == ["D-11", "`a | b` and `c`", "Dani", "open"])
     }
 
+    @Test func aPostedReplyDecidesMyOpenRowsInTheBodyAndNothingElse() {
+        let body = F.body(rows: [F.decidedByMe, F.openForMe, F.openForBogdan, "  | D-5 | X | Dani | open", "| D-6 | X | **Dani** | Open (see \\| above) |  "])
+        let decided = DecisionRows.decided(body, rows: ["D-3", "D-5", "D-6", "D-4"], for: F.me, table: F.table, date: "2026-11-01")
+        let lines = decided.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        #expect(lines.contains("| D-3 | ROW_THREE_TEXT_DATA | Pick A | Dani | 2026-11-01, see reply |"))
+        #expect(lines.contains("  | D-5 | X | Dani | 2026-11-01, see reply"))
+        #expect(lines.contains("| D-6 | X | **Dani** | 2026-11-01, see reply |  "))
+        // Bogdan's row is not mine to decide, a decided row and the rest of the body stay as they are.
+        #expect(lines.contains(F.openForBogdan))
+        #expect(lines.contains(F.decidedByMe))
+        #expect(decided.hasPrefix(F.header))
+        #expect(decided.hasSuffix("\n"))
+        #expect(DecisionRows.open(in: decided, for: F.me, table: F.table).isEmpty)
+        // Only the rows the reply answered: another open row of mine stays open.
+        let partial = DecisionRows.decided(body, rows: ["D-3"], for: F.me, table: F.table, date: "2026-11-01")
+        #expect(DecisionRows.open(in: partial, for: F.me, table: F.table).map(\.id) == ["D-5", "D-6"])
+        #expect(DecisionRows.decided(body, rows: [], for: F.me, table: F.table, date: "2026-11-01") == body)
+        // A body edited on the web ends its lines in CRLF: the row is dated and every ending stays.
+        let crlf = body.replacingOccurrences(of: "\n", with: "\r\n")
+        let datedCRLF = DecisionRows.decided(crlf, rows: ["D-3"], for: F.me, table: F.table, date: "2026-11-01")
+        #expect(datedCRLF == crlf.replacingOccurrences(of: F.openForMe, with: "| D-3 | ROW_THREE_TEXT_DATA | Pick A | Dani | 2026-11-01, see reply |"))
+        #expect(datedCRLF.components(separatedBy: "\r\n").count == crlf.components(separatedBy: "\r\n").count)
+        #expect(DecisionRows.open(in: datedCRLF, for: F.me, table: F.table).map(\.id) == ["D-5", "D-6"])
+    }
+
     @Test func theRevisionFollowsTheOpenRowsOnly() {
         let rows = DecisionRows.open(in: F.body(rows: [F.decidedByMe, F.openForMe]), for: F.me, table: F.table)
         let revision = DecisionRows.revision(rows)

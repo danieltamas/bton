@@ -31,34 +31,71 @@ extension AppStore {
     }
 
     /// Posts my reply as a comment on the issue, from a file beside the draft's output (0600, in
-    /// Bton's home), sets the labels the draft's last line names, then syncs so the ask clears.
-    /// The comment first: a reply that lands without its labels is a smaller wrong than labels
-    /// moved on an issue with no word from me.
+    /// Bton's home), sets the labels the draft's last line names and, when the Decisions table
+    /// asked, dates my open rows in the body so the ask clears, then syncs. The comment first: a
+    /// reply that lands without its labels or its rows is a smaller wrong than labels moved, or
+    /// rows decided, on an issue with no word from me. What fails after the comment is reported
+    /// as posted but incomplete, every part named.
     func postReply(_ text: String, to ask: IssueAsk, draft job: Job) async throws {
         guard let github, let output = outputFiles(of: job).first else { throw CocoaError(.fileNoSuchFile) }
         guard !postedAsks.contains(ask.notice), postingAsks.insert(ask.notice).inserted else { return }
         defer { postingAsks.remove(ask.notice) }
         let draft = IssueDrafts.split(text)
         let file = output.appendingPathExtension("reply")
-        try Data(draft.reply.utf8).write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        try write(draft.reply, to: file)
         try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
         postedAsks.insert(ask.notice)
+        var incomplete: [String] = []
         do {
             try await github.editIssueLabels(add: draft.add, remove: draft.remove, repo: ask.repo, number: ask.number)
         } catch {
-            await refresh()
-            throw DraftLabelsError.notSet(add: draft.add, remove: draft.remove, reason: error.localizedDescription)
+            incomplete.append("the labels were not set (\((draft.add.map { "+" + $0 } + draft.remove.map { "-" + $0 }).joined(separator: " "))): \(error.localizedDescription)")
+        }
+        if !ask.rows.isEmpty {
+            do {
+                try await decideRows(of: ask, bodyFile: output.appendingPathExtension("body"))
+            } catch {
+                incomplete.append("\(ask.rows.joined(separator: ", ")) stay open in the Decisions table: \(error.localizedDescription)")
+            }
         }
         await refresh()
+        if !incomplete.isEmpty { throw PostReplyError.incomplete(incomplete) }
     }
 
-    enum DraftLabelsError: LocalizedError {
-        case notSet(add: [String], remove: [String], reason: String)
+    /// Writes "<today>, see reply" in the Date cell of the ask's rows, in the body read from GitHub
+    /// at that moment so an edit since the sync is kept (GitHub has no conditional issue edit, so
+    /// the read-to-write window is the one `gh` call), and only when a row of mine is still open:
+    /// a row decided meanwhile leaves the body alone. Without my login or the flow that reads the
+    /// table there is nothing to write by, and that is reported, not passed over.
+    private func decideRows(of ask: IssueAsk, bodyFile: URL) async throws {
+        guard let github, let me else { throw RowsError.noLogin }
+        guard let table = flows[ask.repo]?.flow?.decide?.table else { throw RowsError.noTable }
+        let live = try await github.issueLive(repo: ask.repo, number: ask.number)
+        let body = DecisionRows.decided(live.body, rows: ask.rows, for: me, table: table, date: Day.text(Date(), in: .current))
+        guard body != live.body else { return }
+        try write(body, to: bodyFile)
+        try await github.editIssueBody(repo: ask.repo, number: ask.number, bodyFile: bodyFile)
+    }
+
+    private enum RowsError: LocalizedError {
+        case noLogin, noTable
         var errorDescription: String? {
-            if case let .notSet(add, remove, reason) = self {
-                "Posted, but the labels were not set (\((add.map { "+" + $0 } + remove.map { "-" + $0 }).joined(separator: " "))): \(reason)"
-            } else { nil }
+            switch self {
+            case .noLogin: "this Mac's gh login is not known yet"
+            case .noTable: "the repo's flow is not loaded, so the table's names are not known"
+            }
+        }
+    }
+
+    private func write(_ text: String, to file: URL) throws {
+        try Data(text.utf8).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+
+    enum PostReplyError: LocalizedError {
+        case incomplete([String])
+        var errorDescription: String? {
+            if case let .incomplete(parts) = self { "Posted, but " + parts.joined(separator: "; ") } else { nil }
         }
     }
 
@@ -292,8 +329,7 @@ private struct IssueAskRow: View {
                     }
                     .font(.meta)
                     if store.postedAsks.contains(ask.notice) {
-                        Text(ask.rows.isEmpty ? "Reply posted. This clears when the next sync reads it."
-                             : "Reply posted. The row stays here until it is decided in the issue's body.")
+                        Text("Reply posted. This clears when the next sync reads it.")
                             .font(.meta).foregroundStyle(Theme.success).fixedSize(horizontal: false, vertical: true)
                     } else if let decision, decision.status == .succeeded, decision.detail == nil {
                         Text("Bton decided this in your place; the comment on the issue says what. This clears when the next sync reads it.")
@@ -499,7 +535,7 @@ struct DraftView: View {
                 try await store.postReply(text, to: ask, draft: job)
             } catch {
                 // The labels error says the reply went up; the prefix is for a reply that did not.
-                problem = error is AppStore.DraftLabelsError ? error.localizedDescription : "Not posted: \(error.localizedDescription)"
+                problem = error is AppStore.PostReplyError ? error.localizedDescription : "Not posted: \(error.localizedDescription)"
             }
             confirming = false
         }

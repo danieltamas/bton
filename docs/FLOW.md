@@ -544,8 +544,12 @@ blocked while the owner is away:
   The table ask is keyed on the open rows' text, so it runs once per wording: an edited or decided
   row is a new ask, a comment is not, and the tab shows "D-3 open for you in the Decisions table"
   until the rows are decided in the body. An issue is skipped when one of `except`
-  is a label of the issue (whole, or the value after a `:`, so `tier:high-risk` matches) or a word
-  in its body: lexito's high-risk issues keep the owner's own ruling and get a draft only. The read
+  is a label of the issue (whole, or the value after a `:`, so `tier:high-risk` matches) or what a
+  line of its body states: as the line's heading (`High-risk: data deletion`) or as the whole value
+  of a marker (`Risk: high-risk`, `**Tier:** high-risk.`, a bullet or a quote too), never a mention
+  in prose ("would make this high-risk"), a negated or conditional value (`Risk: not high-risk`,
+  `Risk: high-risk if D-1 is option 1`) or a table cell, which left the owner every issue whose
+  plan weighed the risk: lexito's high-risk issues keep the owner's own ruling and get a draft only. The read
   carries an issue's first 100 labels, so one with that many is excepted too. Under the lease, before
   the agent starts, Bton reads the issue again (state, labels, body, comments) and does not decide
   one closed or excepted since, nor one with a comment after the ask: the owner's answer, or a
@@ -556,7 +560,10 @@ blocked while the owner is away:
   "Bton decided", until the sync reads the owner's comment and clears it. A table ask differs in
   both: its key is the open rows' wording, so it runs once per wording whatever is commented, and
   it stays in the tab until the rows read as decided in the body, which the agent is told to write
-  and a reply posted from the tab does not. Decided means a comment
+  and a reply posted from the tab writes too: after the comment and the labels, Bton reads the body
+  again and puts "<today>, see reply" in the Date cell of the rows that are still open for the owner,
+  so the next sync clears the ask; a row decided meanwhile is left as it is, and a body edit that
+  fails says so under the reply, the rows named. Decided means a comment
   of the owner's on the issue since the job started: an agent that exits without one (the question
   needs a fact only the owner knows) leaves the ask to the owner, with its last line as the reason,
   and Draft reply stays. A job that fails leaves the ask with Retry decision.
