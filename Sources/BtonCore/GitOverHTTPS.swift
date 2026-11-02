@@ -7,14 +7,19 @@ extension Dispatcher {
     /// box, no approval and no way to answer; a job's commands run where the job runs.
     static let agentEnvironment = ["RMJ_GUARD": "off"]
 
-    /// The agent's git reaches GitHub over HTTPS with gh's credential, as Bton's own does: an SSH
-    /// remote needs `~/.ssh`, which Claude Code's sandbox may not let it read.
+    /// The job's git, an agent's or a command's, reaches GitHub over HTTPS with gh's credential,
+    /// as Bton's own does: an SSH remote needs `~/.ssh`, which Claude Code's sandbox may not let
+    /// an agent read, or an SSH agent that asks the owner to approve the key, which nobody
+    /// answers inside a job (Secretive, measured 2026-11-02: "Interrupted system call", then
+    /// "Permission denied (publickey)" on a merge).
     static func gitOverHTTPS(ghPath: String) -> [String: String] {
+        // Git hands a `!` helper to a shell: the path is quoted so a space in it stays one word.
+        let quoted = "'" + ghPath.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let settings = [
             ("url.https://github.com/.insteadOf", "git@github.com:"),
             ("url.https://github.com/.insteadOf", "ssh://git@github.com/"),
             ("credential.https://github.com.helper", ""),
-            ("credential.https://github.com.helper", "!\(ghPath) auth git-credential"),
+            ("credential.https://github.com.helper", "!\(quoted) auth git-credential"),
         ]
         var environment = ["GIT_CONFIG_COUNT": String(settings.count), "GIT_TERMINAL_PROMPT": "0"]
         for (index, (key, value)) in settings.enumerated() {

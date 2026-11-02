@@ -225,9 +225,12 @@ extension Dispatcher {
         if buffered { write = { data in buffer.withLock { $0.append(data) } } } else { write = { handle.write($0) } }
         let group = OSAllocatedUnfairLock<Int32?>(initialState: nil)
         defer { group.withLock { $0 }.map { try? FileManager.default.removeItem(at: jobs.checkGroupURL(id, group: $0)) } }
+        // Over HTTPS with gh's credential, as an agent's git: a check, a flow command or an issue
+        // intake that fetches or pushes has no SSH agent to answer for the owner's key unattended.
+        let bton = ["PATH": Executables.searchPath(for: executable)].merging(Self.gitOverHTTPS(ghPath: github.ghPath)) { $1 }
         do {
             return try await runner.run(executable, Array(argv.dropFirst()), in: directory,
-                                        environment: DispatchPlanner.processEnvironment(repo: environment, bton: ["PATH": Executables.searchPath(for: executable)]),
+                                        environment: DispatchPlanner.processEnvironment(repo: environment, bton: bton),
                                         timeout: timeout,
                                         started: { [jobs] pid in
                                             group.withLock { $0 = pid }

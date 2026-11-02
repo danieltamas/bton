@@ -173,7 +173,8 @@ struct TeamInstructionsAcceptanceTests {
             if key == "credential.https://github.com.helper" { helpers.append(value) }
         }
         #expect(Set(rewrites) == Set(["git@github.com:", "ssh://git@github.com/"]))
-        #expect(helpers == ["", "!/opt/homebrew/bin/gh auth git-credential"])
+        // Quoted: git hands the helper to a shell, and a gh under a path with a space must stay one word.
+        #expect(helpers == ["", "!'/opt/homebrew/bin/gh' auth git-credential"])
         #expect(environment["GIT_TERMINAL_PROMPT"] == "0")
     }
 

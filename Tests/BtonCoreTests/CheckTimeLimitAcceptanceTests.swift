@@ -178,7 +178,9 @@ private final class CheckTimeCapture: @unchecked Sendable {
     }
 }
 
-private struct CheckTimeFixture {
+/// A merge or fix job on a synthetic PR whose checks and command are the test's own shell lines;
+/// shared with the suites that read what such a command runs with (GitOverHTTPS).
+struct CheckTimeFixture {
     let base: SupervisionRunFixture
     let store: JobStore
     let dispatcher: Dispatcher
