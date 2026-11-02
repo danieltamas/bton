@@ -34,8 +34,9 @@ The threat model is a team that trusts its collaborators, not a public repo open
   instructions that treat it as data.
 - Agents' permissions are set per Mac, never by the repo, and hardened at launch:
   a PR's `.claude/settings.json`, `CLAUDE.md` and `.mcp.json` never load, GitHub writes that
-  skip the merge gate are denied, Claude Code's sandbox is always on, and the team's
-  instructions come from the branch PRs merge into. Each Claude agent writes scratch files only
+  skip the merge gate are denied, Claude Code's sandbox is always on, the user's personal
+  folders (Desktop, Documents, Downloads, Pictures, Music, Movies, cloud drives) are denied to
+  its commands and its file tools, and the team's instructions come from the branch PRs merge into. Each Claude agent writes scratch files only
   to its own directory, removed when the job ends. Codex runs with `--ignore-user-config` and
   hooks off, so no MCP server, plugin or hook starts, and a PR's `.codex/config.toml` configures
   nothing; only the owner's model, reasoning effort and service tier carry over.

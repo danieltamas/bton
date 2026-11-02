@@ -85,10 +85,11 @@ public enum AgentHardening {
     /// follows whatever `~/.claude/settings.json` says that day. `helpersConfig` is Bton's own MCP
     /// server file for the job's helpers, loaded and allowed beside the template's. `scratch` is the
     /// job's own directory outside the repository, which every tool may write. `denying` adds to
-    /// Bton's denied tools, for Claude only.
+    /// Bton's denied tools, for Claude only. `worktree` is where the job runs: a personal folder
+    /// holding it is not denied.
     public static func hardened(_ template: [String], model: String? = nil, effort: String? = nil,
                                 codexModel: String? = nil, codexEffort: String? = nil, helpersConfig: String? = nil,
-                                scratch: String? = nil, denying: [String] = []) -> [String] {
+                                scratch: String? = nil, denying: [String] = [], worktree: String? = nil) -> [String] {
         guard let first = template.first else { return template }
         if isCodex(first) { return quietCodex(template, userConfig: codexUserConfig(), model: codexModel, effort: codexEffort) }
         guard isClaude(first) else { return template }
@@ -156,7 +157,7 @@ public enum AgentHardening {
             let line = "Your scratch directory is \(scratch): put notes and temporary files there, not in /tmp."
             if !ownPrompt.contains(line) { ownPrompt += " " + line }
         }
-        argv += ["--append-system-prompt", ownPrompt, "--settings", lockedSandbox(settings, allowing: helpers == nil ? [] : [Helpers.tool, Helpers.graphTool])]
+        argv += ["--append-system-prompt", ownPrompt, "--settings", lockedSandbox(settings, allowing: helpers == nil ? [] : [Helpers.tool, Helpers.graphTool], working: worktree)]
         var seen = Set<String>()
         return argv + ["--disallowedTools"] + denied.filter { seen.insert($0).inserted } + positional
     }
@@ -167,10 +168,20 @@ public enum AgentHardening {
         return [String(argument[..<equals]), String(argument[argument.index(after: equals)...])]
     }
 
+    /// The user's own folders, which an agent at work in a job's worktree has no business in. A
+    /// read there is charged to Bton, the agent's parent: macOS asked a teammate (2026-11-02) to
+    /// let "Bton" into Apple Music, the Photos library and Google Drive after an agent walked
+    /// the home directory.
+    static let personalFolders = ["~/Desktop", "~/Documents", "~/Downloads", "~/Pictures", "~/Music", "~/Movies", "~/Library/CloudStorage"]
+
     /// The template's settings, inline, with the sandbox's escape hatch shut: a command the
     /// sandbox blocks fails instead of being retried outside it. An absolute settings file is read
     /// in; a relative path (the PR's checkout) or anything else that is not a JSON object is dropped.
-    static func lockedSandbox(_ settings: String?, allowing tools: [String] = []) -> String {
+    /// The personal folders are denied twice over: to shell commands by the sandbox, to the Read,
+    /// Grep and Glob tools by a permission rule. The one holding `working`, the job's worktree
+    /// (the author's own tree, or one beneath a clone kept in Documents), is not: the agent
+    /// must read its job.
+    static func lockedSandbox(_ settings: String?, allowing tools: [String] = [], working: String? = nil) -> String {
         let text = settings.flatMap { $0.hasPrefix("/") ? try? String(contentsOfFile: $0, encoding: .utf8) : $0 }
         var object = text.flatMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] } ?? [:]
         var sandbox = object["sandbox"] as? [String: Any] ?? [:]
@@ -179,16 +190,36 @@ public enum AgentHardening {
         // Claude Code otherwise runs unsandboxed when the sandbox can't start.
         sandbox["failIfUnavailable"] = true
         sandbox["allowUnsandboxedCommands"] = false
+        let denied = personalFolders.filter { !contains(folder: $0, path: working) }
+        var filesystem = sandbox["filesystem"] as? [String: Any] ?? [:]
+        // A template that turned file isolation off would turn the read list off with it.
+        filesystem["disabled"] = false
+        filesystem["denyRead"] = adding(denied, to: filesystem["denyRead"] as? [String] ?? [])
+        sandbox["filesystem"] = filesystem
         object["sandbox"] = sandbox
+        var permissions = object["permissions"] as? [String: Any] ?? [:]
+        permissions["deny"] = adding(denied.map { "Read(\($0)/**)" }, to: permissions["deny"] as? [String] ?? [])
         if !tools.isEmpty {
-            var permissions = object["permissions"] as? [String: Any] ?? [:]
-            let allow = permissions["allow"] as? [String] ?? []
-            permissions["allow"] = allow + tools.filter { !allow.contains($0) }
-            object["permissions"] = permissions
+            permissions["allow"] = adding(tools, to: permissions["allow"] as? [String] ?? [])
         }
+        object["permissions"] = permissions
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) else {
             return #"{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true}}"#
         }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The user's entries first, then ours that they do not already list.
+    private static func adding(_ entries: [String], to existing: [String]) -> [String] {
+        existing + entries.filter { !existing.contains($0) }
+    }
+
+    /// Whether `path` is `folder` (a `~/` path) or lies beneath it, by path components, with both
+    /// spelled out the same way (`/private/var` and `/var`, a relative path, a `~/` prefix).
+    private static func contains(folder: String, path: String?) -> Bool {
+        guard let path else { return false }
+        let canonical = { (p: String) in URL(fileURLWithPath: (p as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path }
+        let root = canonical(folder), inside = canonical(path)
+        return inside == root || inside.hasPrefix(root + "/")
     }
 }

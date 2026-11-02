@@ -411,7 +411,7 @@ actor Dispatcher {
                                                      instructions: instructions, values: values, model: candidate.model, effort: candidate.effort,
                                                      helpersConfig: helpers?.config, scratch: scratch,
                                                      playbook: playbook,
-                                                     denying: candidate.denied),
+                                                     denying: candidate.denied, worktree: worktree.path),
                                 in: worktree, job: job.id,
                                 repoEnvironment: environment,
                                 environment: helpers == nil ? [:] : ["MCP_TOOL_TIMEOUT": String(Helpers.toolTimeoutMilliseconds)])
@@ -428,7 +428,8 @@ actor Dispatcher {
                 }
                 second.pid = try spawn(DispatchPlanner.argv(secondTemplate.argv, prompt: DispatchPlanner.fill(secondTask, values), session: second.session,
                                                             instructions: secondInstructions, values: values, scratch: scratch,
-                                                            playbook: try Hats.text(for: candidate.key.move, onIssue: onIssue, settings: hats), denying: candidate.denied),
+                                                            playbook: try Hats.text(for: candidate.key.move, onIssue: onIssue, settings: hats), denying: candidate.denied,
+                                                            worktree: worktree.path),
                                        in: worktree, job: job.id, repoEnvironment: environment, second: true)
                 job.second = second
             }

@@ -143,11 +143,10 @@ struct AgentHardeningAcceptanceTests {
             let argv = AgentHardeningFixture.dispatch(["claude"] + options + ["-p", "{prompt}"])
             let settings = try AgentHardeningFixture.settings(in: argv)
             try AgentHardeningFixture.expectLockedSandbox(settings)
-            #expect(try AgentHardeningFixture.value("--settings", in: argv) ==
-                    #"{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true}}"#)
-            #expect(Set(settings.keys) == Set(["sandbox"]))
+            #expect(settings["model"] == nil)
+            #expect(Set(settings.keys) == Set(["sandbox", "permissions"]))
             let sandbox = try #require(settings["sandbox"] as? [String: Any])
-            #expect(Set(sandbox.keys) == Set(["allowUnsandboxedCommands", "enabled", "failIfUnavailable"]))
+            #expect(Set(sandbox.keys) == Set(["allowUnsandboxedCommands", "enabled", "failIfUnavailable", "filesystem"]))
             #expect(!argv.contains { $0.contains(value) || $0.hasPrefix("--settings=") })
             #expect(argv.filter { $0 == "Synthetic task" }.count == 1)
         }

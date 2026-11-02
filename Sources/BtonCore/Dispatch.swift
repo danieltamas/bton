@@ -464,11 +464,11 @@ public enum DispatchPlanner {
     public static func argv(_ template: [String], prompt: String, session: UUID, instructions: String? = nil,
                             values: [String: String] = [:], model: String? = nil, effort: String? = nil,
                             helpersConfig: String? = nil, scratch: String? = nil, playbook: String? = nil,
-                            denying: [String] = []) -> [String] {
+                            denying: [String] = [], worktree: String? = nil) -> [String] {
         // The repo's values go in before hardening, so `{clone}/mcp.json` is an absolute path
         // to it; the prompt goes in last, in the same single pass as the session.
         let hardened = AgentHardening.hardened(template.map { fill($0, values) }, model: model, effort: effort, codexModel: model, codexEffort: effort,
-                                               helpersConfig: helpersConfig, scratch: scratch, denying: denying)
+                                               helpersConfig: helpersConfig, scratch: scratch, denying: denying, worktree: worktree)
         let isCodex = template.first.map(AgentHardening.isCodex) == true
         let task = isCodex ? playbook.map { $0 + "\n\nYour task:\n" + prompt } ?? prompt : prompt
         var argv = hardened.map { fill($0, ["{prompt}": task, "{session}": session.uuidString.lowercased()]) }

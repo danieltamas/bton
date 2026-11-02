@@ -129,7 +129,8 @@ struct SecurityFixesAcceptanceTests {
         if scenario == "disabled" {
             #expect(settings["model"] as? String == "synthetic")
         } else {
-            #expect(output == #"{"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true}}"#)
+            #expect(Set(settings.keys) == Set(["sandbox", "permissions"]))
+            #expect(Set(sandbox.keys) == Set(["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "filesystem"]))
         }
     }
 

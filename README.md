@@ -299,7 +299,7 @@ checks.
 Bton is for a team that trusts its collaborators: it acts only on PRs from owners, members and
 collaborators, and the Mac that takes a move runs the PR's code. Claude Code agents start
 hardened (the PR's own `.claude/`, `CLAUDE.md` and `.mcp.json` never load, the sandbox is always
-on). Codex runs start with no MCP server, plugin or hook, and ignore the PR's `.codex/`. Agents
+on, your personal folders and cloud drives are off limits). Codex runs start with no MCP server, plugin or hook, and ignore the PR's `.codex/`. Agents
 run with `RMJ_GUARD=off`, so a Mac that sends its own tests to a build box through RMJ still runs
 a job's tests where the job runs. Protect your base branch. The full threat model is in [`SECURITY.md`](SECURITY.md).
 
