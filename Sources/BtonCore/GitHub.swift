@@ -237,6 +237,12 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["issue", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }
 
+    /// The same comment with its body on stdin: for the CLI, which runs inside an agent's
+    /// sandbox where the temporary directory may not be writable.
+    public func commentOnIssue(repo: String, number: Int, body: String) async throws {
+        _ = try await gh(["issue", "comment", String(number), "--repo", repo, "--body-file", "-"], input: Data(body.utf8))
+    }
+
     /// The issue's body, whole, read from a file: what marks a Decisions-table row decided after
     /// the owner's reply.
     public func editIssueBody(repo: String, number: Int, bodyFile: URL) async throws {
@@ -266,12 +272,13 @@ public struct GitHubClient: Sendable {
     }
 
     /// Creates the label once when the repo lacks it (the add fails), then adds it again.
-    public func addLabel(_ label: String, repo: String, number: Int) async throws {
+    /// Adds the label, creating it in the repo with `description` when the add fails for its absence.
+    public func addLabel(_ label: String, repo: String, number: Int, description: String = "A Bton is working on this PR") async throws {
         let add = ["pr", "edit", String(number), "--repo", repo, "--add-label", label]
         do {
             _ = try await gh(add)
         } catch {
-            _ = try? await gh(["label", "create", label, "--repo", repo, "--description", "A Bton is working on this PR"])
+            _ = try? await gh(["label", "create", label, "--repo", repo, "--description", description])
             _ = try await gh(add)
         }
     }
@@ -306,8 +313,8 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "edit", String(number), "--repo", repo, "--remove-label", label])
     }
 
-    func gh(_ arguments: [String]) async throws -> Data {
-        let result = try await runner.run(ghPath, arguments, timeout: .seconds(60))
+    func gh(_ arguments: [String], input: Data? = nil) async throws -> Data {
+        let result = try await runner.run(ghPath, arguments, timeout: .seconds(60), input: input)
         guard result.status == 0 else { throw Failure.ghFailed(status: result.status, stderr: result.stderr) }
         return result.stdout
     }

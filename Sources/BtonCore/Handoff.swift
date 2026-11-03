@@ -81,11 +81,9 @@ extension GitHubClient {
         if thread.comments.contains(where: { $0.author?.login.caseInsensitiveCompare(me) == .orderedSame && $0.body == body }) {
             return false
         }
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-handoff-\(UUID().uuidString).md")
-        try Data(body.utf8).write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        defer { try? FileManager.default.removeItem(at: file) }
-        try await commentOnIssue(repo: repo, number: issue, bodyFile: file)
+        // On stdin, not in a file: the CLI runs inside an agent's sandbox, where the temporary
+        // directory is not Bton's to write.
+        try await commentOnIssue(repo: repo, number: issue, body: body)
         return true
     }
 

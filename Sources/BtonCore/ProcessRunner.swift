@@ -27,7 +27,7 @@ public struct ProcessRunner: Sendable {
     }
 
     public func run(_ executable: String, _ arguments: [String], in directory: URL? = nil,
-                    environment: [String: String] = [:], timeout: Duration,
+                    environment: [String: String] = [:], timeout: Duration, input: Data? = nil,
                     started: (@Sendable (Int32) -> Void)? = nil,
                     output: (@Sendable (Data) -> Void)? = nil) async throws -> ProcessOutput {
         let process = Process()
@@ -35,7 +35,10 @@ public struct ProcessRunner: Sendable {
         process.arguments = arguments
         process.currentDirectoryURL = directory
         process.environment = Self.inheritedEnvironment.merging(environment) { $1 }
-        process.standardInput = FileHandle.nullDevice
+        // `input` is written whole and closed after the child starts: a body posted through
+        // stdin needs no file, which an agent's sandbox may not let Bton write.
+        let stdin = input.map { _ in Pipe() }
+        process.standardInput = stdin ?? FileHandle.nullDevice
         let stdout = Pipe(), stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
@@ -43,6 +46,12 @@ public struct ProcessRunner: Sendable {
         process.terminationHandler = { _ in exited.finish() }
         try process.run()
         started?(process.processIdentifier)
+        if let stdin, let input {
+            DispatchQueue.global().async {
+                try? stdin.fileHandleForWriting.write(contentsOf: input)
+                try? stdin.fileHandleForWriting.close()
+            }
+        }
 
         // Foundation starts the child as the leader of its own process group, so signalling the
         // group also reaches grandchildren (a test runner's workers) that would keep the pipes
