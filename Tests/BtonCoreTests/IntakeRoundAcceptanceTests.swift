@@ -23,6 +23,16 @@ import Testing
         #expect(IssueIntake.round(of: shuffled) == "2000")
     }
 
+    @Test(arguments: ["implement-failed issue-7", "stale-ping issue-7", "check-failed review@abcdef123456"])
+    func noticesDoNotStartAnotherIntakeRound(marker: String) {
+        let notice = IssueComment(id: "notice", author: "me", authorAssociation: "MEMBER",
+                                  body: "@me, the work stopped.\n\n" + BtonMarker.line(marker),
+                                  createdAt: Date(timeIntervalSince1970: 2000), url: nil)
+        #expect(IssueIntake.round(of: issue([notice])) == "")
+        #expect(IssueIntake.round(of: issue([notice, comment(1000)])) == "1000")
+        #expect(IssueIntake.round(of: issue([comment(3000, author: "me"), notice, comment(1000)])) == "3000")
+    }
+
     @Test func keyCarriesRoundAndDistinguishesOtherwiseIdenticalJobs() {
         let first = IssueIntake.key(repo: F.repo, number: 7, round: "1000")
         #expect(first == JobKey(repo: F.repo, item: "issue-7", move: IssueIntake.move, head: "", round: "1000"))

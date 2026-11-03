@@ -78,18 +78,76 @@ extension Dispatcher {
             guard let pr = try await github.openPullRequest(repo: job.key.repo, branch: branch) else {
                 // An agent that stopped on a decision that is not its own moved the issue out of progress, as the
                 // process says to: that is a hand-back with a report, not a failure.
-                if let number = Int(job.key.item.dropFirst("issue-".count)),
-                   let now = try? await github.issueNow(repo: job.key.repo, number: number), now.state == "OPEN",
-                   let stage = IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: now.labels), stage != "in-progress" {
+                let detail = "the agent finished without opening a PR for \(branch); its report says why"
+                guard let number = Int(job.key.item.dropFirst("issue-".count)) else { return (.failed, detail) }
+                let now: IssueNow
+                do { now = try await github.issueNow(repo: job.key.repo, number: number) } catch {
+                    return (.failed, detail + "; the issue could not be read back, so it was not given back: \(error.localizedDescription)")
+                }
+                guard now.state == "OPEN" else { return (.failed, detail + "; the issue is \(now.state.lowercased()), left as it is") }
+                guard let stage = IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: now.labels) else {
+                    return (.failed, detail + "; the issue carries no stage label, left as it is")
+                }
+                guard stage == IssueIntake.inProgressStage else {
                     return (.succeeded, "the agent handed the issue back at stage:\(stage) without a PR: its report says why")
                 }
-                return (.failed, "the agent finished without opening a PR for \(branch); its report says why")
+                // Still in progress with nothing behind it: say why on the issue and give it back, when it is still mine.
+                return (.failed, detail + (await giveBack(number, in: job.key.repo, branch: branch, assignees: now.assignees, job: job)))
             }
             return (.succeeded, pr.isDraft ? "PR #\(pr.number) is a draft: finishing it is still the author's move" : nil)
         } catch {
             return (.failed, "could not confirm the PR: \(error.localizedDescription)")
         }
     }
+
+    /// Says on the issue why its build ended without a PR, then puts it back at ready and
+    /// unassigns me, so the team reads the reason where they work and the issue is free again.
+    /// The comment goes first, so the reason is there when the issue turns up free again; each
+    /// step runs whether the other succeeded, and only while the job still holds the issue (its
+    /// lease, no Stop, assigned to me: one assigned to a teammate meanwhile is theirs to move).
+    /// The report is redacted like a posted review, and a comment this job already posted (Bton
+    /// died between the comment and the label edit, the job was adopted) is not posted again.
+    /// Returns what to add to the job's detail.
+    private func giveBack(_ number: Int, in repo: String, branch: String, assignees: [String], job: Job) async -> String {
+        guard let me = try? await github.viewer() else { return "; the login could not be read, so the issue was not given back" }
+        guard assignees.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame }) else {
+            return "; the issue is assigned to \(assignees.isEmpty ? "nobody" : assignees.map { "@" + $0 }.joined(separator: ", ")) now, left as it is"
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var detail = ""
+        do {
+            guard holds(job) else { return "; the job lost the issue before it could say so" }
+            let marker = "\(IssueIntake.failedMarker) \(branch)"
+            let said = try await github.issueComments(repo: repo, number: number).contains { comment in
+                comment.author?.caseInsensitiveCompare(me) == .orderedSame && BtonMarker.keys(in: comment.body).contains(marker)
+            }
+            if said {
+                detail = ", already said so on the issue"
+            } else {
+                let report = (try? String(contentsOf: jobs.outputURL(job.id), encoding: .utf8)) ?? ""
+                let redacted = DispatchPlanner.redact(DispatchPlanner.redact(report, environment: try jobs.startedEnvironment(job.id)),
+                                                      environment: environments[repo.lowercased()] ?? [:])
+                try IssueIntake.noPRComment(report: redacted, branch: branch).write(to: file, atomically: true, encoding: .utf8)
+                guard holds(job) else { return "; the job lost the issue before it could say so" }
+                try await github.commentOnIssue(repo: repo, number: number, bodyFile: file)
+                detail = ", said so on the issue"
+            }
+        } catch {
+            detail = "; could not say so on the issue: \(error.localizedDescription)"
+        }
+        guard holds(job) else { return detail + "; the job lost the issue before giving it back" }
+        do {
+            try await github.editIssueLabels(add: [IssueIntake.readyLabel], remove: [IssueIntake.inProgressLabel],
+                                             repo: repo, number: number, giveBack: true)
+        } catch {
+            detail += "; giving it back failed: \(error.localizedDescription)"
+        }
+        return detail
+    }
+
+    /// The job still has the say over its issue: its lease is held and no Stop was pressed.
+    private func holds(_ job: Job) -> Bool { lost[job.id] == nil && !stopRequested(job.id) }
 
     /// An issue's job that died with Bton or its Mac is asked to run again at once: the issue is still mine,
     /// so the next sync resumes it in its worktree instead of leaving it for a Retry. A job that failed on

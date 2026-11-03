@@ -41,11 +41,14 @@ extension AppStore {
         guard !postedAsks.contains(ask.notice), postingAsks.insert(ask.notice).inserted else { return }
         defer { postingAsks.remove(ask.notice) }
         let draft = IssueDrafts.split(text)
+        // The bound the prompt asks for, kept on the way out; the whole draft stays in the job's output.
+        let reply = IssueDrafts.bounded(draft.reply)
         let file = output.appendingPathExtension("reply")
-        try write(draft.reply, to: file)
+        try write(reply.text, to: file)
         try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
         postedAsks.insert(ask.notice)
         var incomplete: [String] = []
+        if reply.cut { incomplete.append("the reply was cut to \(IssueDrafts.maxWords) words") }
         // The issue as it is now, once, for the labels and the rows: a reply drafted on the sync's
         // read lands on an issue that may have moved since.
         var live: IssueDecisions.Live?

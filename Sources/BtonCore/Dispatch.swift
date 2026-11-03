@@ -324,6 +324,22 @@ public enum DispatchPlanner {
     /// How long a review that exited 2 (a tool this Mac lacks) waits before it is tried again.
     static let waitingPause: TimeInterval = 30 * 60
 
+    /// A job that ended on a failed check of its move (before any agent ran), posted or not.
+    static func isCheckFailure(_ job: Job) -> Bool {
+        job.status == .failed && (job.detail?.hasPrefix("check ") == true || job.detail?.hasPrefix("posting the check failure failed") == true)
+    }
+
+    /// The key without its round: what a check runs on is the head.
+    private static func headKey(_ key: JobKey) -> String { "\(key.repo.lowercased())#\(key.item) \(key.move)@\(key.head)" }
+
+    /// Whether a job on this Mac already failed `key`'s move on its head, in any round. The
+    /// checks test the head, so PR 707 got the same merge-tree failure posted four times, once per
+    /// round, until a push changed the head. The owner's Retry runs it again, as a press (`first`),
+    /// and a retried job keeps blocking: a retry that was stopped is no new result on the head.
+    public static func checkFailedOnHead(_ key: JobKey, jobs: [Job]) -> Bool {
+        jobs.contains { isCheckFailure($0) && headKey($0.key) == headKey(key) }
+    }
+
     /// Every job on the key was retried by the owner, so the lease may run it again too.
     public static func isRetry(_ key: JobKey, jobs: [Job]) -> Bool {
         let onKey = jobs.filter { $0.key == key }
@@ -384,6 +400,8 @@ public enum DispatchPlanner {
         let seen = Set(jobs.filter { $0.retry != true }.map(\.key))
         let running = jobs.filter { $0.status == .running }
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
+        // A head whose checks failed stays failed: a new round on it would run them again and post again.
+        let checkFailed = Set(jobs.filter(isCheckFailure).map { headKey($0.key) })
         // An issue's worktree is its own and its PR is not one yet: it does not hold the repo's schedules.
         var activeRepos = Set(running.filter { $0.key.move != IssueIntake.move }.map { $0.key.repo.lowercased() })
         var picked: [DispatchCandidate] = []
@@ -392,7 +410,8 @@ public enum DispatchPlanner {
         let startable = candidates.filter { candidate in
             let repo = candidate.key.repo.lowercased()
             let pressed = first.contains("\(repo)#\(candidate.key.item)")
-            return !seen.contains(candidate.key) && (pressed || !waiting.contains(candidate.key)) && !busyItems.contains("\(repo)#\(candidate.key.item)")
+            return !seen.contains(candidate.key) && (pressed || (!waiting.contains(candidate.key) && !checkFailed.contains(headKey(candidate.key))))
+                && !busyItems.contains("\(repo)#\(candidate.key.item)")
                 && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
                 && candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil)
                 && candidate.second.map({ agents[$0] != nil }) ?? true

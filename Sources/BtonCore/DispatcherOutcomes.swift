@@ -12,15 +12,28 @@ extension Dispatcher {
         agent.map { AgentLogins.held(jobs: jobs.all(), loggedInAt: AgentLogins.load(home: jobs.home)).contains($0) } ?? false
     }
 
-    /// One comment per key, carrying Bton's marker so it never changes a move. Answers whether
+    /// The marker of the comment that says a move's checks failed on a head: one per move and
+    /// head, whatever the round, so the same failure is never posted twice.
+    static func checkFailedMarker(move: String, head: String) -> String { "check-failed \(move)@\(head)" }
+
+    /// One comment per move and head, carrying Bton's marker so it never changes a move; a
+    /// comment already there (an earlier round, another Mac) counts as posted. Answers whether
     /// the comment is on the PR: a failure nobody can read is not the known kind.
     func postFailure(_ candidate: DispatchCandidate, text: String) async -> Bool {
         guard let pr = candidate.pr else { return false }
-        let body = "Bton did not start `\(candidate.move.name)` on \(pr.headSha.prefix(7)): \(text).\n\n"
-            + BtonMarker.line("check-failed \(candidate.key)")
+        let marker = Self.checkFailedMarker(move: candidate.move.name, head: pr.headSha)
+        let body = "Bton did not start `\(candidate.move.name)` on \(pr.headSha.prefix(7)): \(text).\n\n" + BtonMarker.line(marker)
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
         defer { try? FileManager.default.removeItem(at: file) }
         do {
+            // An earlier Bton's marker carried the whole key (`check-failed <repo>#pr-N <move>@<12 of the sha>`).
+            let posted = { (key: String) in key.hasPrefix("check-failed ") && key.contains("\(candidate.move.name)@\(pr.headSha.prefix(12))") }
+            // A read that fails posts nothing: a second copy of a comment already there is the loop this avoids.
+            let comments = try await github.pullRequestComments(repo: candidate.key.repo, number: pr.number)
+            if comments.contains(where: { BtonMarker.keys(in: $0.body).contains(where: posted) }) {
+                log("\(candidate.key): the check failure is already on the PR")
+                return true
+            }
             try body.write(to: file, atomically: true, encoding: .utf8)
             try await github.comment(repo: candidate.key.repo, number: pr.number, bodyFile: file)
             return true

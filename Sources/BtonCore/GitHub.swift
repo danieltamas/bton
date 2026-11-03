@@ -205,6 +205,11 @@ public struct GitHubClient: Sendable {
         _ = try await gh(["pr", "comment", String(number), "--repo", repo, "--body-file", bodyFile.path])
     }
 
+    /// The PR's conversation comments as they are now, oldest first (`gh pr view --json comments`).
+    public func pullRequestComments(repo: String, number: Int) async throws -> [IssueComment] {
+        try IssueDecisions.decodeComments(try await gh(["pr", "view", String(number), "--repo", repo, "--json", "comments"]))
+    }
+
     /// Files a posted review's verdict as a GitHub review on the commit it read, so GitHub's own
     /// review request clears and its lists show the verdict. `summary` is the comment's validated
     /// first line; the full review stays in the comment.

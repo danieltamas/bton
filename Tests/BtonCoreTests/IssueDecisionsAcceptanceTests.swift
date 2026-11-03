@@ -7,8 +7,9 @@ private enum IssueDecisionsFixture {
     static let question = "COMMENT_BODY_DATA @dani choose A or B?"
     static let agents = ["claude": AgentTemplate(argv: ["claude", "-p", "{prompt}"])]
 
-    static func comment(_ id: String = "21", author: String = "jonas", second: Int = 1) -> IssueComment {
-        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: question,
+    static func comment(_ id: String = "21", author: String = "jonas", second: Int = 1,
+                        body: String = question) -> IssueComment {
+        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: body,
                      createdAt: Date(timeIntervalSince1970: Double(second)), url: nil)
     }
 
@@ -18,6 +19,13 @@ private enum IssueDecisionsFixture {
                   url: URL(string: "https://example.invalid/issues/7")!,
                   createdAt: Date(timeIntervalSince1970: 0), author: "lee", authorAssociation: "MEMBER",
                   body: body, comments: comments, labels: labels)
+    }
+
+    static func job(second: Int, repo: String = "synthetic/project", item: String = "issue-7",
+                    status: Job.Status = .succeeded, detail: String? = nil) -> Job {
+        Job(id: UUID(), key: JobKey(repo: repo, item: item, move: IssueDecisions.move, head: "21"),
+            agent: "claude", startedAt: Date(timeIntervalSince1970: Double(second)),
+            endedAt: Date(timeIntervalSince1970: Double(second + 50)), status: status, detail: detail)
     }
 
     static func data(decide: String? = #"{"by":["dani"]}"#, heading: String? = nil) -> Data {
@@ -47,6 +55,79 @@ private enum IssueDecisionsFixture {
 
 struct IssueDecisionsAcceptanceTests {
     private typealias F = IssueDecisionsFixture
+
+    @Test(arguments: [false, true])
+    func newestRulingWithinTheLimitHasNoWarningAfterALongerEarlierComment(reversed: Bool) {
+        let earlier = F.comment("long", author: "dani", second: 1_001,
+                                body: (1...220).map { "word\($0)" }.joined(separator: " "))
+        let ruling = F.comment("ruling", author: "DaNi", second: 1_002,
+                               body: (1...90).map { "word\($0)" }.joined(separator: " "))
+        let outcome = IssueDecisions.outcome(comments: reversed ? [ruling, earlier] : [earlier, ruling],
+                                             me: "dani", since: Date(timeIntervalSince1970: 1_000), report: "Finished")
+        #expect(outcome.status == .succeeded)
+        #expect(outcome.detail == nil)
+    }
+
+    @Test(arguments: ["no-human", "teammate", "handoff", "stale-ping", "owner-outside", "owner-inside",
+                      "failed-job", "other-issue", "at-human"])
+    func rulingsSinceHumanCountsOnlySuccessfulDecisionsSinceAPersonSpoke(scenario: String) {
+        var jobs = [F.job(second: 100, repo: "SYNTHETIC/PROJECT"),
+                    F.job(second: 200, detail: "decided; the ruling is 151 words, over the 150 the prompt asks for")]
+        var comments: [IssueComment] = []
+        var expected = 2
+        switch scenario {
+        case "teammate":
+            comments = [F.comment(author: "lee", second: 300, body: "Please use option B.")]
+            expected = 0
+        case "handoff":
+            comments = [F.comment(author: "lee", second: 300,
+                                  body: "@dani, choose the next step.\n<!-- bton:handoff to=dani -->")]
+        case "stale-ping":
+            comments = [F.comment(author: "lee", second: 300,
+                                  body: "@dani, this is waiting.\n" + BtonMarker.line("stale-ping issue-7"))]
+        case "owner-outside":
+            comments = [F.comment(author: "DaNi", second: 300, body: "Use option B.")]
+            expected = 0
+        case "owner-inside":
+            comments = [F.comment(author: "DaNi", second: 225, body: "## Decision: use option A.")]
+        case "failed-job":
+            jobs.append(F.job(second: 300, status: .failed, detail: "agent exited 1"))
+        case "other-issue":
+            jobs.append(F.job(second: 300, item: "issue-8"))
+        case "at-human":
+            comments = [F.comment(author: "lee", second: 200, body: "Use option B.")]
+            expected = 1
+        default: break
+        }
+        #expect(IssueDecisions.maxRulings == 2)
+        #expect(IssueDecisions.rulingsSinceHuman(issue: F.issue(comments: comments), me: "dani", jobs: jobs) == expected)
+    }
+
+    @Test(arguments: [151, 200])
+    func postedRulingOverOneHundredFiftyWordsReportsTheCount(words: Int) {
+        let body = "## Decision:\n" + (1...(words - 2)).map { "word\($0)" }.joined(separator: " ")
+        let comment = F.comment(author: "DaNi", second: 1_001, body: body)
+        let outcome = IssueDecisions.outcome(comments: [comment], me: "dani",
+                                             since: Date(timeIntervalSince1970: 1_000), report: "Finished")
+        #expect(outcome.status == .succeeded)
+        #expect(outcome.detail == "decided; the ruling is \(words) words, over the 150 the prompt asks for")
+    }
+
+    @Test(arguments: [149, 150])
+    func postedRulingWithinOneHundredFiftyWordsHasNoWarning(words: Int) {
+        let body = "## Decision:\n" + (1...(words - 2)).map { "word\($0)" }.joined(separator: " ")
+        let outcome = IssueDecisions.outcome(comments: [F.comment(author: "dani", second: 1_001, body: body)],
+                                             me: "dani", since: Date(timeIntervalSince1970: 1_000), report: "Finished")
+        #expect(outcome.status == .succeeded)
+        #expect(outcome.detail == nil)
+    }
+
+    @Test(arguments: [[String](), ["D-1", "D-2"]])
+    func decisionAndDraftPromptsUseTheSameOneHundredFiftyWordRulingInstruction(rows: [String]) {
+        let instruction = "The ruling is at most 150 words: the decision, the choice made, the reason in one or two sentences, the next step. A longer reason links to the spec or the file instead of restating it."
+        #expect(IssueDecisions.prompt(heading: "## Decision:", me: "dani", rows: rows).contains(instruction))
+        #expect(IssueDrafts.prompt(rows: rows).contains(instruction))
+    }
 
     @Test(arguments: [[String](), ["dani"], ["DaNi"]])
     func replyLabelsApplyToAnUnassignedIssueOrMyOwn(assignees: [String]) {

@@ -226,6 +226,18 @@ struct IssueMovesAcceptanceTests {
         #expect(IssueMoves.hold(jobs: elsewhere, repo: F.repo, now: F.now) == nil)
     }
 
+    @Test(arguments: ["implement-failed issue-7", "stale-ping issue-7", "check-failed review@abcdef123456"])
+    func noticesDoNotStartAnotherIssueMoveRound(marker: String) {
+        let notice = IssueComment(id: "notice", author: F.me, authorAssociation: "MEMBER",
+                                  body: "The work stopped.\n\n" + BtonMarker.line(marker),
+                                  createdAt: F.now.addingTimeInterval(-3600), url: nil)
+        let before = F.comment("before", author: "lee", hoursAgo: 2)
+        let after = F.comment("after", author: F.me, hoursAgo: 0.5)
+        #expect(IssueMoves.round(of: [notice]) == "")
+        #expect(IssueMoves.round(of: [notice, before]) == String(Int(before.createdAt.timeIntervalSince1970)))
+        #expect(IssueMoves.round(of: [after, notice, before]) == String(Int(after.createdAt.timeIntervalSince1970)))
+    }
+
     @Test func theRoundIsTheNewestPersonsCommentAndARetryRunsTheKeyAgain() throws {
         let quiet = F.issue()
         #expect(IssueMoves.round(of: quiet.comments) == "")

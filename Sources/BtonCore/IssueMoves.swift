@@ -206,7 +206,9 @@ public enum IssueMoves {
     /// (they would run the move again on its own output), on this Mac or a teammate's; a person's
     /// answer does, the owner's own included, and so does a demotion with a word.
     public static func round(of comments: [IssueComment]) -> String {
-        comments.filter { !isTriagers($0) }.map(\.createdAt).max().map { String(Int($0.timeIntervalSince1970)) } ?? ""
+        // Bton's notices (a stale ping, a failed build given back) are no round either: the move would run again on them.
+        comments.filter { !isTriagers($0) && !IssueAsks.isNotice($0.body) }.map(\.createdAt).max()
+            .map { String(Int($0.timeIntervalSince1970)) } ?? ""
     }
 
     /// The newest comment by someone other than the triager, or the opening: the triager's own

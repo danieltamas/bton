@@ -42,19 +42,57 @@ public enum IssueIntake {
     /// The order of the `priority:` labels when the flow names none.
     static let defaultPriority = ["priority:high", "priority:medium", "priority:low"]
 
-    /// The issue's round: the newest comment's time, whoever wrote it. A hand-back ("an open D-n
-    /// waits for Dani") and the ruling that answers it both arrive as comments, so an issue that
-    /// comes back to ready after one is new work, where the same key would never run again.
+    /// The issue's round: the newest comment's time, whoever wrote it, Bton's own notices left
+    /// out. A hand-back ("an open D-n waits for Dani") and the ruling that answers it both arrive
+    /// as comments, so an issue that comes back to ready after one is new work, where the same
+    /// key would never run again. A notice (a stale ping, the comment that gives a failed build
+    /// back) is not: a round of its own would run the build again on the same issue, which would
+    /// fail the same way and post again.
     public static func round(of issue: OpenIssue) -> String {
-        issue.comments.map(\.createdAt).max().map { String(Int($0.timeIntervalSince1970)) } ?? ""
+        issue.comments.filter { !IssueAsks.isNotice($0.body) }.map(\.createdAt).max().map { String(Int($0.timeIntervalSince1970)) } ?? ""
     }
 
     public static func isReady(_ issue: OpenIssue) -> Bool {
-        IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: issue.labels) == "ready"
+        IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: issue.labels) == readyStage
     }
 
     static func isInProgress(_ issue: OpenIssue) -> Bool {
-        IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: issue.labels) == "in-progress"
+        IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: issue.labels) == inProgressStage
+    }
+
+    /// The stages as `IssueTriage.label(withPrefix:)` reads them, and their labels.
+    static let readyStage = "ready"
+    static let inProgressStage = "in-progress"
+    public static let readyLabel = IssueTriage.stagePrefix + readyStage
+    public static let inProgressLabel = IssueTriage.stagePrefix + inProgressStage
+    /// The marker of the comment that says a build ended without a PR: a notice, never an ask.
+    public static let failedMarker = "implement-failed"
+    /// How much of the agent's report the comment quotes.
+    static let reportQuote = 400
+
+    /// The comment on an issue whose build ended without a PR: the agent's last lines, so the
+    /// team reads why on GitHub instead of finding the issue stale-pinged a day later. The
+    /// report is quoted from the end, whole lines, within `reportQuote` characters.
+    public static func noPRComment(report: String, branch: String) -> String {
+        var quoted: [String] = []
+        var length = 0
+        var cut = false
+        for line in report.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }).reversed()
+        where !line.isEmpty {
+            guard length + line.count + (quoted.isEmpty ? 0 : 1) <= reportQuote else { cut = true; break }
+            length += line.count + (quoted.isEmpty ? 0 : 1)
+            quoted.insert(line, at: 0)
+        }
+        if cut {
+            // The "..." line counts against the same budget.
+            while !quoted.isEmpty, (["..."] + quoted).joined(separator: "\n").count > reportQuote { quoted.removeFirst() }
+            quoted.insert("...", at: 0)
+        } else if quoted.isEmpty {
+            quoted = ["no report"]
+        }
+        return "Bton: the build of this issue ended without a pull request (branch `\(branch)`); the issue is back at "
+            + "\(readyLabel). The agent's last words:\n\n" + quoted.joined(separator: "\n") + "\n\n"
+            + BtonMarker.line("\(failedMarker) \(branch)")
     }
 
     /// Every ready issue, taken or not, the most urgent first and then the oldest; then the

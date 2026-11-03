@@ -7,10 +7,11 @@ enum IntakeAcceptanceFixture {
     static let repo = "synthetic/project"
     static let agents = ["claude": AgentTemplate(argv: ["/usr/bin/true"])]
     static func issue(_ n: Int = 7, labels: [String] = ["stage:ready"],
-                      association: String = "MEMBER", assignees: [String] = [], age: Double = 0) -> OpenIssue {
+                      association: String = "MEMBER", assignees: [String] = [], age: Double = 0,
+                      comments: [IssueComment] = []) -> OpenIssue {
         OpenIssue(repo: repo, number: n, title: "UNTRUSTED_TITLE", url: URL(string: "https://github.com/\(repo)/issues/\(n)")!,
                   createdAt: Date(timeIntervalSince1970: 1000 - age), author: "author", authorAssociation: association,
-                  body: "UNTRUSTED_BODY", comments: [], labels: labels, assignees: assignees)
+                  body: "UNTRUSTED_BODY", comments: comments, labels: labels, assignees: assignees)
     }
     static func intake(search: [String] = ["repo:{repo}", "is:issue", "is:open", "no:assignee", "label:stage:ready"],
                        path: String = ".worktrees/issue-7", type: String = "feat") throws -> Intake {
@@ -47,6 +48,63 @@ enum IntakeAcceptanceFixture {
 
 @Suite struct IntakeAcceptanceTests {
     typealias F = IntakeAcceptanceFixture
+
+    @Test func noPRCommentKeepsWholeLastLinesWithinFourHundredCharacters() throws {
+        let omitted = String(repeating: "a", count: 180)
+        let kept = [String(repeating: "b", count: 190), String(repeating: "c", count: 190)]
+        let body = IssueIntake.noPRComment(report: omitted + "\n\n" + kept.joined(separator: "\n") + "\n \t\n",
+                                          branch: "issue-7")
+        let heading = "Bton: the build of this issue ended without a pull request (branch `issue-7`); the issue is back at stage:ready. The agent's last words:"
+        let marker = BtonMarker.line("implement-failed issue-7")
+        #expect(body.hasPrefix(heading + "\n"))
+        #expect(body.hasSuffix(marker))
+        let excerpt = String(body.dropFirst(heading.count).dropLast(marker.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(excerpt.count <= 400)
+        #expect(excerpt.hasPrefix("..."))
+        #expect(excerpt.hasSuffix(kept.joined(separator: "\n")))
+        #expect(!excerpt.contains("a"))
+        #expect(excerpt.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n").map(String.init) == kept)
+    }
+
+    @Test func noPRCommentKeepsAnExactlyFourHundredCharacterReport() {
+        let report = String(repeating: "a", count: 190) + "\n" + String(repeating: "b", count: 209)
+        let body = IssueIntake.noPRComment(report: report, branch: "issue-7")
+        #expect(body.contains("\n" + report + "\n"))
+        #expect(!body.contains("..."))
+        #expect(body.hasSuffix(BtonMarker.line("implement-failed issue-7")))
+    }
+
+    @Test func noPRCommentCountsTheOmissionLineWithinFourHundredCharacters() throws {
+        let older = "This older line must be omitted."
+        let penultimate = String(repeating: "b", count: 190)
+        let last = String(repeating: "c", count: 209)
+        let body = IssueIntake.noPRComment(report: [older, penultimate, last].joined(separator: "\n"),
+                                          branch: "issue-7")
+        let headingEnd = try #require(body.range(of: "The agent's last words:\n"))
+        let markerStart = try #require(body.range(of: BtonMarker.line("implement-failed issue-7")))
+        let excerpt = body[headingEnd.upperBound..<markerStart.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(excerpt.count <= 400)
+        #expect(excerpt == "...\n" + last)
+        #expect(!excerpt.contains(older))
+        #expect(!excerpt.contains(penultimate))
+    }
+
+    @Test(arguments: ["", " \n\t\n"])
+    func noPRCommentSaysNoReportForEmptyOutput(report: String) {
+        let body = IssueIntake.noPRComment(report: report, branch: "issue-7")
+        #expect(body.contains("\nno report\n"))
+        #expect(body.hasSuffix(BtonMarker.line("implement-failed issue-7")))
+    }
+
+    @Test func implementFailedNoticeMentionIsNotAnAsk() {
+        let body = "@me, the build could not continue.\n\n" + BtonMarker.line("implement-failed issue-7")
+        let comment = IssueComment(id: "failed-7", author: "teammate", authorAssociation: "MEMBER",
+                                   body: body, createdAt: Date(timeIntervalSince1970: 1_001), url: nil)
+        #expect(IssueAsks.ask(in: F.issue(comments: [comment]), me: "me") == nil)
+    }
 
     @Test func priorityUsesFlowsListThenAgeWithUnlabelledLast() throws {
         let issues = [F.issue(1, age: 900), F.issue(2, labels: ["stage:ready", "priority:high"], age: 800),

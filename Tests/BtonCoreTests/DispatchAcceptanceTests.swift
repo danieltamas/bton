@@ -1,4 +1,4 @@
-import BtonCore
+@testable import BtonCore
 import Foundation
 import Testing
 
@@ -15,7 +15,7 @@ private enum DispatchFixture {
 
     // Synthetic GraphQL envelope, independent of FlowAcceptanceTests' private helpers.
     static func pr(number: Int = 12, author: String = "me", base: String = "main",
-                   review: String? = "changes needed", hostile: Bool = false) throws -> PullRequest {
+                   review: String? = "changes needed", hostile: Bool = false, head: String = head) throws -> PullRequest {
         let comments: [[String: Any]] = review.map { verdict in
             [["author": ["login": "reviewer"], "authorAssociation": "MEMBER", "body": "## Review: \(verdict) (head abcdef12)",
               "createdAt": "2026-10-19T12:00:00Z"]]
@@ -39,13 +39,87 @@ private enum DispatchFixture {
         DispatchPlanner.candidates(try [pr(), pr(number: 13)], flow: try flow(), me: "me", repo: repo)
     }
 
-    static func job(_ key: JobKey, status: Job.Status) -> Job {
-        Job(id: UUID(), key: key, agent: "claude", startedAt: Date(timeIntervalSince1970: 100), status: status)
+    static func job(_ key: JobKey, status: Job.Status, detail: String? = nil, retry: Bool? = nil) -> Job {
+        Job(id: UUID(), key: key, agent: "claude", startedAt: Date(timeIntervalSince1970: 100),
+            status: status, detail: detail, retry: retry)
+    }
+
+    static func review(head: String = head, round: String = "2") throws -> DispatchCandidate {
+        DispatchCandidate(target: .pullRequest(try pr(author: "other", review: nil, head: head)),
+            move: Move(name: "review", owner: "me", ownerFromRotation: false, tier: "feature", hasDispatch: true),
+            key: JobKey(repo: repo, item: "pr-12", move: "review", head: head, round: round),
+            agent: "claude", prompt: "Review the PR", command: nil, postComment: true, timeout: .seconds(300))
     }
 }
 
 @Suite(ProcessBound())
 struct DispatchAcceptanceTests {
+    @Test(arguments: ["check git merge-tree exited 1", "posting the check failure failed: offline"], [false, true])
+    func retryFlagDoesNotBypassFailedCheckWithoutAnOwnerPress(detail: String, pressed: Bool) throws {
+        let candidate = try DispatchFixture.review()
+        let old = JobKey(repo: candidate.key.repo, item: candidate.key.item, move: candidate.key.move,
+                         head: candidate.key.head, round: "1")
+        let jobs = [DispatchFixture.job(old, status: .failed, detail: detail, retry: true)]
+        #expect(DispatchPlanner.checkFailedOnHead(candidate.key, jobs: jobs))
+        let selected = DispatchPlanner.select([candidate], jobs: jobs, maxAgents: 1,
+            agents: ["claude": AgentTemplate(argv: ["claude"])],
+            first: pressed ? ["\(candidate.key.repo)#\(candidate.key.item)"] : [])
+        #expect(selected.map(\.key) == (pressed ? [candidate.key] : []))
+    }
+
+    @Test(arguments: ["check git merge-tree exited 1", "posting the check failure failed: offline"])
+    func failedCheckOnSameHeadBlocksTheNextRound(detail: String) throws {
+        let candidate = try DispatchFixture.review()
+        let old = JobKey(repo: candidate.key.repo, item: candidate.key.item, move: candidate.key.move,
+                         head: candidate.key.head, round: "1")
+        let jobs = [DispatchFixture.job(old, status: .failed, detail: detail)]
+        #expect(DispatchPlanner.checkFailedOnHead(candidate.key, jobs: jobs))
+        #expect(DispatchPlanner.select([candidate], jobs: jobs, maxAgents: 1,
+                                      agents: ["claude": AgentTemplate(argv: ["claude"])]).isEmpty)
+    }
+
+    @Test func pressedCandidateCanRetryAFailedCheckOnTheSameHead() throws {
+        let candidate = try DispatchFixture.review()
+        let old = JobKey(repo: candidate.key.repo, item: candidate.key.item, move: candidate.key.move,
+                         head: candidate.key.head, round: "1")
+        let selected = DispatchPlanner.select([candidate],
+            jobs: [DispatchFixture.job(old, status: .failed, detail: "check git merge-tree exited 1")],
+            maxAgents: 1, agents: ["claude": AgentTemplate(argv: ["claude"])],
+            first: ["\(candidate.key.repo)#\(candidate.key.item)"])
+        #expect(selected.map(\.key) == [candidate.key])
+    }
+
+    @Test func changedHeadCanRunAfterAnEarlierHeadFailedItsCheck() throws {
+        let candidate = try DispatchFixture.review(head: String(repeating: "b", count: 40))
+        let old = JobKey(repo: candidate.key.repo, item: candidate.key.item, move: candidate.key.move,
+                         head: DispatchFixture.head, round: "1")
+        let jobs = [DispatchFixture.job(old, status: .failed, detail: "check git merge-tree exited 1")]
+        #expect(!DispatchPlanner.checkFailedOnHead(candidate.key, jobs: jobs))
+        #expect(DispatchPlanner.select([candidate], jobs: jobs, maxAgents: 1,
+                                      agents: ["claude": AgentTemplate(argv: ["claude"])]).map(\.key) == [candidate.key])
+    }
+
+    @Test func agentFailureDoesNotBlockAnotherRoundOnTheSameHead() throws {
+        let candidate = try DispatchFixture.review()
+        let old = JobKey(repo: candidate.key.repo, item: candidate.key.item, move: candidate.key.move,
+                         head: candidate.key.head, round: "1")
+        let jobs = [DispatchFixture.job(old, status: .failed, detail: "agent exited 1")]
+        #expect(!DispatchPlanner.checkFailedOnHead(candidate.key, jobs: jobs))
+        #expect(DispatchPlanner.select([candidate], jobs: jobs, maxAgents: 1,
+                                      agents: ["claude": AgentTemplate(argv: ["claude"])]).map(\.key) == [candidate.key])
+    }
+
+    @Test func failedCheckMatchesOnlyTheSameRepoItemAndMove() throws {
+        let key = try DispatchFixture.review().key
+        let others = [JobKey(repo: "other/project", item: key.item, move: key.move, head: key.head),
+                      JobKey(repo: key.repo, item: "pr-99", move: key.move, head: key.head),
+                      JobKey(repo: key.repo, item: key.item, move: "fix", head: key.head)]
+        for other in others {
+            #expect(!DispatchPlanner.checkFailedOnHead(key,
+                jobs: [DispatchFixture.job(other, status: .failed, detail: "check git merge-tree exited 1")]))
+        }
+    }
+
     @Test func sandboxFixAndOwnerGate() throws {
         let flow = try DispatchFixture.flow()
         let candidates = DispatchPlanner.candidates(try [DispatchFixture.pr(hostile: true)],

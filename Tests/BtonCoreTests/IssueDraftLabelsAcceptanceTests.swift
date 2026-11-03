@@ -2,6 +2,45 @@ import Testing
 @testable import BtonCore
 
 @Suite struct IssueDraftLabelsAcceptanceTests {
+    @Test func boundedLeavesExactlyOneHundredFiftyWordsAlone() {
+        let reply = (1...150).map { "word\($0)" }.joined(separator: " ") + "."
+        let result = IssueDrafts.bounded(reply)
+        #expect(result.text == reply)
+        #expect(!result.cut)
+    }
+
+    @Test(arguments: [". ", "? ", "! ", "\n", "  \n"])
+    func boundedCutsTwoHundredWordsAtTheLastSentenceEndWithinTheLimit(ending: String) {
+        let first = (1...60).map { "first\($0)" }.joined(separator: " ") + "."
+        let second = (1...70).map { "second\($0)" }.joined(separator: " ")
+        let tail = (1...70).map { "tail\($0)" }.joined(separator: " ") + "."
+        let reply = first + " " + second + ending + tail
+        let expected = first + " " + second + (ending.hasSuffix("\n") ? "" : String(ending.prefix(1)))
+        let result = IssueDrafts.bounded(reply)
+        #expect(result.cut)
+        #expect(result.text == expected + " ...")
+    }
+
+    @Test func boundedCutsAtTheLastWordWhenNoSentenceFits() {
+        let words = (1...200).map { "word\($0)" }
+        let result = IssueDrafts.bounded(words.joined(separator: " "))
+        #expect(result.cut)
+        #expect(result.text == words.prefix(150).joined(separator: " ") + " ...")
+    }
+
+    @Test func boundingTheSplitReplyPreservesItsLabelChanges() {
+        let reply = (1...200).map { "word\($0)" }.joined(separator: " ")
+        let line = "Labels: +stage:ready -stage:spec +priority:high -priority:low"
+        let split = IssueDrafts.split(reply + "\n\n" + line)
+        let result = IssueDrafts.bounded(split.reply)
+        #expect(result.cut)
+        #expect(result.text == (1...150).map { "word\($0)" }.joined(separator: " ") + " ...")
+        #expect(!result.text.contains("Labels:"))
+        #expect(split.reply == reply)
+        #expect(split.add == ["stage:ready", "priority:high"])
+        #expect(split.remove == ["stage:spec", "priority:low"])
+    }
+
     @Test func labelLineIsSplitFromTheReply() {
         for line in [
             "Labels: +stage:ready -stage:spec +priority:high -priority:low",

@@ -25,6 +25,10 @@ actor Dispatcher {
     private var held: [UUID: Lease] = [:]
     private var renewals: [UUID: Task<Void, Never>] = [:]
     private var expiryWatches: [UUID: Task<Void, Never>] = [:]
+    /// When each held lease was last renewed, for the late-renewal log line.
+    private var renewedAt: [UUID: Date] = [:]
+    /// The jobs whose lease has a renewal push in flight.
+    private var renewing: Set<UUID> = []
     private var locks: [UUID: LocalLock] = [:]
     private var work: [UUID: Task<Void, Never>] = [:]
     /// The poll of each agent this instance runs, from its spawn to the job's end.
@@ -599,36 +603,87 @@ actor Dispatcher {
         expiryWatches[id] = Task { await self.watchExpiry(id) }
     }
 
-    /// Stops the job when its lease nears expiry, also while a renewal is still waiting on GitHub.
+    /// What the expiry watch does with a lease: nothing while it has more than a minute left;
+    /// a renewal now when it is that close or past (a Mac that slept through its renewal wakes
+    /// with the lease at or past expiry, and nobody else holds it until someone claims it: the
+    /// ref unmoved, the renewal's compare-and-swap continues the same lease); lost only when
+    /// another holder wrote the ref, or `failedRenewals` late renewals in a row failed.
+    enum ExpiryAction: Equatable { case wait, renewNow, lose(String) }
+    static let lateRenewals = 2
+
+    static func expiryAction(lease: Lease, now: Date, failedRenewals: Int) -> ExpiryAction {
+        if lease.isLive(at: now + 60) { return .wait }
+        if failedRenewals >= lateRenewals {
+            return .lose("expired and \(failedRenewals) late renewals failed")
+        }
+        return .renewNow
+    }
+
+    /// Renews the job's lease when it nears expiry, also while the renewal loop is still waiting
+    /// on GitHub or slept through its turn; stops the job only when the lease is another's.
     private func watchExpiry(_ id: UUID) async {
+        var failed = 0
         while (try? await Task.sleep(for: .seconds(5))) != nil, let lease = held[id] {
-            if !lease.isLive(at: .now + 60) { return loseLease(id, reason: "expired before it was renewed") }
+            switch Self.expiryAction(lease: lease, now: .now, failedRenewals: failed) {
+            // Live again, by whichever loop renewed it: the count starts over at the next brink.
+            case .wait: failed = 0
+            case .lose(let reason): return loseLease(id, reason: reason)
+            case .renewNow:
+                switch await renew(id, lease) {
+                case .renewed: failed = 0
+                case .failed: failed += 1
+                case .lost: return
+                }
+            }
         }
     }
 
-    /// Renews the job's lease until `finish` cancels this. A failed push is retried while the
-    /// lease has more than `renewMargin` left; a lease taken over, or that close to expiry, stops
-    /// the job. The margin covers one more push and the clock skew between Macs.
+    private enum Renewal { case renewed, failed, lost }
+
+    /// One renewal of the job's lease, late or on time, of the lease as held now. The two loops
+    /// (the timer and the expiry watch) wake together after a sleep: the second finds the first's
+    /// push in flight and reports it as its own, so one lease never gets two pushes naming the
+    /// same sha, the loser of which would read as taken over. A push that fails is reported for a
+    /// retry; a ref another holder moved loses the lease.
+    private func renew(_ id: UUID, _ lease: Lease) async -> Renewal {
+        guard let lease = held[id] else { return .lost }
+        guard renewing.insert(id).inserted else { return .renewed }
+        defer { renewing.remove(id) }
+        let leases = leases
+        let due = (renewedAt[id] ?? lease.record.expires - leases.ttl.timeInterval) + Self.renewEvery.timeInterval
+        do {
+            // Unstructured, so a cancel from `finish` never kills a push halfway.
+            let renewed = try await Task { try await leases.renew(lease) }.value
+            guard held[id] != nil else { return .lost }
+            held[id] = renewed
+            renewedAt[id] = .now
+            let late = Date.now.timeIntervalSince(due)
+            if late > 60 { log("\(lease.repo)#\(lease.item): lease renewed late (\(Int(late)) s after it was due)") }
+            return .renewed
+        } catch let LeaseError.failed(reason) {
+            log("\(lease.repo)#\(lease.item): renewing the lease failed, retrying (\(reason))")
+            return .failed
+        } catch {
+            loseLease(id, reason: error.localizedDescription)
+            return .lost
+        }
+    }
+
+    /// Renews the job's lease every `renewEvery` until `finish` cancels this; a failed push is
+    /// retried sooner. A sleep that overshot (the Mac slept) renews at once on waking, and a
+    /// lease found at or past expiry is renewed rather than dropped: whether it is still this
+    /// Mac's is what the renewal's compare-and-swap answers.
     private func keepRenewing(_ id: UUID) async {
         var wait = Self.renewEvery
-        while (try? await Task.sleep(for: wait)) != nil, let lease = held[id] {
-            guard lease.isLive(at: .now + Self.renewMargin) else {
-                return loseLease(id, reason: "not renewed before it expired")
-            }
-            let leases = leases
-            do {
-                // Unstructured, so a cancel from `finish` never kills a push halfway.
-                let renewed = try await Task { try await leases.renew(lease) }.value
-                guard renewed.isLive(at: .now + Self.renewMargin) else {
-                    return loseLease(id, reason: "renewed too late")
-                }
-                held[id] = renewed
-                wait = Self.renewEvery
-            } catch let LeaseError.failed(reason) {
-                log("\(lease.repo)#\(lease.item): renewing the lease failed, retrying (\(reason))")
-                wait = Self.renewRetry
-            } catch {
-                return loseLease(id, reason: error.localizedDescription)
+        while true {
+            let before = Date.now
+            guard (try? await Task.sleep(for: wait)) != nil, let lease = held[id] else { return }
+            let overshoot = Date.now.timeIntervalSince(before) - wait.timeInterval
+            if overshoot > 60 { log("\(lease.repo)#\(lease.item): the Mac slept \(Int(overshoot)) s past the renewal; renewing now") }
+            switch await renew(id, lease) {
+            case .renewed: wait = Self.renewEvery
+            case .failed: wait = Self.renewRetry
+            case .lost: return
             }
         }
     }
@@ -643,10 +698,11 @@ actor Dispatcher {
         var job = job
         try? FileManager.default.removeItem(at: Self.scratch(job.id))
         jobs.clearStopRequest(job.id)
-        expiryWatches.removeValue(forKey: job.id)?.cancel()
-        if let renewal = renewals.removeValue(forKey: job.id) {
-            renewal.cancel()
-            await renewal.value
+        // Both loops are waited out: a renewal push still in flight would land after the release
+        // and leave the lease held until it expired.
+        for loop in [expiryWatches.removeValue(forKey: job.id), renewals.removeValue(forKey: job.id)].compactMap({ $0 }) {
+            loop.cancel()
+            await loop.value
         }
         if let reason = lost[job.id] {
             job.status = .failed
@@ -679,6 +735,7 @@ actor Dispatcher {
         jobs.stopHelpers(job.id)
         // Only once nothing of the agent is left: a survivor would go on writing to the old file.
         if job.pid.map({ kill(-$0, 0) != 0 }) ?? true, exported { jobs.trim(job.id) }
+        renewedAt[job.id] = nil
         if let lease = held.removeValue(forKey: job.id) {
             // Not in a stopped job's cancelled task, which kills each process as it starts: the
             // label and the lease would stay until the lease expired, and the PR read as busy.

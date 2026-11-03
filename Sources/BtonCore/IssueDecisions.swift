@@ -29,7 +29,7 @@ public enum IssueDecisions {
         what the code in question does and what was decided or tried before on it; read the code \
         in this worktree for what the graph does not answer. \(question): where \
         they must choose, pick one option, with the reason and what would have changed it; answer \
-        the rest plainly. Then record it the way the repo's own process (AGENTS.md, docs) says the \
+        the rest plainly. \(IssueDrafts.rulingBound) Then record it the way the repo's own process (AGENTS.md, docs) says the \
         owner's decision is recorded: post one comment on the issue whose first line starts with \
         `\(heading)`, \(record), and set the labels the process asks for once the question is \
         decided, running its label script if it has one. The comment ends with one line saying \
@@ -129,12 +129,18 @@ public enum IssueDecisions {
     }
 
     /// An exit without error is not a decision: the agent is told to post nothing when only the
-    /// owner knows the answer. Posted means a comment of the owner's since the job started.
+    /// owner knows the answer. Posted means a comment of the owner's since the job started; one
+    /// over the word bound is reported, not edited (the agent posts the comment itself).
     public static func outcome(comments: [IssueComment], me: String, since: Date, report: String) -> (status: Job.Status, detail: String?) {
-        let posted = comments.contains { comment in
+        let posted = comments.filter { comment in
             comment.author?.caseInsensitiveCompare(me) == .orderedSame && comment.createdAt >= since
         }
-        if posted { return (.succeeded, nil) }
+        // The ruling is the agent's last post; an earlier comment of the owner's own in the meantime is not measured.
+        if let ruling = posted.max(by: { $0.createdAt < $1.createdAt }) {
+            let words = IssueDrafts.wordCount(ruling.body)
+            guard words > IssueDrafts.maxWords else { return (.succeeded, nil) }
+            return (.succeeded, "decided; the ruling is \(words) words, over the \(IssueDrafts.maxWords) the prompt asks for")
+        }
         let last = report.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty } ?? "no report"
         return (.succeeded, "left to you: " + String(last.prefix(200)))
     }
@@ -149,6 +155,31 @@ public enum IssueDecisions {
         return try decoder.decode(View.self, from: data).comments.map {
             IssueComment(id: $0.id, author: $0.author?.login, authorAssociation: nil, body: $0.body, createdAt: $0.createdAt, url: $0.url)
         }
+    }
+
+    /// How many rulings Bton gives on an issue before a person has to speak: one, and one
+    /// confirmation when the asker comes back on it. On #731 the deciding agent and the asking
+    /// agent went five rounds in two hours with nobody in between.
+    public static let maxRulings = 2
+
+    /// The decide jobs on the issue that posted a ruling since the last word from a person: the
+    /// opening, a comment without a Bton marker by someone else (a notice or a hand-off posted
+    /// by an agent is not a person), or a comment of mine written outside every decide job's run
+    /// (my own reply, by hand or from Draft reply, counts as me in person).
+    public static func rulingsSinceHuman(issue: OpenIssue, me: String, jobs: [Job]) -> Int {
+        let isMe = { (login: String?) in login?.caseInsensitiveCompare(me) == .orderedSame }
+        let decides = jobs.filter {
+            $0.key.repo.caseInsensitiveCompare(issue.repo) == .orderedSame && $0.key.item == "issue-\(issue.number)"
+                && $0.key.move == move
+        }
+        let duringADecide = { (date: Date) in decides.contains { $0.startedAt <= date && date <= ($0.endedAt ?? .distantFuture) } }
+        let lastHuman = issue.comments.filter { comment in
+            guard BtonMarker.keys(in: comment.body).isEmpty else { return false }
+            return isMe(comment.author) ? !duringADecide(comment.createdAt) : true
+        }.map(\.createdAt).max() ?? issue.createdAt
+        return decides.filter {
+            $0.status == .succeeded && ($0.detail == nil || $0.detail?.hasPrefix("decided") == true) && $0.startedAt >= lastHuman
+        }.count
     }
 
     /// One decision per asking comment.

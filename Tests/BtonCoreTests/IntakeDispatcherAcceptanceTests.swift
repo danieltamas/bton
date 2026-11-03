@@ -4,6 +4,107 @@ import Testing
 
 @Suite(ProcessBound())
 struct IntakeDispatcherAcceptanceTests {
+    @Test(arguments: [false, true])
+    func noPRPostsTheReasonBeforeGivingBackTheIssue(commentFails: Bool) async throws {
+        try await assertNoPRGiveBack(commentFails: commentFails)
+    }
+
+    @Test func noPRAlreadyReportedStillGivesBackTheIssueWithoutAnotherComment() async throws {
+        try await assertNoPRGiveBack(alreadyPosted: true)
+    }
+
+    @Test func noPRLeavesAnIssueAssignedToSomeoneElseAlone() async throws {
+        try await assertNoPRGiveBack(assignee: "other")
+    }
+
+    private func assertNoPRGiveBack(commentFails: Bool = false, alreadyPosted: Bool = false,
+                                   assignee: String = "me") async throws {
+        let f = try await SupervisionRunFixture.make()
+        defer { try? FileManager.default.removeItem(at: f.leases.root) }
+        let root = f.leases.root
+        let gh = root.appendingPathComponent("gh")
+        let calls = root.appendingPathComponent("intake-outcome-calls")
+        let posted = root.appendingPathComponent("intake-comment.md")
+        let comments: [[String: Any]] = alreadyPosted ? [[
+            "id": "IC_failed", "author": ["login": "me"],
+            "body": BtonMarker.line("implement-failed main"),
+            "createdAt": "2026-11-03T08:00:00Z", "url": NSNull()
+        ]] : []
+        try JSONSerialization.data(withJSONObject: ["comments": comments])
+            .write(to: root.appendingPathComponent("intake-comments.json"))
+        try Data().write(to: calls)
+        try FileManager.default.moveItem(at: gh, to: root.appendingPathComponent("gh-original"))
+        try """
+        #!/bin/sh
+        case "$1 $2" in
+          'api user') printf 'me'; exit 0 ;;
+          'pr list') printf '[]'; exit 0 ;;
+          'issue view')
+            case "$*" in
+              *'--json comments'*) cat "${0%/*}/intake-comments.json"; exit 0 ;;
+            esac
+            printf '{"state":"OPEN","labels":[{"name":"stage:in-progress"}],"assignees":[{"login":"\(assignee)"}]}'
+            exit 0 ;;
+          'issue comment')
+            printf '%s\\n' "$*" >> "${0%/*}/intake-outcome-calls"
+            while [ "$#" -gt 0 ]; do
+              if [ "$1" = '--body-file' ]; then cp "$2" "${0%/*}/intake-comment.md"; break; fi
+              shift
+            done
+            \(commentFails ? "echo 'comment unavailable' >&2; exit 17" : "exit 0") ;;
+          'issue edit')
+            printf '%s\\n' "$*" >> "${0%/*}/intake-outcome-calls"
+            exit 0 ;;
+        esac
+        exec "${0%/*}/gh-original" "$@"
+        """.write(to: gh, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
+        let github = GitHubClient(ghPath: gh.path)
+        let store = try JobStore(home: f.home)
+        let remote = root.appendingPathComponent("origin.git").path
+        let leases = try LeaseStore(home: f.home, holder: "intake-test", host: "fixture", github: github,
+                                    remoteURL: { _ in remote })
+        let dispatcher = Dispatcher(github: github, leases: leases, jobs: store, log: { _ in })
+        let job = Job(id: UUID(), key: JobKey(repo: f.leases.repo, item: "issue-7", move: "implement", head: ""),
+                      agent: "claude", worktree: f.clone.path, startedAt: .now, status: .running)
+        let report = "The build stopped because the schema decision needs @me."
+        try report.write(to: store.outputURL(job.id), atomically: true, encoding: .utf8)
+
+        let outcome = await dispatcher.intakeOutcome(of: job)
+
+        #expect(outcome.status == .failed)
+        let detail = try #require(outcome.detail)
+        let original = "the agent finished without opening a PR for main; its report says why"
+        if assignee != "me" {
+            #expect(detail == original + "; the issue is assigned to @other now, left as it is")
+        } else if alreadyPosted {
+            #expect(detail == original + ", already said so on the issue")
+        } else if commentFails {
+            #expect(detail.hasPrefix(original + "; could not say so on the issue: "))
+            #expect(detail.contains("comment unavailable"))
+        } else {
+            #expect(detail == original + ", said so on the issue")
+        }
+        let order = try String(contentsOf: calls, encoding: .utf8).split(separator: "\n").map(String.init)
+        if assignee != "me" {
+            #expect(order.isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: posted.path))
+            return
+        }
+        let edit = "issue edit 7 --repo \(f.leases.repo) --add-label stage:ready --remove-label stage:in-progress --remove-assignee @me"
+        if alreadyPosted {
+            #expect(order == [edit])
+            #expect(!FileManager.default.fileExists(atPath: posted.path))
+            return
+        }
+        try #require(order.count == 2)
+        #expect(order[0].hasPrefix("issue comment 7 --repo \(f.leases.repo) --body-file "))
+        #expect(order[1] == edit)
+        let body = try String(contentsOf: posted, encoding: .utf8)
+        #expect(body.contains(report))
+        #expect(body.hasSuffix(BtonMarker.line("implement-failed main")))
+    }
+
     @Test(arguments: ["claim-first", "claim-fails", "existing", "resume", "changed"])
     func dispatcherHonoursClaimAndWorktreeBoundaries(scenario: String) async throws {
         let f = try await SupervisionRunFixture.make()

@@ -1,4 +1,4 @@
-import BtonCore
+@testable import BtonCore
 import Foundation
 import Testing
 
@@ -23,6 +23,11 @@ private struct LeaseFixture: Sendable {
         return try LeaseStore(home: home, holder: holder, host: host, github: GitHubClient())
     }
 
+    static func lease(expiringAt expires: Date) throws -> Lease {
+        Lease(repo: "synthetic/project", item: try #require(LeaseItem("issue-7")), sha: "unmoved-ref",
+              record: LeaseRecord(holder: "owner", host: "mac", job: UUID(), expires: expires, released: false))
+    }
+
     func cleanup() async {
         // An unstructured detached task also attempts cleanup if the test was cancelled.
         await Task.detached {
@@ -37,6 +42,92 @@ private struct LeaseFixture: Sendable {
             }
             try? FileManager.default.removeItem(at: root)
         }.value
+    }
+}
+
+private extension RetryLeaseFixture {
+    func store(_ name: String, ttl: Duration) throws -> LeaseStore {
+        let remote = root.appendingPathComponent("origin.git").path
+        return try LeaseStore(home: BtonHome(environment: ["BTON_HOME": root.appendingPathComponent(name).path]),
+            holder: name, host: "synthetic-host", ttl: ttl,
+            github: GitHubClient(ghPath: root.appendingPathComponent("gh").path), remoteURL: { _ in remote })
+    }
+}
+
+@Suite(ProcessBound())
+struct LeaseRenewalRegressionTests {
+    @Test func expiryActionWaitsWhenTheLeaseHasMoreThanAMinuteLeft() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let lease = try LeaseFixture.lease(expiringAt: now.addingTimeInterval(61))
+        let action = Dispatcher.expiryAction(lease: lease, now: now, failedRenewals: 0)
+        guard case .wait = action else {
+            Issue.record("A lease with more than a minute left must wait")
+            return
+        }
+    }
+
+    @Test(arguments: [-300, 0, 59, 60], [0, 1])
+    func expiryActionRenewsNearOrPastExpiryBeforeTwoFailures(secondsLeft: Int, failedRenewals: Int) throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let lease = try LeaseFixture.lease(expiringAt: now.addingTimeInterval(Double(secondsLeft)))
+        let action = Dispatcher.expiryAction(lease: lease, now: now, failedRenewals: failedRenewals)
+        guard case .renewNow = action else {
+            Issue.record("A near or expired lease must get a renewal, including after one transient failure")
+            return
+        }
+    }
+
+    @Test func expiryActionLosesAfterTwoConsecutiveRenewalFailures() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let lease = try LeaseFixture.lease(expiringAt: now.addingTimeInterval(-300))
+        let action = Dispatcher.expiryAction(lease: lease, now: now, failedRenewals: 2)
+        guard case .lose(let reason) = action else {
+            Issue.record("Two failed renewals must lose the lease")
+            return
+        }
+        #expect(reason.contains("2") || reason.lowercased().contains("twice") || reason.lowercased().contains("two"))
+        #expect(reason.lowercased().contains("renew"))
+    }
+
+    @Test func expiredLeaseWithUnmovedRefRenewsTheSameJob() async throws {
+        let fixture = try await RetryLeaseFixture.make()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let expiredStore = try fixture.store("owner", ttl: .seconds(-1))
+        let original = try RetryLeaseFixture.claimed(try await expiredStore.claim(fixture.item, in: fixture.repo))
+        #expect(!original.isLive())
+        let store = try fixture.store("owner", ttl: .seconds(900))
+
+        let renewed = try await store.renew(original)
+
+        #expect(renewed.record.job == original.record.job)
+        #expect(renewed.record.holder == original.record.holder)
+        #expect(renewed.sha != original.sha)
+        #expect(renewed.record.expires > original.record.expires)
+        #expect(renewed.isLive())
+        guard case .held(let record) = try await store.state(of: fixture.item, in: fixture.repo) else {
+            Issue.record("Renewal must leave the same job holding a live lease")
+            return
+        }
+        #expect(record.job == original.record.job)
+    }
+
+    @Test func renewalLosesWhenAnotherHolderMovedTheExpiredRef() async throws {
+        let fixture = try await RetryLeaseFixture.make()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let owner = try fixture.store("owner", ttl: .seconds(-1))
+        let original = try RetryLeaseFixture.claimed(try await owner.claim(fixture.item, in: fixture.repo))
+        let other = try fixture.store("other", ttl: .seconds(900))
+        let takeover = try RetryLeaseFixture.claimed(try await other.claim(fixture.item, in: fixture.repo))
+        #expect(takeover.record.job != original.record.job)
+
+        await expectLeaseError(.lost) { _ = try await owner.renew(original) }
+
+        guard case .held(let record) = try await other.state(of: fixture.item, in: fixture.repo) else {
+            Issue.record("A stale renewal must leave the other holder's lease in place")
+            return
+        }
+        #expect(record.job == takeover.record.job)
+        #expect(record.holder == "other")
     }
 }
 

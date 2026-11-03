@@ -6,6 +6,45 @@ import Testing
 struct ReviewCommandAcceptanceTests {
     private let movedHead = "abcdef0123456789abcdef0123456789abcdef01"
 
+    @Test(arguments: [false, true])
+    func anExistingCheckFailureMarkerSuppressesAnotherComment(legacy: Bool) async throws {
+        let f = try await ReviewCommandFixture.make()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let marker = legacy
+            ? "check-failed synthetic/project#pr-7 review@\(f.pr.headSha.prefix(12))/earlier-round"
+            : "check-failed review@\(f.pr.headSha)"
+        let comments: [String: Any] = ["comments": [
+            ["id": "IC_failed", "author": ["login": "another-mac"],
+             "body": "The check failed.\n\n" + BtonMarker.line(marker),
+             "createdAt": "2026-11-01T08:00:00Z", "url": NSNull()] as [String: Any]
+        ]]
+        try JSONSerialization.data(withJSONObject: comments).write(to: f.root.appendingPathComponent("pr-comments.json"))
+
+        let job = try await f.finished(f.start(script: "touch \"$MARKER\"", checks: [["/usr/bin/false"]]))
+
+        #expect(job.status == .failed)
+        #expect(job.detail?.hasPrefix("check ") == true, "\(job.detail ?? "") \(f.log(job.id))")
+        #expect(f.ghCalls.contains("pr view 7 --repo synthetic/project --json comments"))
+        #expect(!f.ghCalls.contains("pr comment"))
+        #expect(f.posted.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: f.marker.path))
+    }
+
+    @Test func aFailedCheckCommentsReadPostsNothingAndReportsTheFailure() async throws {
+        let f = try await ReviewCommandFixture.make()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        try Data().write(to: f.root.appendingPathComponent("comments-read-fails"))
+
+        let job = try await f.finished(f.start(script: "touch \"$MARKER\"", checks: [["/usr/bin/false"]]))
+
+        #expect(job.status == .failed)
+        #expect(job.detail?.hasPrefix("posting the check failure failed") == true, "\(job.detail ?? "") \(f.log(job.id))")
+        #expect(f.ghCalls.contains("pr view 7 --repo synthetic/project --json comments"))
+        #expect(!f.ghCalls.contains("pr comment"))
+        #expect(f.posted.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: f.marker.path))
+    }
+
     @Test func aReviewWithTheHeadingAndHeadIsPostedAsTheComment() async throws {
         let f = try await ReviewCommandFixture.make()
         defer { try? FileManager.default.removeItem(at: f.root) }
@@ -105,6 +144,12 @@ private struct ReviewCommandFixture {
             cd "$(dirname "$0")"
             printf '%s\n' "$*" >> gh-seen
             if [ "${1-}" = pr ] && [ "${2-}" = view ]; then
+              case "$*" in
+                *'--json comments'*)
+                  if [ -f comments-read-fails ]; then exit 1; fi
+                  if [ -f pr-comments.json ]; then cat pr-comments.json; else printf '{"comments":[]}'; fi
+                  exit 0 ;;
+              esac
               printf '{"headRefOid":"%s","state":"OPEN"}' "$HEAD_SHA"
               exit 0
             fi
@@ -127,17 +172,19 @@ private struct ReviewCommandFixture {
         } catch { try? FileManager.default.removeItem(at: base.leases.root); throw error }
     }
 
-    func start(script: String, review: Bool = true, environment: [String: String] = [:]) async throws -> UUID {
+    func start(script: String, review: Bool = true, environment: [String: String] = [:],
+               checks: [[String]]? = nil) async throws -> UUID {
         let command = ["/bin/sh", "-c", script]
         let object: [String: Any] = ["version": 1, "base": "main",
             "tier": ["marker": "Tier:", "values": ["feature"], "default": "feature"],
             "reviews": ["feature": [["heading": "## Review:"]]], "fixed": "## Fixed:", "moves": [],
             "dispatch": ["review": ["command": command]]]
         let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: object))
-        let candidate = DispatchCandidate(target: .pullRequest(pr),
+        var candidate = DispatchCandidate(target: .pullRequest(pr),
             move: Move(name: "review", owner: "owner", ownerFromRotation: false, tier: "feature", hasDispatch: true),
             key: JobKey(repo: pr.repo, item: "pr-7", move: "review", head: pr.headSha),
             agent: nil, prompt: nil, command: command, postComment: review, timeout: .seconds(20))
+        candidate.checks = checks
         let outcome = await dispatcher.dispatch(candidate, clone: base.clone, flow: flow, agents: [:],
             environment: environment.merging(["MARKER": marker.path]) { _, new in new })
         guard case .started = outcome else { throw DispatchError.worktree("Fixture job did not start: \(outcome)") }
