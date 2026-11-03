@@ -300,6 +300,32 @@ public enum FlowEngine {
         return after
     }
 
+    /// Give to: the reviewers a PR of mine can be handed to, in the flow's order. Only a move a
+    /// GitHub field owns moves this way, and only off someone else (or the rotation): the
+    /// author never reviews their own PR, and the current owner is already there.
+    public static func giveTargets(for pr: PullRequest, flow: Flow, me: String) -> [String] {
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        guard same(pr.author, me), let current = move(for: pr, flow: flow), !current.isMine(me),
+              let kind = ownerKind(for: pr, flow: flow), takableKinds.contains(kind) else { return [] }
+        return (flow.reviewers ?? []).filter { login in !same(login, me) && current.owner.map { !same(login, $0) } ?? true }
+    }
+
+    /// Handover: a `review` another reviewer has left for longer than the flow's `handOverHours`
+    /// becomes mine to run, once its owning field names me. Only a reviewer of the flow who is
+    /// not the author, only a review someone else owns, and once per head: the comment the
+    /// takeover leaves carries `handoverMarker`, and no Mac takes the same head twice.
+    public static func handover(of pr: PullRequest, flow: Flow, me: String, now: Date = .now) -> Move? {
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        guard let hours = flow.handOverHours, let current = move(for: pr, flow: flow), current.name == reviewMove,
+              !same(pr.author, me), (flow.reviewers ?? []).contains(where: { same($0, me) }),
+              !pr.btonMarkers.contains(handoverMarker(head: pr.headSha)),
+              let since = Staleness.since(pr), now.timeIntervalSince(since) > hours * 3600 else { return nil }
+        return takeover(of: pr, flow: flow, me: me)
+    }
+
+    /// The marker of the handover comment on a head.
+    public static func handoverMarker(head: String) -> String { "handover review@\(head.prefix(12))" }
+
     /// `author`, `assignee` (the first assignee), `reviewer` (the first requested reviewer), each
     /// of the last two with the rotation when the field is empty, `approver` (whoever wrote the
     /// latest counting review or decision: GitHub ends a reviewer's request once they review, so

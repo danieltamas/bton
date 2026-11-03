@@ -117,6 +117,7 @@ public struct Flow: Decodable, Sendable {
             if let decide = flow.decide, decide.by.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
                 return .invalid("decide.by names nobody")
             }
+            if let hours = flow.stale?.handOverHours, hours <= 0 { return .invalid("stale.handOverHours must be above 0") }
             for (tier, globs) in flow.tier.paths ?? [:] {
                 guard flow.tier.values.contains(tier) else { return .invalid("tier.paths.\(tier) is not one of tier.values") }
                 if let bad = globs.first(where: { !PathGlob.isValid($0) }) {
@@ -387,6 +388,14 @@ public struct Stale: Decodable, Sendable {
     public let pingHours: Double
     public let escalateHours: Double
     public let escalateTo: String
+    /// How long a review may wait on its owner before any other reviewer's Bton takes it over
+    /// and runs it; 12 when unset. The clock is the ping's: the head or the last person's comment.
+    public let handOverHours: Double?
+}
+
+extension Flow {
+    /// Nil in a flow without `stale`: no review is handed over then.
+    public var handOverHours: Double? { stale.map { $0.handOverHours ?? 12 } }
 }
 
 /// One value for every tier, or one per tier name.

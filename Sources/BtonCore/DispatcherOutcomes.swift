@@ -17,6 +17,43 @@ extension Dispatcher {
     static func checkFailedMarker(move: String, head: String) -> String { "check-failed \(move)@\(head)" }
 
     /// One comment per move and head, carrying Bton's marker so it never changes a move; a
+    /// Makes a teammate's waiting review mine on GitHub and says so on the PR, or answers why not:
+    /// the PR moved on since the read (owner, head, or a handover already on it), the lease ran
+    /// out, or GitHub refused. Under the lease, from a fresh read.
+    func takeOver(_ plan: HandoverPlan, candidate: DispatchCandidate, flow: Flow, lease: Lease) async -> String? {
+        guard let me = candidate.move.owner, let pr = candidate.pr else { return "no PR" }
+        let repo = candidate.key.repo, number = pr.number
+        do {
+            let read = try await github.openPullRequests(repo: repo)
+            guard let fresh = read.pullRequests.first(where: { $0.number == number }), fresh.headSha == pr.headSha,
+                  FlowEngine.handover(of: fresh, flow: flow, me: me) != nil,
+                  FlowEngine.move(for: fresh, flow: flow)?.owner?.caseInsensitiveCompare(plan.from) == .orderedSame
+            else { return "the review is no longer \(plan.from)'s to take at this head" }
+            // A claim pushed, or a read made, while the Mac slept can leave the lease expired by
+            // now: it must outlast the two writes too.
+            guard lease.isLive(at: .now + 60) else { return "the lease ran out" }
+            if plan.kind == "reviewer" {
+                try await github.requestReview(me, replacing: fresh.requestedReviewers, repo: repo, number: number)
+            } else {
+                try await github.assign(me, replacing: fresh.assignees, repo: repo, number: number)
+            }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("bton-\(UUID().uuidString).md")
+            defer { try? FileManager.default.removeItem(at: file) }
+            try ("Took over the review from @\(plan.from), who had not started it in \(plan.hours) h.\n\n"
+                 + BtonMarker.line(FlowEngine.handoverMarker(head: pr.headSha))).write(to: file, atomically: true, encoding: .utf8)
+            do {
+                try await github.comment(repo: repo, number: number, bodyFile: file)
+            } catch {
+                // The review is mine on GitHub either way: it runs, and the PR goes without the line.
+                log("\(candidate.key): took the review from \(plan.from) but could not say so on the PR: \(error.localizedDescription)")
+            }
+            log("\(candidate.key): took over the review from \(plan.from) after \(plan.hours) h")
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// comment already there (an earlier round, another Mac) counts as posted. Answers whether
     /// the comment is on the PR: a failure nobody can read is not the known kind.
     func postFailure(_ candidate: DispatchCandidate, text: String) async -> Bool {

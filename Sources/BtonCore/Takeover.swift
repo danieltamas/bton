@@ -81,6 +81,55 @@ extension Engine {
 }
 
 extension Engine {
+    /// Give to: hands a PR of mine to `login`, one of the flow's reviewers, by making them the PR's
+    /// only assignee (an `assignee` move) or only requested reviewer (a `reviewer` move) on GitHub,
+    /// under its lease. No comment: the assignment is the message. Checked against a fresh read.
+    public func give(repo: String, number: Int, to login: String) async throws {
+        let config = try BtonConfig.loadOrCreate(home: home)
+        let branch = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
+        let me = try await givable(repo: repo, number: number, to: login, branch: branch).me
+        let leases = try await dispatcher(me: me, config: config).leases
+        guard let lease = LeaseItem("pr-\(number)"), case let .claimed(held)? = try? await leases.claim(lease, in: repo)
+        else { throw TakeError.busy }
+        let release = { [log] in
+            for attempt in 1...2 {
+                do {
+                    return try await leases.release(held, ran: false)
+                } catch where attempt == 2 {
+                    log("\(repo)#\(number): Give to could not release the PR's lease, which frees when it expires: \(error.localizedDescription)")
+                } catch {}
+            }
+        }
+        do {
+            let fresh = try await givable(repo: repo, number: number, to: login, branch: branch)
+            guard held.isLive(at: .now + 60) else { throw TakeError.busy }
+            if fresh.kind == "reviewer" {
+                try await github.requestReview(login, replacing: fresh.pr.requestedReviewers, repo: repo, number: number)
+            } else {
+                try await github.assign(login, replacing: fresh.pr.assignees, repo: repo, number: number)
+            }
+        } catch {
+            await release()
+            throw error
+        }
+        await release()
+        log("\(repo)#\(number): gave the review to \(login)")
+    }
+
+    /// The open PR, the field that owns its move and my login, while `login` is still one it can go to.
+    private func givable(repo: String, number: Int, to login: String,
+                         branch: String?) async throws -> (me: String, pr: PullRequest, kind: String) {
+        let flow = Flow.load(try await github.flowFile(repo: repo, branch: branch)).flow
+        let read = try await github.openPullRequests(repo: repo)
+        guard let flow, let pr = read.pullRequests.first(where: { $0.number == number }),
+              FlowEngine.giveTargets(for: pr, flow: flow, me: read.viewer).contains(where: { $0.caseInsensitiveCompare(login) == .orderedSame }),
+              let kind = FlowEngine.ownerKind(for: pr, flow: flow)
+        else { throw TakeError.changed }
+        return (read.viewer, pr, kind)
+    }
+}
+
+extension Engine {
     /// At most this many PRs are taken per sync: a flow change must not reassign a whole queue at once.
     static let autoTakeLimit = 2
 

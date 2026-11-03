@@ -327,6 +327,13 @@ public actor Engine {
                             }
                         }
                         var candidates = DispatchPlanner.candidates(read.pullRequests, flow: flow, me: read.viewer, repo: read.repo.slug)
+                        // A teammate's review left past the flow's handOverHours: this Mac's turn, like
+                        // its own moves, only where the repo starts moves on its own.
+                        if read.repo.startsMoves {
+                            candidates += read.pullRequests.compactMap {
+                                DispatchPlanner.handoverCandidate($0, flow: flow, me: read.viewer, repo: read.repo.slug)
+                            }
+                        }
                         for pr in read.pullRequests {
                             // An agent this Mac lacks would leave the PR with no move at all.
                             guard let chosen = override(pr, flow: flow, repo: read.repo, me: read.viewer),

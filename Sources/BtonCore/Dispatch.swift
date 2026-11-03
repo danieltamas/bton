@@ -9,6 +9,20 @@ public enum DispatchTarget: Sendable {
 }
 
 /// A move this Mac could start, with everything taken from the flow, never from PR text.
+/// Whose review a handover takes, through which field, after how many hours of waiting.
+public struct HandoverPlan: Hashable, Sendable {
+    public let from: String
+    /// `assignee` or `reviewer`: the GitHub field that owns the move.
+    public let kind: String
+    public let hours: Int
+
+    public init(from: String, kind: String, hours: Int) {
+        self.from = from
+        self.kind = kind
+        self.hours = hours
+    }
+}
+
 public struct DispatchCandidate: Sendable {
     /// Var for the retry of an issue already claimed, which skips the claim.
     public var target: DispatchTarget
@@ -69,6 +83,9 @@ public struct DispatchCandidate: Sendable {
     public var cooldown: TimeInterval?
     /// The most the job may spend, from the flow's `caps.costPerJob`; nil when the flow sets none.
     public var costCap: Decimal?
+    /// A review taken over from a teammate who left it: the Dispatcher makes it mine on GitHub,
+    /// under the lease, before the job starts.
+    public var handover: HandoverPlan?
     /// The run's own checks instead of the flow's (the release's, a rule's); an empty list runs none.
     public var checks: [[String]]?
     /// The flow's `fresh` argv with the same placeholders filled as the rule's own checks, so a
@@ -119,6 +136,20 @@ public enum DispatchPlanner {
             made.requiredChecks = FlowEngine.requiredChecks(for: pr, flow: flow)
             return made
         }
+    }
+
+    /// A teammate's review left past the flow's `handOverHours`: the review dispatch as it would run
+    /// once the owning field names me, with the handover the Dispatcher writes under the lease.
+    public static func handoverCandidate(_ pr: PullRequest, flow: Flow, me: String, repo: String, now: Date = .now) -> DispatchCandidate? {
+        guard let move = FlowEngine.handover(of: pr, flow: flow, me: me, now: now), let rule = flow.dispatch[move.name],
+              let kind = FlowEngine.ownerKind(for: pr, flow: flow), let since = Staleness.since(pr),
+              let from = FlowEngine.move(for: pr, flow: flow)?.owner else { return nil }
+        var mine = pr
+        if kind == "reviewer" { mine.requestedReviewers = [me] } else { mine.assignees = [me] }
+        var made = candidate(mine, move: move, rule: rule, flow: flow, me: me, repo: repo)
+        made.requiredChecks = FlowEngine.requiredChecks(for: pr, flow: flow)
+        made.handover = HandoverPlan(from: from, kind: kind, hours: Int(now.timeIntervalSince(since) / 3600))
+        return made
     }
 
     /// The owner's Merge on a PR of theirs that GitHub can merge, whatever the flow's move: the

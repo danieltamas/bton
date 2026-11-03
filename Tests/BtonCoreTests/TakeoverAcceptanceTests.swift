@@ -4,6 +4,96 @@ import Testing
 
 @Suite(ProcessBound())
 struct TakeoverAcceptanceTests {
+    @Test(arguments: ["assignee", "reviewer"], [false, true])
+    func giveTargetsExcludeAuthorAndOwnerInFlowOrder(who: String, rotation: Bool) throws {
+        let flow = try TakeoverFixture.flow(who: who, reviewers: ["ViEwEr", "chosen", "TeAmMaTe", "last"])
+        var pr = TakeoverFixture.pr(assignees: rotation ? [] : ["teammate"], author: "VIEWER")
+        pr.requestedReviewers = rotation ? [] : ["teammate"]
+        // PR 7 picks teammate from [chosen, teammate, last].
+        #expect(FlowEngine.giveTargets(for: pr, flow: flow, me: "viewer") == ["chosen", "last"])
+    }
+
+    @Test(arguments: ["not author", "mine", "author rule", "named owner", "no move", "no reviewers"])
+    func giveTargetsRefuseIneligiblePRs(reason: String) throws {
+        let who = reason == "author rule" ? "author" : reason == "named owner" ? "teammate" : "assignee"
+        let flow = try TakeoverFixture.flow(who: who,
+            reviewers: reason == "no reviewers" ? [] : ["viewer", "teammate", "chosen"], moves: reason != "no move")
+        let pr = TakeoverFixture.pr(assignees: reason == "mine" ? ["ViEwEr"] : ["teammate"],
+            author: reason == "not author" ? "other" : "viewer")
+        #expect(FlowEngine.giveTargets(for: pr, flow: flow, me: "viewer").isEmpty)
+    }
+
+    @Test(arguments: ["assignee", "reviewer"], [false, true])
+    func giveReplacesOwningFieldUnderLeaseWithoutComment(who: String, rotation: Bool) async throws {
+        let f = try await TakeoverFixture.make()
+        defer { f.remove() }
+        try f.writeFlow(who: who, reviewers: ["viewer", "chosen", "teammate"])
+        var pr = TakeoverFixture.pr(assignees: rotation ? [] : ["teammate", "second"], author: "viewer")
+        pr.requestedReviewers = rotation ? [] : ["teammate", "second"]
+        try f.writePRs([pr])
+        let engine = try f.engine()
+        try await engine.give(repo: f.repo, number: 7, to: "chosen")
+        let field = who == "reviewer" ? "reviewer" : "assignee"
+        let expected = ["pr", "edit", "7", "--repo", f.repo, "--add-\(field)", "chosen"]
+            + (rotation ? [] : ["--remove-\(field)", "teammate,second"])
+        #expect(try f.writes() == [expected])
+        try await f.expectReleased()
+    }
+
+    @Test(arguments: ["target became owner", "author changed", "missing PR"])
+    func giveRechecksOfferedLoginUnderLease(reason: String) async throws {
+        let f = try await TakeoverFixture.make()
+        defer { f.remove() }
+        try f.writeFlow(reviewers: ["viewer", "teammate", "chosen"])
+        try f.writePRs([TakeoverFixture.pr(author: "viewer")])
+        let fresh = TakeoverFixture.pr(assignees: reason == "target became owner" ? ["chosen"] : ["teammate"],
+            author: reason == "author changed" ? "other" : "viewer")
+        try f.writePRs(reason == "missing PR" ? [] : [fresh], file: "prs-under-lease")
+        let engine = try f.engine()
+        await expectTakeError(.changed) { try await engine.give(repo: f.repo, number: 7, to: "chosen") }
+        #expect(try f.writes().isEmpty)
+        try await f.expectReleased()
+    }
+
+    @Test func giveRefusesHeldLeaseWithoutWriting() async throws {
+        let f = try await TakeoverFixture.make()
+        defer { f.remove() }
+        try f.writeFlow(reviewers: ["viewer", "teammate", "chosen"])
+        try f.writePRs([TakeoverFixture.pr(author: "viewer")])
+        let observer = try f.store("other-mac")
+        guard case let .claimed(lease) = try await observer.claim(f.item, in: f.repo) else {
+            Issue.record("Fixture must hold lease first"); return
+        }
+        try f.resetCalls()
+        let engine = try f.engine()
+        await expectTakeError(.busy) { try await engine.give(repo: f.repo, number: 7, to: "chosen") }
+        #expect(try f.writes().isEmpty)
+        try await observer.release(lease, ran: false)
+    }
+
+    @Test(arguments: ["assignee", "reviewer"])
+    func giveWriteFailureRethrowsGitHubErrorAndReleasesLease(who: String) async throws {
+        let f = try await TakeoverFixture.make()
+        defer { f.remove() }
+        try f.writeFlow(who: who, reviewers: ["viewer", "teammate", "chosen"])
+        var pr = TakeoverFixture.pr(author: "viewer")
+        pr.requestedReviewers = ["teammate"]
+        try f.writePRs([pr])
+        try f.text("fail-assign", "1")
+        let engine = try f.engine()
+        do {
+            try await engine.give(repo: f.repo, number: 7, to: "chosen")
+            Issue.record("GitHub write failure must throw")
+        } catch let GitHubClient.Failure.ghFailed(status, stderr) {
+            #expect(status == 43)
+            #expect(stderr.contains("assignment sentinel"))
+        } catch { Issue.record("GitHub error was replaced: \(error)") }
+        let field = who == "reviewer" ? "reviewer" : "assignee"
+        #expect(try f.writes() == [["pr", "edit", "7", "--repo", f.repo,
+            "--add-\(field)", "chosen", "--remove-\(field)", "teammate"]])
+        try await f.expectReleased()
+    }
+
     @Test(arguments: ["assigned", "rotation", "unowned"])
     func takesOnlyAssigneeMoveAndReturnsDispatchableMoveOwnedByMe(kind: String) throws {
         let flow = try TakeoverFixture.flow(reviewers: kind == "rotation" ? ["teammate"] : [])
@@ -284,18 +374,20 @@ private struct TakeoverFixture {
     func writeFlow(who: String = "assignee", reviewers: [String] = []) throws {
         try Self.flowData(who: who, reviewers: reviewers).write(to: root.appendingPathComponent("flow"))
     }
-    func writePRs(_ prs: [PullRequest]) throws {
+    func writePRs(_ prs: [PullRequest], file: String = "prs") throws {
         let nodes: [[String: Any]] = prs.map { pr in
             ["number": pr.number, "title": pr.title, "url": pr.url.absoluteString, "isDraft": pr.isDraft,
              "headRefOid": pr.headSha, "headRefName": pr.headRef, "baseRefName": pr.baseRef,
              "body": pr.body, "updatedAt": "2026-10-26T12:00:00Z", "authorAssociation": pr.authorAssociation,
              "author": ["login": pr.author], "labels": ["nodes": []],
-             "assignees": ["nodes": pr.assignees.map { ["login": $0] }], "comments": ["nodes": []]]
+             "assignees": ["nodes": pr.assignees.map { ["login": $0] }],
+             "reviewRequests": ["nodes": pr.requestedReviewers.map { ["requestedReviewer": ["login": $0]] }],
+             "comments": ["nodes": []]]
         }
         let object: [String: Any] = ["data": ["viewer": ["login": "viewer"], "repository": [
             "defaultBranchRef": ["name": "main"], "pullRequests": ["nodes": nodes,
                 "pageInfo": ["hasNextPage": false, "endCursor": NSNull()]]]]]
-        try JSONSerialization.data(withJSONObject: object).write(to: root.appendingPathComponent("prs"))
+        try JSONSerialization.data(withJSONObject: object).write(to: root.appendingPathComponent(file))
     }
 
     func installGH() throws {
@@ -319,6 +411,10 @@ private struct TakeoverFixture {
             cat flow ;;
           graphql)
             if [ -f fail-prs ]; then echo 'fresh prs failed' >&2; exit 41; fi
+            if [ -f prs-under-lease ]; then
+              message=$(/usr/bin/git --git-dir=origin.git show -s --format=%s refs/bton/leases/pr-7 2>/dev/null || true)
+              case "$message" in *'"released":false'*) cat prs-under-lease; exit 0 ;; esac
+            fi
             cat prs ;;
           user) echo viewer ;;
           repos/synthetic/project/git/ref/*)

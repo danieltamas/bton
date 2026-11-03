@@ -151,6 +151,9 @@ private struct PullRequestRow: View {
                             } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
                                       FlowEngine.takeover(of: pr, flow: flow, me: me) != nil {
                                 TakeButton(pr: pr, move: move)
+                            } else if !busy, let me, let flow = store.flows[pr.repo]?.flow,
+                                      case let targets = FlowEngine.giveTargets(for: pr, flow: flow, me: me), !targets.isEmpty {
+                                GiveButton(pr: pr, move: move, targets: targets)
                             }
                         }
                         if let job {
