@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.32.0 (2026-11-03)
 
 **Guards for a shift that runs unattended.** A night of agents on one GitHub token can run its hourly quota dry and strand every job that needs GitHub to finish: Bton now reads the quota before each sync and, under 300 points on either the REST or the GraphQL side, reads nothing and starts nothing until the reset, saying so in the menu (`rateLimitFloor` in config.json moves the floor; 0 turns it off). A flow can now set its own limits in `caps`: `issuesPerDay` (20 when unset), `issueCooldownHours` (6), and `costPerJob`, a dollar amount past which a job's agent is stopped and the job fails with what it spent (read from the session logs, so approximate); `decide.maxRulings` caps how many times Bton rules on one issue since a person last spoke (2). Two new predicates: a PR rule can say `checks_red` (or `checks_red:name,name`) for a head with a failed check, and a prompt can name them with `{red_checks}`; an issue rule can say `not_demoted:stage:ready,stage:in-progress` so an issue a person moved out of ready is never put back by an agent (Bton's own claim, which swaps the two labels in one edit, does not count). The playbook tells every agent never to quote a review routine's hidden marker in a reply, which would wake it as a new review.
 
