@@ -5,6 +5,8 @@ import Foundation
 /// moves the issue on as the repo's process says. The owner overrules it with a comment.
 public enum IssueDecisions {
     public static let move = "decide"
+    /// How a succeeded decision's detail starts when the agent posted nothing and the question is still mine.
+    public static let leftToYou = "left to you: "
     public static let defaultAgent = "claude"
     public static let defaultTimeoutMinutes = 20
     public static let defaultHeading = "## Decision:"
@@ -142,7 +144,7 @@ public enum IssueDecisions {
             return (.succeeded, "decided; the ruling is \(words) words, over the \(IssueDrafts.maxWords) the prompt asks for")
         }
         let last = report.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty } ?? "no report"
-        return (.succeeded, "left to you: " + String(last.prefix(200)))
+        return (.succeeded, leftToYou + String(last.prefix(200)))
     }
 
     /// `gh issue view --json comments`.

@@ -83,17 +83,18 @@ public struct ListFilter: Hashable, Identifiable, Sendable {
 
     public static var issueFilters: [ListFilter] { IssueState.allCases.map(\.filter) }
 
-    /// The states of a question for me, from its draft and decision jobs and whether I posted.
-    public static func askStates(posted: Bool, handoff: Bool, draft: Job.Status?, decision: Job.Status?) -> Set<String> {
+    /// The states of a question for me, as its card shows them: from its draft and decision jobs,
+    /// whether I posted, and whether Bton's decision landed as a comment (a decision that left the
+    /// question to me, `IssueDecisions.leftToYou`, is no reply).
+    public static func askStates(posted: Bool, handoff: Bool, draft: Job.Status?, decision: Job.Status?, decided: Bool) -> Set<String> {
         var states = Set<String>()
         if handoff { states.insert(IssueState.handedOff.rawValue) }
-        if posted || decision == .succeeded {
+        // An agent on it is working whatever else the card says: a decision can run beside a ready draft.
+        if draft == .running || decision == .running { states.insert(IssueState.working.rawValue) }
+        if posted || decided {
             states.insert(IssueState.replyPosted.rawValue)
         } else if draft == .succeeded {
             states.insert(IssueState.draftReady.rawValue)
-        } else if draft == .running || decision == .running {
-            states.insert(IssueState.working.rawValue)
-            states.insert(IssueState.needsReply.rawValue)
         } else {
             states.insert(IssueState.needsReply.rawValue)
         }

@@ -6,13 +6,17 @@ struct ListFilterAcceptanceTests {
     /// The Issues tab's reason to exist: the asks that still need me, apart from the ones already answered or drafted.
     @Test func askNeedsAReplyUntilADraftIsReadyOrPosted() {
         let needs = ListFilter.IssueState.needsReply.rawValue
-        #expect(ListFilter.askStates(posted: false, handoff: false, draft: nil, decision: nil) == [needs])
-        #expect(ListFilter.askStates(posted: false, handoff: false, draft: .running, decision: nil) == [needs, "working"])
-        #expect(ListFilter.askStates(posted: false, handoff: false, draft: .succeeded, decision: nil) == ["draft-ready"])
-        #expect(ListFilter.askStates(posted: true, handoff: false, draft: .succeeded, decision: nil) == ["reply-posted"])
-        #expect(ListFilter.askStates(posted: false, handoff: false, draft: nil, decision: .succeeded) == ["reply-posted"])
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: nil, decision: nil, decided: false) == [needs])
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: .running, decision: nil, decided: false) == [needs, "working"])
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: .succeeded, decision: nil, decided: false) == ["draft-ready"])
+        #expect(ListFilter.askStates(posted: true, handoff: false, draft: .succeeded, decision: nil, decided: false) == ["reply-posted"])
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: nil, decision: .succeeded, decided: true) == ["reply-posted"])
+        // A decision that left the question to me posted nothing: it still needs a reply.
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: nil, decision: .succeeded, decided: false) == [needs])
+        // A decision running beside a ready draft is still working.
+        #expect(ListFilter.askStates(posted: false, handoff: false, draft: .succeeded, decision: .running, decided: false) == ["draft-ready", "working"])
         // A failed draft still needs me, and shows under Failed too.
-        #expect(ListFilter.askStates(posted: false, handoff: true, draft: .failed, decision: nil) == [needs, "failed", "handed-off"])
+        #expect(ListFilter.askStates(posted: false, handoff: true, draft: .failed, decision: nil, decided: false) == [needs, "failed", "handed-off"])
     }
 
     @Test func readyIssueStatesFollowAssigneesAndTheNewestJob() {

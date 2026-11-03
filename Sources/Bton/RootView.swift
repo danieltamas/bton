@@ -29,9 +29,8 @@ struct RootView: View {
     @State private var repo: String?
     /// What the PR, job and merged lists are narrowed to while typed; each tab counts its matches.
     @State private var query = ""
-    /// The kind or state each tab's list is narrowed to (`ListFilter.id`); a tab keeps its
-    /// choice while I look at another.
-    @State private var filters: [Tab: String] = [:]
+    /// The kind or state each tab's list is narrowed to; a tab keeps its choice while I look at another.
+    @State private var filters: [Tab: ListFilter] = [:]
     @Namespace private var island
     @State private var tabBarWidth: CGFloat = 0
     @State private var visible = true
@@ -347,15 +346,17 @@ struct RootView: View {
     /// The lists as shown: narrowed to the chosen repo, to the search, then each to its tab's filter.
     private func listed(_ search: SearchQuery) -> Listed {
         let lists = narrowed(search)
-        let keep = { (tab: Tab, ids: Set<String>) in filters[tab].map(ids.contains) ?? true }
+        // A row is classified only under a filter: with none, nothing reads the jobs per row.
+        let keep = { (tab: Tab, ids: () -> Set<String>) in filters[tab].map { ids().contains($0.id) } ?? true }
         return Listed(
-            pullRequests: lists.pullRequests.filter { keep(.pullRequests, store.filterIds($0)) },
-            asks: lists.asks.filter { keep(.issues, store.filterIds($0)) },
-            ready: lists.ready.filter { keep(.issues, store.filterIds($0)) },
-            triage: lists.triage.filter { keep(.triage, ListFilter.triageIds(labels: $0.labels)) },
-            hits: lists.hits,
-            jobs: lists.jobs.filter { keep(.jobs, ListFilter.jobIds($0)) },
-            merged: lists.merged.filter { keep(.merged, ListFilter.mergedIds(author: $0.author, me: store.me)) },
+            pullRequests: lists.pullRequests.filter { pr in keep(.pullRequests) { store.filterIds(pr) } },
+            asks: lists.asks.filter { ask in keep(.issues) { store.filterIds(ask) } },
+            ready: lists.ready.filter { issue in keep(.issues) { store.filterIds(issue) } },
+            triage: lists.triage.filter { issue in keep(.triage) { ListFilter.triageIds(labels: issue.labels) } },
+            // A GitHub hit has no state to filter on: under a filter the tab shows only what it can classify.
+            hits: SearchHits(triage: filters[.triage] == nil ? lists.hits.triage : [], issues: filters[.issues] == nil ? lists.hits.issues : []),
+            jobs: lists.jobs.filter { job in keep(.jobs) { ListFilter.jobIds(job) } },
+            merged: lists.merged.filter { pr in keep(.merged) { ListFilter.mergedIds(author: pr.author, me: store.me) } },
             repoJobs: lists.repoJobs)
     }
 
@@ -383,7 +384,12 @@ struct RootView: View {
         let known = Dictionary(store.openPullRequests.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }
             + store.merged.map { ("\($0.repo)#\($0.number)", [$0.title, $0.author]) }) { first, _ in first }
         let asks = store.issueAsks.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title, $0.asker]) }
-        let ready = store.ready.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title] + $0.assignees) }
+        // An issue with a question for me is one card, the question (IssueAskList): its ready row is not listed or counted.
+        let asked = Set(asks.map { "\($0.repo.lowercased())#\($0.number)" })
+        let ready = store.ready.filter {
+            keep($0.repo) && !asked.contains("\($0.repo.lowercased())#\($0.number)")
+                && search.matches(numbers: [$0.number], texts: [$0.title] + $0.assignees)
+        }
         let triage = store.triage.filter { keep($0.repo) && search.matches(numbers: [$0.number], texts: [$0.title]) }
         return Listed(
             pullRequests: store.openPullRequests.filter {
@@ -525,7 +531,7 @@ struct RootView: View {
                 }
             }
             if tab != .schedule, !search.isEmpty || filters[tab] != nil, lists.count(for: tab) == 0 {
-                noMatch(search, lists: lists, filter: filterOptions(for: tab, in: searched).first { $0.filter.id == filters[tab] }?.filter)
+                noMatch(search, lists: lists, filter: filters[tab])
             } else {
                 switch tab {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,

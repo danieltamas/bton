@@ -7,10 +7,17 @@ import SwiftUI
 struct ListFilterMenu: View {
     /// The filters the tab offers, each with how many rows it would show now.
     let options: [(filter: ListFilter, count: Int)]
-    @Binding var selection: String?
+    @Binding var selection: ListFilter?
     @State private var open = false
 
-    private var chosen: (filter: ListFilter, count: Int)? { options.first { $0.filter.id == selection } }
+    /// The chosen filter stays in view with its count at zero when the list no longer offers it (a
+    /// move searched away, a label of another repo): it still narrows the list, so it must still clear.
+    private var shown: [(filter: ListFilter, count: Int)] {
+        guard let selection, !options.contains(where: { $0.filter.id == selection.id }) else { return options }
+        return options + [(filter: selection, count: 0)]
+    }
+
+    private var chosen: (filter: ListFilter, count: Int)? { shown.first { $0.filter.id == selection?.id } }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -42,8 +49,8 @@ struct ListFilterMenu: View {
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 row(nil, title: "Everything", count: nil)
-                ForEach(options, id: \.filter.id) { option in
-                    row(option.filter.id, title: option.filter.title, count: option.count)
+                ForEach(shown, id: \.filter.id) { option in
+                    row(option.filter, title: option.filter.title, count: option.count)
                 }
             }
             .padding(6)
@@ -51,28 +58,29 @@ struct ListFilterMenu: View {
         }
     }
 
-    private func row(_ id: String?, title: String, count: Int?) -> some View {
-        Button {
-            withAnimation(Motion.snappy) { selection = id }
+    private func row(_ item: ListFilter?, title: String, count: Int?) -> some View {
+        let picked = selection?.id == item?.id
+        return Button {
+            withAnimation(Motion.snappy) { selection = item }
             open = false
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).opacity(selection == id ? 1 : 0)
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).opacity(picked ? 1 : 0)
                     .accessibilityHidden(true)
                 Text(title).font(.system(size: 12))
                 Spacer(minLength: 12)
                 if let count {
                     Text("\(count)").font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(selection == id ? Theme.mint : Theme.textTertiary)
+                        .foregroundStyle(picked ? Theme.mint : Theme.textTertiary)
                 }
             }
-            .foregroundStyle(selection == id ? Theme.mint : Theme.textPrimary)
+            .foregroundStyle(picked ? Theme.mint : Theme.textPrimary)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .pointingHandCursor()
-        .accessibilityAddTraits(selection == id ? .isSelected : [])
+        .accessibilityAddTraits(picked ? .isSelected : [])
     }
 }
 
@@ -90,8 +98,10 @@ extension AppStore {
 
     /// The states of a question for me, as its card shows them.
     func filterIds(_ ask: IssueAsk) -> Set<String> {
-        ListFilter.askStates(posted: postedAsks.contains(ask.notice), handoff: ask.handoff,
-                             draft: draft(for: ask)?.status, decision: decision(for: ask)?.status)
+        let decision = decision(for: ask)
+        return ListFilter.askStates(posted: postedAsks.contains(ask.notice), handoff: ask.handoff, draft: draft(for: ask)?.status,
+                                    decision: decision?.status,
+                                    decided: decision?.status == .succeeded && decision?.detail?.hasPrefix(IssueDecisions.leftToYou) != true)
     }
 
     /// The states of a ready issue, from its assignees and its newest job on this Mac.
