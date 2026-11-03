@@ -48,5 +48,9 @@ extension AppStore {
         for pr in merged where !before.merged.contains(pr.id) && pr.author.caseInsensitiveCompare(me) == .orderedSame {
             Notifier.post(title: "Merged · #\(pr.number)", body: pr.title, id: "merged-\(pr.id)")
         }
+        for flake in flakes {
+            Notifier.post(title: "Flaky check \(flake.check) on #\(flake.number)", body: "red then green on the same commit",
+                          id: "flake-\(flake.repo)-\(flake.number)-\(flake.check)-\(flake.head)")
+        }
     }
 }

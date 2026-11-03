@@ -26,6 +26,8 @@ final class AppStore {
     private(set) var waiting: [String: String] = [:]
     /// Repos whose jobs wait because a service of theirs does not answer, slugs lowercased, with the reason.
     private(set) var outages: [String: String] = [:]
+    /// Checks the last sync saw turn red then green on one commit: told once, as they come.
+    private(set) var flakes: [Flake] = []
     /// The PRs each schedule's agent works on, read from its session every few seconds.
     let work = ScheduleWork()
     let local = LocalSync()
@@ -741,6 +743,7 @@ final class AppStore {
         next = snapshot.next
         waiting = snapshot.waiting
         outages = snapshot.outages
+        flakes = snapshot.flakes
         problem = snapshot.problem
         loggedOut = snapshot.loggedOut
         // A failed read keeps the last good lists rather than blanking them: every list when the

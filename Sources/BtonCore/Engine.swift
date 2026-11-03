@@ -39,6 +39,8 @@ public actor Engine {
         public var loggedOut: [String] = []
         /// Each read repo's feature registry with every feature's standing, by slug.
         public var features: [String: FeatureReport] = [:]
+        /// Checks seen red then green on one commit this tick (`Flakes`).
+        public var flakes: [Flake] = []
 
         public init() {}
     }
@@ -116,6 +118,9 @@ public actor Engine {
     /// What the last sync read of each repo, by lowercased slug: a New issue turn starts from it
     /// while it is under one poll old (`composeTick`), instead of reading GitHub again.
     var lastReads: [String: RepoRead] = [:]
+    /// Each repo's check states at the last read, by lowercased slug then head and check name: a
+    /// check red there and green now on the same head is a flake (`Flakes.flips`).
+    var checkStates: [String: [String: [String: CheckResult.State]]] = [:]
     /// When each repo's open issues were last read in full, and how many pages, by lowercased slug.
     var lastIssueReads: [String: (at: Date, pages: Int)] = [:]
     /// The environment holds the last sync found, by lowercased slug: a quick tick shows them
@@ -275,6 +280,7 @@ public actor Engine {
                                         pullRequests: pullRequests, merged: merged, at: .now)
                     reads.append(kept)
                     lastReads[repo.slug.lowercased()] = kept
+                    snapshot.flakes += await recordFlakes(pullRequests, repo: repo.slug)
                     // A flow with issue moves is about the issues nobody looked at, which are the
                     // oldest: every page is read, not the newest one.
                     if repo.worksIssues(me: read.viewer), status.flow?.issues?.isEmpty == false { issuePages[repo.slug.lowercased()] = Self.issuePageCap }
@@ -792,6 +798,28 @@ public actor Engine {
     /// A label whose holder crashed or lost its lease comes off once the lease is free or gone. The
     /// PRs read longest ago go first, so ten held ones never hide the rest. A lease claimed while
     /// this ran gets its label back.
+    /// A check read red on an earlier tick and green now, on the same head, is recorded in
+    /// `flakes.json` and the PR gets its `flaky:<check>` label, so a fix move on that check is told
+    /// to rerun before it changes code. Nothing here softens a check.
+    private func recordFlakes(_ pullRequests: [PullRequest], repo: String) async -> [Flake] {
+        let slug = repo.lowercased()
+        let flips = Flakes.flips(previous: checkStates[slug] ?? [:], pullRequests: pullRequests, repo: repo, now: .now)
+        checkStates[slug] = Flakes.states(pullRequests)
+        guard !flips.isEmpty else { return [] }
+        var store = FlakeStore.load(home: home)
+        store.flakes = flips + store.flakes
+        do { try store.pruned().save(home: home) } catch { log("\(repo): could not save flakes.json: \(error.localizedDescription)") }
+        for flake in flips {
+            log("\(repo)#\(flake.number): check \(flake.check) turned red then green on \(flake.head.prefix(7))")
+            do {
+                try await github.addLabel(Flakes.label(for: flake.check), repo: repo, number: flake.number, description: Flakes.labelDescription)
+            } catch {
+                log("\(repo)#\(flake.number): could not add the flaky label: \(error.localizedDescription)")
+            }
+        }
+        return flips
+    }
+
     private func clearWorkLabels(_ prs: [PullRequest], repo: WatchedRepo, leases: LeaseStore) async {
         guard let label = repo.workLabel else { return }
         let oldestFirst = prs.filter { $0.labels.contains { $0.caseInsensitiveCompare(label) == .orderedSame } }
