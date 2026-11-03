@@ -756,9 +756,10 @@ actor Dispatcher {
 
     /// How often the agent asked the code graph, for a job whose worktree had one: Claude's own
     /// transcript or the codex sessions of the worktree. "unknown" when neither can be read, so
-    /// a missing transcript never reads as an agent that searched the tree instead.
+    /// a missing transcript never reads as an agent that searched the tree instead. A command
+    /// job (a merge, a check) has no agent and nothing to count: no line.
     private func graphQueries(of job: Job) async -> String? {
-        guard let worktree = job.worktree,
+        guard job.agent != nil, let worktree = job.worktree,
               FileManager.default.fileExists(atPath: URL(fileURLWithPath: worktree).appendingPathComponent(CodeGraph.linkName).path)
         else { return nil }
         let (id, start, end) = (job.id, job.startedAt, job.endedAt ?? .now)
