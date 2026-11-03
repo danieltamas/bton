@@ -542,6 +542,9 @@ final class AppStore {
         defer { labelEdits[issue.id] = nil }
         guard let github else { throw CocoaError(.fileNoSuchFile) }
         try await github.editIssueLabels(add: edit.add, remove: edit.remove, repo: issue.repo, number: issue.number, giveBack: giveBack)
+        // The engine's list shows the edit now, and the sync in flight cannot put the old labels back.
+        await engine?.noteLabelEdit(repo: issue.repo, number: issue.number, add: edit.add, remove: edit.remove,
+                                    unassign: giveBack ? me : nil)
         let changed = issue.with(labels: RepoLabels.apply(edit, to: issue.labels))
         if changed.isSettled || !triage.contains(where: { $0.id == issue.id }) {
             // Settled, or edited on an Issues row: the rows come from the sync, so one runs now.

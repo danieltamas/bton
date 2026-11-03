@@ -85,7 +85,10 @@ public struct RepoLabels: Codable, Sendable {
 
     /// `issueLabels` after an edit, in the order GitHub will list them back: the kept ones first.
     public static func apply(_ edit: (add: [String], remove: [String]), to issueLabels: [String]) -> [String] {
-        issueLabels.filter { label in !edit.remove.contains { $0.caseInsensitiveCompare(label) == .orderedSame } } + edit.add
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        let kept = issueLabels.filter { label in !edit.remove.contains { same($0, label) } }
+        // An edit laid over a read that already shows it adds nothing twice.
+        return kept + edit.add.filter { added in !kept.contains { same($0, added) } }
     }
 
     // MARK: the file

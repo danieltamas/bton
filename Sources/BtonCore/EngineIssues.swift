@@ -39,6 +39,7 @@ extension Engine {
         let slug = repo.lowercased()
         let revision = (issueRevisions[slug] ?? 0) + 1
         issueRevisions[slug] = revision
+        let started = Date.now
         var issues: [OpenIssue] = [], after: String?
         for page in 1...pages {
             do {
@@ -55,10 +56,49 @@ extension Engine {
         guard issueRevisions[slug] == revision else { return false }
         var seen = Set<Int>()
         openIssues[slug] = issues.filter { seen.insert($0.number).inserted }
+        // An edit made here after this read began is not in what GitHub answered: it stays on
+        // top until a read that started after it; one this read already saw is done with.
+        let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
+        labelEdits[slug] = kept.isEmpty ? nil : kept
+        for edit in kept { applyLabelEdit(edit, in: slug) }
         issuesReadThisTick.insert(slug)
         lastIssueReads[slug] = (.now, pages)
         if after == nil { issuesMore.remove(slug) } else { issuesMore.insert(slug) }
         return true
+    }
+
+    /// A label edit made on this Mac, as the engine keeps it until a read sees it on GitHub.
+    public struct LabelEdit: Sendable {
+        public let number: Int
+        public let add: [String]
+        public let remove: [String]
+        /// The login the edit took off the issue (a give-back), if any.
+        public let unassign: String?
+        public let at: Date
+    }
+
+    /// An edit the reads never confirm (a repo gone from the config, a read failing for long) is
+    /// forgotten after this.
+    public static let labelEditTTL: TimeInterval = 600
+
+    /// A label edit this Mac just made on GitHub: the issue shows it at once, and a read that
+    /// started before the edit (a sync in flight when the owner pressed) cannot put the old
+    /// labels back. The edit is dropped by the first read that started after it.
+    public func noteLabelEdit(repo: String, number: Int, add: [String], remove: [String], unassign: String? = nil) {
+        let slug = repo.lowercased()
+        let edit = LabelEdit(number: number, add: add, remove: remove, unassign: unassign, at: .now)
+        labelEdits[slug, default: []].append(edit)
+        applyLabelEdit(edit, in: slug)
+    }
+
+    private func applyLabelEdit(_ edit: LabelEdit, in slug: String) {
+        guard let index = openIssues[slug]?.firstIndex(where: { $0.number == edit.number }) else { return }
+        let issue = openIssues[slug]![index]
+        let assignees = issue.assignees.filter { assignee in
+            edit.unassign.map { $0.caseInsensitiveCompare(assignee) != .orderedSame } ?? true
+        }
+        openIssues[slug]![index] = issue.with(labels: RepoLabels.apply((add: edit.add, remove: edit.remove), to: issue.labels),
+                                              assignees: assignees, stateChangedAt: edit.at)
     }
 
     /// Load more: the next sync reads one page more of the repo's issues, and keeps doing so.

@@ -81,6 +81,12 @@ import Testing
         #expect(applied == ["priority:high", "bug", "stage:ready"])
     }
 
+    @Test func applyingAnEditDoesNotAddHeldLabelsIgnoringCase() {
+        let applied = RepoLabels.apply((add: ["stage:ready", "Type:Bug"], remove: ["stage:spec"]),
+                                      to: ["priority:high", "stage:spec", "type:bug"])
+        #expect(applied == ["priority:high", "type:bug", "stage:ready"])
+    }
+
     @Test func cachePersistsReposAndTrustsOnlyRecordsLessThanADayOld() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

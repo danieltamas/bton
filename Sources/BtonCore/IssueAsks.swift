@@ -43,6 +43,14 @@ public struct OpenIssue: Hashable, Sendable {
                   authorAssociation: authorAssociation, body: body, comments: comments.sorted { $0.createdAt < $1.createdAt },
                   labels: labels, assignees: assignees, stateChangedAt: stateChangedAt)
     }
+
+    /// The same issue after a label edit made here: the labels replaced, and when given, the
+    /// assignees and the moment its state changed.
+    public func with(labels: [String], assignees: [String]? = nil, stateChangedAt: Date? = nil) -> OpenIssue {
+        OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
+                  authorAssociation: authorAssociation, body: body, comments: comments,
+                  labels: labels, assignees: assignees ?? self.assignees, stateChangedAt: stateChangedAt ?? self.stateChangedAt)
+    }
 }
 
 /// One page of a repo's open issues, with the cursor of the next.

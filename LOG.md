@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A label you set stays set.** Setting stage:ready from an issue's label chip or the triage steps went through on GitHub, Bton dropped the issue from the list and synced, and a moment later the issue was back at stage:spec: a sync was in flight when you pressed, its read of the issues had started before the write, and its result landed after it with the old labels. Bton now keeps every label edit made on this Mac until a read that started after it comes back, lays it over any older read in the meantime, and shows it in the list at once; the edit a sent reply makes gets the same.
+
 ## 0.31.1 (2026-11-03)
 
 **A command job's log no longer ends with "graph queries: unknown".** The line counts how often the agent asked the code graph, read from the agent's transcript when the job ends. A merge or a check that runs a command has no agent and no transcript, so every such job ended with "unknown" as if a count had been lost. The line is written for agent jobs only.

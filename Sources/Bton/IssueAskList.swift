@@ -66,6 +66,7 @@ extension AppStore {
             } else {
                 do {
                     try await github.editIssueLabels(add: draft.add, remove: draft.remove, repo: ask.repo, number: ask.number)
+                    await engine?.noteLabelEdit(repo: ask.repo, number: ask.number, add: draft.add, remove: draft.remove)
                 } catch {
                     incomplete.append("the labels were not set (\(labels)): \(error.localizedDescription)")
                 }

@@ -92,6 +92,9 @@ public actor Engine {
     /// Each repo's issue read in flight, by lowercased slug, with the page count it asked for: a
     /// second caller waits for it instead of racing it (a Load more during a sync's read, or the reverse).
     var issueReads: [String: (id: UUID, pages: Int, task: Task<Bool, Never>)] = [:]
+    /// Label edits made here, by lowercased slug, until a read that started after each one lands:
+    /// a read in flight at the edit would otherwise put the old labels back (lexito.ro #19, 2026-11-03).
+    var labelEdits: [String: [LabelEdit]] = [:]
     /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
     var draftRequests: [IssueAsk] = []
     var composeRequests: [NewIssues.Request] = []
@@ -586,6 +589,12 @@ public actor Engine {
     /// The snapshot with this Mac's jobs, picks and costs, newest first.
     private func decorated(_ read: Snapshot) -> Snapshot {
         var snapshot = read
+        // The rows were built before dispatch; a label edit made here since then (the owner
+        // pressed while the tick ran) is in the list, not in those rows: those repos' rows again.
+        if !labelEdits.isEmpty {
+            snapshot.triage.removeAll { labelEdits[$0.repo.lowercased()] != nil }
+            snapshot.triage = IssueTriage.ordered(snapshot.triage + labelEdits.keys.flatMap { IssueTriage.pending(openIssues[$0] ?? []) })
+        }
         snapshot.jobs = jobs.all()
         snapshot.next = next
         snapshot.waiting = waiting.filter { next.contains($0.key) }
