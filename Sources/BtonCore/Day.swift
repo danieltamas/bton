@@ -14,13 +14,18 @@ public enum Day {
         formatter(in: utc).date(from: text)
     }
 
+    /// `date` to the minute, UTC: `yyyy-MM-dd HH:mm UTC`, for a record that says when it was taken.
+    public static func minute(_ date: Date) -> String {
+        formatter(in: utc, format: "yyyy-MM-dd HH:mm").string(from: date) + " UTC"
+    }
+
     public static let utc = TimeZone(identifier: "UTC")!
 
-    private static func formatter(in zone: TimeZone) -> DateFormatter {
+    private static func formatter(in zone: TimeZone, format: String = "yyyy-MM-dd") -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = zone
-        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.dateFormat = format
         return formatter
     }
 }

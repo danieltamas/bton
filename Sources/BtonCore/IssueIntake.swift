@@ -174,9 +174,25 @@ public enum IssueIntake {
     /// agent, model and effort for the repo. `requested` is an issue the owner pressed Take on: it goes
     /// first, past the caps, but through every other gate. `resumeOnly`: only an issue of mine whose job
     /// is asked to run again, for a repo that does not start its moves.
+    public static let criterionFile = "criterion.md"
+    public static let criterionLimit = 12_000
+    public static let criterionLine = "The bar for this job is criterion.md in the scratch directory: the issue as it stood when the "
+        + "job started. An edit to the issue after that is not part of this job: mention it in the PR instead."
+
+    /// The issue as it stood when the job started, kept in the job's scratch directory: the bar
+    /// the work is judged against, which an edit to the issue mid-job does not move. Issue text
+    /// is data and goes in as written; a body past the limit is cut and says so.
+    public static func criterion(for issue: OpenIssue, at time: Date) -> String {
+        var body = issue.body
+        if body.count > criterionLimit {
+            body = String(body.prefix(criterionLimit)) + "\n(cut at \(criterionLimit) characters)"
+        }
+        return "# Issue #\(issue.number) as it stood on \(Day.minute(time))\n\n\(issue.title)\n\n\(body)"
+    }
+
     public static func candidate(issues: [OpenIssue], intake: Intake, caps: Caps?, pullRequests: [PullRequest], jobs: [Job],
                                  repo: String, base: String, me: String, agents: [String: AgentTemplate],
-                                 work: AgentPick? = nil, requested: Int? = nil, resumeOnly: Bool = false) -> DispatchCandidate? {
+                                 work: AgentPick? = nil, requested: Int? = nil, resumeOnly: Bool = false, now: Date = .now) -> DispatchCandidate? {
         guard agents[work?.agent ?? intake.agent] != nil, !base.isEmpty,
               let terms = terms(intake.search, repo: repo),
               !jobs.contains(where: { $0.status == .running && $0.key.move == move && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame })
@@ -190,7 +206,7 @@ public enum IssueIntake {
             return (issue, latest.key)
         }.first
         if let (issue, key) = retried,
-           let made = candidate(for: issue, key: key, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work, costCap: caps?.costPerJob) {
+           let made = candidate(for: issue, key: key, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work, costCap: caps?.costPerJob, now: now) {
             return made
         }
         // A repo that does not start its moves still finishes what was already begun, and takes nothing new.
@@ -199,7 +215,7 @@ public enum IssueIntake {
         if let requested,
            let asked = issues.first(where: { $0.number == requested && eligible($0, terms: terms) && !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }) {
             return candidate(for: asked, key: key(repo: repo, number: asked.number, round: round(of: asked)),
-                             intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob)
+                             intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob, now: now)
         }
         if let caps {
             let mine = pullRequests.filter { $0.author.caseInsensitiveCompare(me) == .orderedSame }.count
@@ -210,7 +226,7 @@ public enum IssueIntake {
             .first { !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }
         return taken.flatMap {
             candidate(for: $0, key: key(repo: repo, number: $0.number, round: round(of: $0)),
-                      intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob)
+                      intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob, now: now)
         }
     }
 
@@ -231,7 +247,7 @@ public enum IssueIntake {
     }
 
     private static func candidate(for issue: OpenIssue, key: JobKey, intake: Intake, terms: Terms, repo: String, base: String, me: String,
-                                  resumes: Bool, work: AgentPick?, costCap: Decimal? = nil) -> DispatchCandidate? {
+                                  resumes: Bool, work: AgentPick?, costCap: Decimal? = nil, now: Date) -> DispatchCandidate? {
         guard let type = type(of: issue.labels, rule: intake.type) else { return nil }
         let values = ["{repo}": repo, "{issue}": String(issue.number), "{base}": base, "{type}": type]
         let filling = { (template: String) in DispatchPlanner.fill(template, values) }
@@ -240,11 +256,14 @@ public enum IssueIntake {
         guard isRelative(plan.worktreePath) else { return nil }
         var made = DispatchCandidate(target: .issue(plan), move: Move(name: move, owner: me, ownerFromRotation: false, tier: "", hasDispatch: true),
                                      key: key, agent: work?.agent ?? intake.agent,
-                                     prompt: filling(intake.prompt), command: nil, postComment: false,
+                                     prompt: filling(intake.prompt) + "\n\n" + criterionLine, command: nil, postComment: false,
                                      timeout: .seconds(60 * (intake.timeoutMinutes ?? 60)))
         made.model = work?.model
         made.effort = work?.effort
         made.costCap = costCap
+        // Never through `filling`: a `{base}` in the issue's text stays as the issue wrote it.
+        made.attachments[criterionFile] = criterion(for: issue, at: now)
+        made.proof = (intake.proof ?? []).map { $0.map(filling) }
         return made
     }
 
