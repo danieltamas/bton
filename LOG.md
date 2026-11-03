@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A filter beside every search box.** Each tab's search row has the dropdown the repo page already had: everything, or one kind or state of row with its count. Issues narrows to the questions that still need a reply, those with a draft ready or a reply posted, the ones handed to you, and the ready issues unclaimed, owned, working or failed. PRs narrows to mine, unassigned, working, draft, conflicts or one move; Triage to a type or priority label; Jobs to a status, the flagged ones or a move; Merged to mine. The tab's badge counts what the filter leaves, the choice stays while you look at another tab, and the cross beside it clears it.
+
 ## 0.34.0 (2026-11-03)
 
 **What a failure is, and whether it keeps happening.** Every failed job now has a cause (`check:<argv>`, `red:<checks>`, `timeout`, `no-push`, `agent-exit:<n>`, `lease-lost`, `post-failed`, `proof-red`, `environment`...), and a cause that failed the same way on another item of the repo in the last 14 days flags the job `recurring`. The supervisor's facts name the cause and the items it recurred on, and its prompt says a recurring cause is a setup problem: prefer propose, and say which rule or check would catch it before the next run.

@@ -29,6 +29,9 @@ struct RootView: View {
     @State private var repo: String?
     /// What the PR, job and merged lists are narrowed to while typed; each tab counts its matches.
     @State private var query = ""
+    /// The kind or state each tab's list is narrowed to (`ListFilter.id`); a tab keeps its
+    /// choice while I look at another.
+    @State private var filters: [Tab: String] = [:]
     @Namespace private var island
     @State private var tabBarWidth: CGFloat = 0
     @State private var visible = true
@@ -329,7 +332,7 @@ struct RootView: View {
 
     private func count(for tab: Tab) -> Int {
         let search = SearchQuery(query)
-        if !search.isEmpty, tab != .schedule { return listed(search).count(for: tab) }
+        if !search.isEmpty || filters[tab] != nil, tab != .schedule { return listed(search).count(for: tab) }
         return switch tab {
         case .pullRequests: store.openPullRequests.count
         case .issues: store.issueAsks.count + store.ready.count
@@ -341,8 +344,39 @@ struct RootView: View {
         }
     }
 
-    /// The lists as shown: narrowed to the chosen repo, then to the search.
+    /// The lists as shown: narrowed to the chosen repo, to the search, then each to its tab's filter.
     private func listed(_ search: SearchQuery) -> Listed {
+        let lists = narrowed(search)
+        let keep = { (tab: Tab, ids: Set<String>) in filters[tab].map(ids.contains) ?? true }
+        return Listed(
+            pullRequests: lists.pullRequests.filter { keep(.pullRequests, store.filterIds($0)) },
+            asks: lists.asks.filter { keep(.issues, store.filterIds($0)) },
+            ready: lists.ready.filter { keep(.issues, store.filterIds($0)) },
+            triage: lists.triage.filter { keep(.triage, ListFilter.triageIds(labels: $0.labels)) },
+            hits: lists.hits,
+            jobs: lists.jobs.filter { keep(.jobs, ListFilter.jobIds($0)) },
+            merged: lists.merged.filter { keep(.merged, ListFilter.mergedIds(author: $0.author, me: store.me)) },
+            repoJobs: lists.repoJobs)
+    }
+
+    /// The filters the tab offers over its searched list, each with the rows it would leave.
+    private func filterOptions(for tab: Tab, in lists: Listed) -> [(filter: ListFilter, count: Int)] {
+        let counted = { (filters: [ListFilter], ids: [Set<String>]) in
+            filters.map { filter in (filter: filter, count: ids.filter { $0.contains(filter.id) }.count) }
+        }
+        return switch tab {
+        case .pullRequests:
+            counted(ListFilter.pullRequestFilters(moves: lists.pullRequests.compactMap(\.move?.name)), lists.pullRequests.map(store.filterIds))
+        case .issues: counted(ListFilter.issueFilters, lists.asks.map(store.filterIds) + lists.ready.map(store.filterIds))
+        case .triage: counted(ListFilter.triageFilters(labels: lists.triage.map(\.labels)), lists.triage.map { ListFilter.triageIds(labels: $0.labels) })
+        case .jobs: counted(ListFilter.jobFilters(lists.jobs), lists.jobs.map(ListFilter.jobIds))
+        case .schedule: []
+        case .merged: counted(ListFilter.mergedFilters, lists.merged.map { ListFilter.mergedIds(author: $0.author, me: store.me) })
+        }
+    }
+
+    /// The lists narrowed to the chosen repo, then to the search.
+    private func narrowed(_ search: SearchQuery) -> Listed {
         let shown = filterRepos.contains(repo ?? "") ? repo : nil
         let keep = { (slug: String) in shown == nil || slug == shown }
         // A job matches its PRs' titles and authors too.
@@ -473,11 +507,13 @@ struct RootView: View {
     @ViewBuilder private func tabContent(showRepo: Bool) -> some View {
         let shown = filterRepos.contains(repo ?? "") ? repo : nil
         let search = SearchQuery(query)
+        let searched = narrowed(search)
         let lists = listed(search)
         VStack(spacing: 0) {
             if tab != .schedule {
                 HStack(spacing: 8) {
                     SearchField(text: $query)
+                    ListFilterMenu(options: filterOptions(for: tab, in: searched), selection: $filters[tab])
                     // Nothing to choose between with one repo.
                     if store.repos.count > 1 { RepoFilter(repos: filterRepos, selection: $repo) }
                 }
@@ -488,8 +524,8 @@ struct RootView: View {
                                              repos: shown.map { [$0] } ?? store.repos.map(\.slug))
                 }
             }
-            if tab != .schedule, !search.isEmpty, lists.count(for: tab) == 0 {
-                noMatch(search, lists: lists)
+            if tab != .schedule, !search.isEmpty || filters[tab] != nil, lists.count(for: tab) == 0 {
+                noMatch(search, lists: lists, filter: filterOptions(for: tab, in: searched).first { $0.filter.id == filters[tab] }?.filter)
             } else {
                 switch tab {
                 case .pullRequests: PullRequestList(items: lists.pullRequests, showRepo: showRepo, me: store.me,
@@ -507,9 +543,14 @@ struct RootView: View {
     }
 
     /// Where else the search finds something, so a merged PR searched under PRs is one click away.
-    private func noMatch(_ search: SearchQuery, lists: Listed) -> some View {
+    private func noMatch(_ search: SearchQuery, lists: Listed, filter: ListFilter?) -> some View {
         let elsewhere = [Tab.pullRequests, .issues, .triage, .jobs, .merged].filter { lists.count(for: $0) > 0 }
             .map { "\($0.rawValue) (\(lists.count(for: $0)))" }
+        // A filter with nothing under it is the tab's own emptiness; the search's hits elsewhere still help.
+        if let filter, search.isEmpty {
+            return EmptyState(symbol: "line.3.horizontal.decrease", title: "Nothing here is \(filter.title.lowercased())",
+                              detail: "Clear the filter beside the search box to see every row again.")
+        }
         return EmptyState(symbol: "magnifyingglass", title: "Nothing here matches \(search.text)",
                           detail: elsewhere.isEmpty
                               ? "Search covers open PRs, questions on issues, this Mac's jobs and GitHub's latest merged PRs."
