@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.33.0 (2026-11-03)
 
 **A Costs pane, and job records that fold into month ledgers.** Settings > Costs shows what the agents this Mac started have cost: the last 30 days as bars (a click lists that day's jobs, each with what its own session, its second reviewer, its helpers and codex spent), a table by project, hat, move, agent or model over today, 7 days, 30 days or the month, and every month with its projects. A finished job's record now stays 90 days (30, 60, 90 or 180 in the pane) and is then folded into `~/.bton/costs/<month>.json`, which stays; a schedule's newest run and newest success are kept whatever their age. This Mac only: your own sessions and teammates' Macs are not counted.
 
