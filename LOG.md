@@ -4,7 +4,7 @@ What changed in each release, newest first. Each entry is also that release's no
 
 ## Unreleased
 
-**A filter beside every search box.** Each tab's search row has the dropdown the repo page already had: everything, or one kind or state of row with its count. Issues narrows to the questions that still need a reply, those with a draft ready or a reply posted, the ones handed to you, and the ready issues unclaimed, owned, working or failed. PRs narrows to mine, unassigned, working, draft, conflicts or one move; Triage to a type or priority label; Jobs to a status, the flagged ones or a move; Merged to mine. The tab's badge counts what the filter leaves, the choice stays while you look at another tab, and the cross beside it clears it.
+**A filter beside every search box.** Each tab's search row has the dropdown the repo page already had: everything, or one kind or state of row with its count. Issues narrows to the questions that still need a reply, those with a draft ready or a reply posted, the ones handed to you, and the ready issues unclaimed, owned, working or failed. PRs narrows to mine, unassigned, working, draft, conflicts or one move; Triage to a type or priority label; Jobs to a status, the flagged ones or a move; Merged to mine. The tab's badge counts what the filter leaves, the choice stays while you look at another tab, and the cross beside it clears it. The repo dropdown next to it now wears a folder, so the two read apart, and the search row ends where the list ends.
 
 ## 0.34.0 (2026-11-03)
 

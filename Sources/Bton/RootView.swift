@@ -523,6 +523,8 @@ struct RootView: View {
                     // Nothing to choose between with one repo.
                     if store.repos.count > 1 { RepoFilter(repos: filterRepos, selection: $repo) }
                 }
+                // The row carries the gutter, so its last control ends where the list ends, not at the window's edge.
+                .padding(.horizontal, 14)
                 .padding(.bottom, 8)
                 // The issue tabs search GitHub as well as the synced issues.
                 .task(id: "\(tab == .issues || tab == .triage ? query : "")|\(shown ?? "")") {

@@ -27,7 +27,6 @@ struct SearchField: View {
         }
         .fieldCapsule(active: focused)
         .animation(Motion.snappy, value: focused)
-        .padding(.horizontal, 14)
     }
 }
 

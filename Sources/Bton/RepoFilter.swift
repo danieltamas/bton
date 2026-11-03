@@ -13,7 +13,8 @@ struct RepoFilter: View {
     var body: some View {
         Button { open.toggle() } label: {
             HStack(spacing: 5) {
-                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10, weight: .medium))
+                // A folder, as Settings draws a repo: the funnel beside it is the kind-or-state filter.
+                Image(systemName: "folder").font(.system(size: 10, weight: .medium))
                 if let selection { Text(Self.short(selection)).font(.system(size: 11, weight: .medium)).lineLimit(1) }
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .semibold))
             }

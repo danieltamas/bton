@@ -29,7 +29,7 @@ struct RepoPage: View {
                             SearchField(text: $query, prompt: "Search: #433, a name, a word")
                             FeatureScopeFilter(report: report, selection: $filter)
                         }
-                        .padding(.trailing, 14)
+                        .padding(.horizontal, 14)
                     }
                     if let problem = report?.problem { ProblemText(text: problem).padding(.horizontal, 14) }
                     content(report).releaseAction(slug: slug, report: report).registryPreviewAction(store: store, slug: slug, report: report)
