@@ -54,6 +54,41 @@ private enum DispatchFixture {
 
 @Suite(ProcessBound())
 struct DispatchAcceptanceTests {
+    // CostAcceptanceTests prices standalone session files; this file's fixture only plans
+    // candidates. Neither it nor IntakeDispatcherAcceptanceTests can price a running fake
+    // session, so Part A3 is covered at JobBudget and candidate boundaries, not the run loop.
+    @Test(arguments: [("1.26", "1.25", "1.26", "1.25"), ("2", "1", "2.00", "1.00")])
+    func aJobOverItsBudgetExplainsTheApproximateSessionLogCost(cost: String, cap: String, spent: String, limit: String) {
+        #expect(JobBudget.overrun(cost: Decimal(string: cost), cap: Decimal(string: cap))
+            == "budget: $\(spent) spent of the $\(limit) cap (read from the session logs, so approximate)")
+    }
+
+    @Test(arguments: [Decimal(string: "1.24")!, Decimal(string: "1.25")!])
+    func aJobUnderOrExactlyAtItsBudgetMayContinue(cost: Decimal) {
+        #expect(JobBudget.overrun(cost: cost, cap: Decimal(string: "1.25")) == nil)
+    }
+
+    @Test(arguments: [(Optional<Decimal>.none, Optional(Decimal(1))),
+                      (Optional(Decimal(100)), Optional<Decimal>.none),
+                      (Optional<Decimal>.none, Optional<Decimal>.none)])
+    func anUnknownCostOrAbsentCapNeverStopsAJob(cost: Decimal?, cap: Decimal?) {
+        #expect(JobBudget.overrun(cost: cost, cap: cap) == nil)
+    }
+
+    @Test(arguments: ["agent", "command"], [false, true])
+    func prCandidatesCarryTheFlowCostCap(kind: String, capped: Bool) throws {
+        let dispatch: [String: Any] = kind == "agent"
+            ? ["agent": "claude", "prompt": "Fix #{number}"] : ["command": ["/usr/bin/true"]]
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "caps": capped ? ["costPerJob": 1.25] : [:],
+            "moves": [["move": "fix", "when": ["no_review_or_response_newer"], "who": "author"]],
+            "dispatch": ["fix": dispatch]
+        ])).flow)
+        let pr = try DispatchFixture.pr(base: flow.base, review: nil)
+        let candidate = try #require(DispatchPlanner.candidates([pr], flow: flow, me: "me", repo: pr.repo).first)
+        #expect(candidate.costCap == (capped ? Decimal(string: "1.25") : nil))
+    }
+
     @Test(arguments: ["check git merge-tree exited 1", "posting the check failure failed: offline"], [false, true])
     func retryFlagDoesNotBypassFailedCheckWithoutAnOwnerPress(detail: String, pressed: Bool) throws {
         let candidate = try DispatchFixture.review()

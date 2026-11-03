@@ -116,7 +116,13 @@ struct FlowSummary: View {
         }
         if let caps = flow.caps {
             Section(title: "Caps", note: "No issue is taken past these.") {
-                Line(key: "open PRs", value: "\(caps.openPullRequestsPerDeveloper) per developer, \(caps.openPullRequestsTeam) for the team")
+                if caps.openPullRequestsPerDeveloper != nil || caps.openPullRequestsTeam != nil {
+                    Line(key: "open PRs", value: [caps.openPullRequestsPerDeveloper.map { "\($0) per developer" },
+                                                  caps.openPullRequestsTeam.map { "\($0) for the team" }].compactMap { $0 }.joined(separator: ", "))
+                }
+                if let perDay = caps.issuesPerDay { Line(key: "issue jobs", value: "\(perDay) a day") }
+                if let hours = caps.issueCooldownHours { Line(key: "issue cooldown", value: "\(hours.formatted()) h") }
+                if let cost = caps.costPerJob { Line(key: "cost per job", value: "$\(cost) at most") }
             }
         }
         if let issues = flow.issues, !issues.isEmpty {

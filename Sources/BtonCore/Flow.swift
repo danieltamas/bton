@@ -82,6 +82,8 @@ public struct Flow: Decodable, Sendable {
         /// The Decisions table the repo keeps in an issue body: an open row addressed to the owner
         /// is an ask too, with no mention needed.
         public let table: DecisionTable?
+        /// How many times Bton rules on one issue since a person last spoke; 2 when unset.
+        public let maxRulings: Int?
     }
 
     /// How the repo's Decisions table (`| D-n | decision | ... | who | date |`) names people and
@@ -154,6 +156,11 @@ public struct Flow: Decodable, Sendable {
                     }
                 }
             }
+            // A cap of nothing would stop every issue job, or none: a typo is said, not obeyed.
+            if let cap = flow.caps?.issuesPerDay, cap <= 0 { return .invalid("caps.issuesPerDay must be above 0") }
+            if let hours = flow.caps?.issueCooldownHours, hours <= 0 { return .invalid("caps.issueCooldownHours must be above 0") }
+            if let cap = flow.caps?.costPerJob, cap <= 0 { return .invalid("caps.costPerJob must be above 0") }
+            if let rulings = flow.decide?.maxRulings, rulings <= 0 { return .invalid("decide.maxRulings must be above 0") }
             for (move, rule) in flow.dispatch {
                 // Agents given per tier leave the tiers without one to the command.
                 if rule.command != nil, let agent = rule.agent, case .same = agent {
@@ -350,8 +357,30 @@ public struct Intake: Decodable, Sendable {
 }
 
 public struct Caps: Decodable, Sendable {
-    public let openPullRequestsPerDeveloper: Int
-    public let openPullRequestsTeam: Int
+    public let openPullRequestsPerDeveloper: Int?
+    public let openPullRequestsTeam: Int?
+    /// Issue jobs started per repo in a day, every move together; `IssueMoves.dailyCap` when unset.
+    public let issuesPerDay: Int?
+    /// How long a triager's comment holds another run of the same move off; 6 h when unset.
+    public let issueCooldownHours: Double?
+    /// The most a job may spend, in USD as the session logs price it; no cap when unset.
+    public let costPerJob: Decimal?
+
+    public init(openPullRequestsPerDeveloper: Int? = nil, openPullRequestsTeam: Int? = nil, issuesPerDay: Int? = nil,
+                issueCooldownHours: Double? = nil, costPerJob: Decimal? = nil) {
+        self.openPullRequestsPerDeveloper = openPullRequestsPerDeveloper
+        self.openPullRequestsTeam = openPullRequestsTeam
+        self.issuesPerDay = issuesPerDay
+        self.issueCooldownHours = issueCooldownHours
+        self.costPerJob = costPerJob
+    }
+}
+
+extension Flow {
+    public var issuesPerDay: Int { caps?.issuesPerDay ?? IssueMoves.dailyCap }
+    public var issueCooldown: TimeInterval { caps?.issueCooldownHours.map { $0 * 3600 } ?? IssueMoves.cooldown }
+    public var maxRulings: Int { decide?.maxRulings ?? IssueDecisions.maxRulings }
+    public var costPerJob: Decimal? { caps?.costPerJob }
 }
 
 public struct Stale: Decodable, Sendable {

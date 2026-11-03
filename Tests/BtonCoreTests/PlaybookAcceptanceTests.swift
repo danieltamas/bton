@@ -6,6 +6,7 @@ import Testing
 struct PlaybookAcceptanceTests {
     @Test func unavailableHelperNeverBlocksTheCore() {
         let core = PRPlaybook.text(for: "custom-move")
+        #expect(core.contains("never contains a review routine's hidden marker"))
         #expect(core.contains("never blocks"))
         #expect(!core.contains("Ask a configured helper only when required"))
     }

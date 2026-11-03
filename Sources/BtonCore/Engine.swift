@@ -95,6 +95,8 @@ public actor Engine {
     /// Label edits made here, by lowercased slug, until a read that started after each one lands:
     /// a read in flight at the edit would otherwise put the old labels back (lexito.ro #19, 2026-11-03).
     var labelEdits: [String: [LabelEdit]] = [:]
+    /// The last tick waited on GitHub's quota; the last quota read failed. For the log lines.
+    private var rateLimited = false, rateLimitUnread = false
     /// The asks the owner pressed Draft reply on, until their job starts or the ask is gone.
     var draftRequests: [IssueAsk] = []
     var composeRequests: [NewIssues.Request] = []
@@ -240,6 +242,13 @@ public actor Engine {
             if config.isPaused {
                 await pause()
                 snapshot.paused = true
+                return decorated(snapshot)
+            }
+            // Under the floor nothing is read and nothing starts; what runs keeps running, and the
+            // lists are the last read's. A quota read that fails holds nothing: it is bookkeeping, not a gate.
+            if let hold = await rateLimitHold(floor: config.rateFloor) {
+                snapshot.problem = hold
+                keptReads(into: &snapshot, config: config)
                 return decorated(snapshot)
             }
             // Every repo is read before anything starts, so the agents go where the work is.
@@ -445,6 +454,12 @@ public actor Engine {
                 snapshot.paused = true
                 return decorated(snapshot)
             }
+            // Under the rate floor the turn waits too: a quick tick starts jobs like a full one.
+            if let hold = await rateLimitHold(floor: config.rateFloor) {
+                snapshot.problem = hold
+                keptReads(into: &snapshot, config: config)
+                return decorated(snapshot)
+            }
             let maxAge = TimeInterval(config.pollSeconds)
             let wanted = Set(composeRequests.map { $0.repo.lowercased() })
             for slug in wanted {
@@ -453,23 +468,7 @@ public actor Engine {
                       Self.isFresh(read: read.at, issues: issues.at, pages: issues.pages,
                                    wanted: max(1, issuePages[slug] ?? 1), now: .now, maxAge: maxAge) else { return nil }
             }
-            // The window shows the same lists as after the sync they come from, for the repos as
-            // the config names them now (a path or an environment changed since the sync counts).
-            let reads: [RepoRead] = config.repos.compactMap { repo in
-                guard var read = lastReads[repo.slug.lowercased()] else { return nil }
-                read.repo = repo
-                return read
-            }
-            snapshot.outages = outages
-            for read in reads {
-                snapshot.flows[read.repo.slug] = read.status
-                snapshot.me = read.viewer
-                snapshot.openPullRequests += read.pullRequests
-                snapshot.merged += read.merged
-                snapshot.defaultBranches[read.repo.slug] = read.defaultBranch
-                if let report = featureStates[read.repo.slug.lowercased()]?.report { snapshot.features[read.repo.slug] = report }
-            }
-            issueLists(into: &snapshot, config: config)
+            let reads = keptReads(into: &snapshot, config: config)
             guard let me = snapshot.me else { return nil }
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
             for read in reads where wanted.contains(read.repo.slug.lowercased()) {
@@ -584,6 +583,49 @@ public actor Engine {
         asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
         for key in refused where key.move == "resolve" { declined[key] = .now }
         declined = declined.filter { $0.value > .now.addingTimeInterval(-900) }
+    }
+
+    /// The window shows the same lists as after the sync they come from, for the repos as the
+    /// config names them now (a path or an environment changed since the sync counts).
+    @discardableResult
+    private func keptReads(into snapshot: inout Snapshot, config: BtonConfig) -> [RepoRead] {
+        let reads: [RepoRead] = config.repos.compactMap { repo in
+            guard var read = lastReads[repo.slug.lowercased()] else { return nil }
+            read.repo = repo
+            return read
+        }
+        snapshot.outages = outages
+        for read in reads {
+            snapshot.flows[read.repo.slug] = read.status
+            snapshot.me = read.viewer
+            snapshot.openPullRequests += read.pullRequests
+            snapshot.merged += read.merged
+            snapshot.defaultBranches[read.repo.slug] = read.defaultBranch
+            if let report = featureStates[read.repo.slug.lowercased()]?.report { snapshot.features[read.repo.slug] = report }
+        }
+        issueLists(into: &snapshot, config: config)
+        return reads
+    }
+
+    /// Why the sync waits on GitHub's quota, or nil. Logged once when the hold begins and once
+    /// when it ends, not every tick. Known gap: a Bton restarted under a hold adopts the jobs
+    /// that survived only when the hold ends (adoption reads GitHub); until then nobody watches
+    /// their cost cap or deadline.
+    private func rateLimitHold(floor: Int) async -> String? {
+        guard floor > 0 else { return nil }
+        let hold: String?
+        do {
+            hold = try await github.rateLimit().hold(floor: floor)
+        } catch {
+            if !rateLimitUnread { log("rate limit: could not read the quota, reading on: \(error.localizedDescription)") }
+            rateLimitUnread = true
+            return nil
+        }
+        rateLimitUnread = false
+        if let hold, !rateLimited { log("rate limit: holding, \(hold)") }
+        if hold == nil, rateLimited { log("rate limit: quota back, reading again") }
+        rateLimited = hold != nil
+        return hold
     }
 
     /// The snapshot with this Mac's jobs, picks and costs, newest first.

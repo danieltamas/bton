@@ -31,6 +31,141 @@ enum IssuePagingPayload {
 
 @Suite(ProcessBound())
 struct IssuePagingAcceptanceTests {
+    @Test func anOlderConfigDecodesAndTheInitialConfigOmitsTheRateFloor() throws {
+        let data = Data(#"{"repos":[],"pollSeconds":60,"maxAgents":1,"agents":{},"schedules":[]}"#.utf8)
+        let config = try JSONDecoder().decode(BtonConfig.self, from: data)
+        #expect(config.rateLimitFloor == nil)
+        let initial = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BtonConfig.initial)) as? [String: Any])
+        #expect(initial["rateLimitFloor"] == nil)
+    }
+
+    @Test(arguments: [0, 450])
+    func anExplicitRateFloorDecodes(floor: Int) throws {
+        let data = Data("{\"repos\":[],\"pollSeconds\":60,\"maxAgents\":1,\"agents\":{},\"schedules\":[],\"rateLimitFloor\":\(floor)}".utf8)
+        #expect(try JSONDecoder().decode(BtonConfig.self, from: data).rateLimitFloor == floor)
+    }
+
+    @Test(arguments: [false, true])
+    func rateLimitReadsBothQuotasAndUsesTheLaterReset(coreResetsLast: Bool) async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try f.rateLimit(core: 5000, graphql: 4900,
+                        coreReset: coreResetsLast ? 1_800_000_000 : 1_799_999_000,
+                        graphqlReset: coreResetsLast ? 1_799_999_000 : 1_800_000_000)
+        let quota = try await GitHubClient(ghPath: f.file("gh").path).rateLimit()
+        #expect(quota.core == 5000)
+        #expect(quota.graphql == 4900)
+        #expect(quota.resetsAt == Date(timeIntervalSince1970: 1_800_000_000))
+    }
+
+    @Test(arguments: [(120, 4900), (5000, 120)])
+    func eitherQuotaBelowTheDefaultFloorHoldsBeforeAnyRepoRead(core: Int, graphql: Int) async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try f.rateLimit(core: core, graphql: graphql)
+        let store = try JobStore(home: f.home)
+        let running = Job(id: UUID(), key: JobKey(repo: IssuePagingPayload.repo, item: "pr-7", move: "review", head: "abc12345"),
+                          agent: "claude", startedAt: Date(timeIntervalSince1970: 1_799_990_000), status: .running)
+        try store.save(running)
+        let engine = try f.engine()
+        let snapshot = await engine.tick()
+        let problem = try #require(snapshot.problem)
+        #expect(problem.hasPrefix("GitHub rate limit: core \(core), graphql \(graphql) left; reading again after "))
+        let localTime = DateFormatter()
+        localTime.locale = Locale(identifier: "en_US_POSIX")
+        localTime.timeZone = .current
+        localTime.dateFormat = "HH:mm"
+        #expect(problem.contains(localTime.string(from: Date(timeIntervalSince1970: 1_800_000_000))))
+        #expect(!FileManager.default.fileExists(atPath: f.file("repo-read").path))
+        #expect(snapshot.triage.isEmpty)
+        #expect(snapshot.openPullRequests.isEmpty)
+        #expect(snapshot.flows.isEmpty)
+        #expect(snapshot.jobs.first { $0.id == running.id }?.status == .running)
+        #expect(store.all() == [running])
+    }
+
+    @Test(arguments: [(5000, 4900), (300, 300)])
+    func quotasAtOrAboveTheFloorReadIssuesAsBefore(core: Int, graphql: Int) async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try f.rateLimit(core: core, graphql: graphql)
+        let snapshot = await (try f.engine()).tick(dispatching: false)
+        #expect(snapshot.problem == nil)
+        #expect(snapshot.triage.map(\.number) == [1])
+        #expect(snapshot.defaultBranches[IssuePagingPayload.repo] == "main")
+    }
+
+    @Test func aZeroRateFloorDisablesTheHoldEvenWithNoQuotaLeft() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try f.setRateFloor(0)
+        try f.rateLimit(core: 0, graphql: 0)
+        let snapshot = await (try f.engine()).tick(dispatching: false)
+        #expect(snapshot.problem == nil)
+        #expect(snapshot.triage.map(\.number) == [1])
+    }
+
+    @Test func anExplicitRateFloorOverridesTheDefault() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try f.setRateFloor(450)
+        try f.rateLimit(core: 400, graphql: 4900)
+        let snapshot = await (try f.engine()).tick(dispatching: false)
+        #expect(snapshot.problem?.hasPrefix("GitHub rate limit:") == true)
+        #expect(!FileManager.default.fileExists(atPath: f.file("repo-read").path))
+    }
+
+    @Test(arguments: ["not JSON", "gh error"])
+    func anUnreadableRateLimitDoesNotHoldTheTick(answer: String) async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        try Data("not JSON".utf8).write(to: f.file("rate-limit.json"))
+        if answer == "gh error" { try Data().write(to: f.file("fail-rate-limit")) }
+        let snapshot = await (try f.engine()).tick(dispatching: false)
+        #expect(snapshot.problem == nil)
+        #expect(snapshot.triage.map(\.number) == [1])
+    }
+
+    @Test func aRateHoldEndsWhenBothQuotasRecover() async throws {
+        let f = try IssuePagingEngineFixture.make()
+        defer { f.remove() }
+        let engine = try f.engine()
+        try f.rateLimit(core: 120, graphql: 4900)
+        #expect(await engine.tick(dispatching: false).problem?.hasPrefix("GitHub rate limit:") == true)
+        try f.rateLimit(core: 5000, graphql: 4900)
+        let recovered = await engine.tick(dispatching: false)
+        #expect(recovered.problem == nil)
+        #expect(recovered.triage.map(\.number) == [1])
+    }
+
+    @Test func labelTimelineEventsDecodeAndStateChangedAtIncludesAssignmentEvents() throws {
+        var node = IssuePagingPayload.node(7)
+        node["timelineItems"] = ["nodes": [
+            ["__typename": "LabeledEvent", "createdAt": "2026-10-19T12:00:03Z", "label": ["name": "stage:in-progress"]],
+            ["__typename": "AssignedEvent", "createdAt": "2026-10-19T12:05:00Z"],
+            ["__typename": "UnlabeledEvent", "createdAt": "2026-10-19T12:00:00Z", "label": ["name": "stage:ready"]]
+        ]]
+        let data = try JSONSerialization.data(withJSONObject: ["data": ["repository": ["issues": ["nodes": [node]]]]])
+        let issue = try #require(GitHubClient.decodeOpenIssues(data, repo: IssuePagingPayload.repo).issues.first)
+        let at = try #require(ISO8601DateFormatter().date(from: "2026-10-19T12:00:00Z"))
+        #expect(Set(issue.labelEvents) == Set([
+            LabelEvent(kind: .removed, label: "stage:ready", at: at),
+            LabelEvent(kind: .added, label: "stage:in-progress", at: at.addingTimeInterval(3))
+        ]))
+        #expect(issue.stateChangedAt == at.addingTimeInterval(300))
+        #expect(try GitHubClient.decodeOpenIssues(IssuePagingPayload.page([8]), repo: IssuePagingPayload.repo)
+            .issues.first?.labelEvents == [])
+    }
+
+    @Test func theIssueQueryReadsLabelNamesAndTimesFromTheLastThirtyTimelineEvents() {
+        let query = GitHubClient.openIssuesQuery.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        #expect(query.contains("timelineItems(last: 30"))
+        for fragment in ["ASSIGNED_EVENT", "UNASSIGNED_EVENT", "LABELED_EVENT", "UNLABELED_EVENT",
+                         "... on LabeledEvent", "... on UnlabeledEvent", "createdAt", "label { name }"] {
+            #expect(query.contains(fragment), Comment(rawValue: fragment))
+        }
+    }
+
     @Test func decodeNextCursorOnlyWhenAnotherPageExists() throws {
         let next = try GitHubClient.decodeOpenIssues(IssuePagingPayload.page([1], next: "C2"), repo: "o/r")
         #expect(next.nextPage == "C2")
@@ -287,10 +422,17 @@ struct IssuePagingEngineFixture {
                            agents: [:], schedules: []).save(to: home.configURL)
             try IssuePagingPayload.page([1], next: "C2").write(to: f.file("page-1.json"))
             try IssuePagingPayload.page([2]).write(to: f.file("page-2.json"))
+            try f.rateLimit(core: 5000, graphql: 4900)
             let script = #"""
             #!/bin/sh
             set -eu
             cd "${0%/*}"
+            if [ "$1" = api ] && [ "$2" = rate_limit ]; then
+              if [ -f fail-rate-limit ]; then echo 'quota unavailable' >&2; exit 1; fi
+              cat rate-limit.json
+              exit 0
+            fi
+            touch repo-read
             if [ "$1" = pr ] && [ "$2" = list ]; then echo '[]'; exit 0; fi
             if [ "$1" = api ] && [ "$2" = graphql ]; then
               case "$*" in
@@ -326,6 +468,19 @@ struct IssuePagingEngineFixture {
 
     func engine() throws -> Engine {
         try Engine(home: home, github: GitHubClient(ghPath: file("gh").path), log: { _ in })
+    }
+
+    func rateLimit(core: Int, graphql: Int, coreReset: Int = 1_799_999_000, graphqlReset: Int = 1_800_000_000) throws {
+        try JSONSerialization.data(withJSONObject: ["resources": [
+            "core": ["remaining": core, "reset": coreReset],
+            "graphql": ["remaining": graphql, "reset": graphqlReset]
+        ]]).write(to: file("rate-limit.json"))
+    }
+
+    func setRateFloor(_ floor: Int) throws {
+        var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: home.configURL)) as? [String: Any])
+        json["rateLimitFloor"] = floor
+        try JSONSerialization.data(withJSONObject: json).write(to: home.configURL)
     }
 
     func hold() throws { try Data().write(to: file("hold")) }

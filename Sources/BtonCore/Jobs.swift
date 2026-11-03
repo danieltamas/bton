@@ -56,6 +56,8 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var usage: [String: TokenUsage]
     /// nil while any model in `usage` has no price.
     public var cost: Decimal?
+    /// The flow's `caps.costPerJob` when the job started: past it the agent is stopped.
+    public var costCap: Decimal?
     /// When the agent is stopped. Kept, like `review`, so a restarted Bton finishes the job as
     /// the one that started it would have.
     public var deadline: Date?

@@ -172,7 +172,7 @@ extension Engine {
         let ran = Set(all.filter { $0.retry != true }.map(\.key))
         return IssueAsks.asks(issues, me: me, table: flow.decide?.table).compactMap { ask in
             guard let issue = issues.first(where: { $0.number == ask.number }),
-                  IssueDecisions.rulingsSinceHuman(issue: issue, me: me, jobs: all) < IssueDecisions.maxRulings,
+                  IssueDecisions.rulingsSinceHuman(issue: issue, me: me, jobs: all) < flow.maxRulings,
                   let candidate = IssueDecisions.candidate(ask: ask, issue: issue, flow: flow, agents: agents, defaultBranch: defaultBranch, me: me),
                   !ran.contains(candidate.key) else { return nil }
             return candidate

@@ -99,6 +99,18 @@ public struct GitHubClient: Sendable {
         return result.stdout
     }
 
+    /// What is left of the hour's quota, REST and GraphQL; the read itself costs no points.
+    public func rateLimit() async throws -> RateLimit {
+        struct Response: Decodable {
+            struct Bucket: Decodable { let remaining: Int, reset: TimeInterval }
+            struct Resources: Decodable { let core: Bucket, graphql: Bucket }
+            let resources: Resources
+        }
+        let resources = try JSONDecoder().decode(Response.self, from: try await gh(["api", "rate_limit"])).resources
+        return RateLimit(core: resources.core.remaining, graphql: resources.graphql.remaining,
+                         resetsAt: Date(timeIntervalSince1970: max(resources.core.reset, resources.graphql.reset)))
+    }
+
     /// This Mac's `gh` login.
     public func viewer() async throws -> String {
         String(decoding: try await gh(["api", "user", "--jq", ".login"]), as: UTF8.self)

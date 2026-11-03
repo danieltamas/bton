@@ -67,6 +67,8 @@ public struct DispatchCandidate: Sendable {
     /// An automatic run that must not follow another Mac's within this long: checked under the
     /// lease, from its history, since two Macs can plan in different minutes before either claims.
     public var cooldown: TimeInterval?
+    /// The most the job may spend, from the flow's `caps.costPerJob`; nil when the flow sets none.
+    public var costCap: Decimal?
     /// The run's own checks instead of the flow's (the release's, a rule's); an empty list runs none.
     public var checks: [[String]]?
     /// The flow's `fresh` argv with the same placeholders filled as the rule's own checks, so a
@@ -232,7 +234,8 @@ public enum DispatchPlanner {
     private static func candidate(_ pr: PullRequest, move: Move, rule: DispatchRule, flow: Flow, me: String, repo: String) -> DispatchCandidate {
         let fresh = flow.checks?.fresh ?? [], together = flow.checks?.together ?? []
         let filling = { (template: String) in
-            fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil, tier: move.tier)
+            fill(template, repo: repo, number: pr.number, head: pr.headSha, base: pr.baseRef, issue: nil, tier: move.tier,
+                 redChecks: FlowEngine.redChecks(of: pr))
         }
         var candidate = DispatchCandidate(target: .pullRequest(pr), move: move,
                                           key: key(for: pr, move: move.name, flow: flow, me: me, repo: repo),
@@ -256,6 +259,7 @@ public enum DispatchPlanner {
             candidate.second = agent
             candidate.secondPrompt = filling(prompt)
         }
+        candidate.costCap = flow.costPerJob
         return candidate
     }
 
@@ -308,17 +312,19 @@ public enum DispatchPlanner {
     /// Only numbers, SHAs, the repo slug and the base branch from the flow: no PR text reaches an
     /// argv or a prompt.
     public static func fill(_ template: String, repo: String, number: Int, head: String, base: String, issue: Int?,
-                            tier: String? = nil) -> String {
+                            tier: String? = nil, redChecks: [String]? = nil) -> String {
         var values = ["{repo}": repo, "{number}": String(number), "{head}": head, "{base}": base]
         if let tier { values["{tier}"] = tier }
         if let issue { values["{issue}"] = String(issue) }
+        // Check names are the workflow's own, as the repo wrote them: not PR text.
+        if let redChecks { values["{red_checks}"] = redChecks.joined(separator: ", ") }
         return fill(template, values)
     }
 
     /// One pass: what a value inserts is never searched again, so a path or prompt holding
     /// `{base}` stays as written whatever order the values come in.
     public static func fill(_ template: String, _ values: [String: String]) -> String {
-        template.replacing(/\{[a-z]+\}/) { values[String($0.output)] ?? String($0.output) }
+        template.replacing(/\{[a-z_]+\}/) { values[String($0.output)] ?? String($0.output) }
     }
 
     /// How long a review that exited 2 (a tool this Mac lacks) waits before it is tried again.

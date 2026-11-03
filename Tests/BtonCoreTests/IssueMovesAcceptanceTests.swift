@@ -9,16 +9,16 @@ private enum IssueMovesFixture {
     static let repo = "synthetic/project"
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    static func comment(_ id: String, author: String, hoursAgo: Double) -> IssueComment {
-        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: "COMMENT_BODY_DATA",
+    static func comment(_ id: String, author: String, hoursAgo: Double, body: String = "COMMENT_BODY_DATA") -> IssueComment {
+        IssueComment(id: id, author: author, authorAssociation: "MEMBER", body: body,
                      createdAt: now.addingTimeInterval(-hoursAgo * 3600), url: nil)
     }
 
     static func issue(_ number: Int = 7, labels: [String] = [], assignees: [String] = [], association: String = "MEMBER",
-                      daysOld: Double = 10, comments: [IssueComment] = []) -> OpenIssue {
+                      daysOld: Double = 10, comments: [IssueComment] = [], labelEvents: [LabelEvent] = []) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: "ISSUE_TITLE_DATA", url: URL(string: "https://example.invalid/issues/\(number)")!,
                   createdAt: now.addingTimeInterval(-daysOld * 86400), author: "lee", authorAssociation: association,
-                  body: "ISSUE_BODY_DATA", comments: comments, labels: labels, assignees: assignees)
+                  body: "ISSUE_BODY_DATA", comments: comments, labels: labels, assignees: assignees, labelEvents: labelEvents)
     }
 
     static func pr(body: String) -> PullRequest {
@@ -68,6 +68,129 @@ private enum IssueMovesFixture {
 /// decision and read back from GitHub.
 struct IssueMovesAcceptanceTests {
     private typealias F = IssueMovesFixture
+
+    @Test func aTwoJobFlowCapRefusesTheThirdIssueJobAndNamesTheCap() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: F.data()) as? [String: Any])
+        json["caps"] = ["issuesPerDay": 2]
+        let flow = try #require(Flow.load(JSONSerialization.data(withJSONObject: json)).flow)
+        let jobs = (1...2).map { F.job(IssueMoves.key(repo: F.repo, number: 100 + $0, move: "triage", round: "")) }
+        #expect(IssueMoves.hold(jobs: Array(jobs.prefix(1)), repo: F.repo, now: F.now, cap: 2) == nil)
+        #expect(try F.candidate([F.issue()], flow: flow, jobs: Array(jobs.prefix(1))) != nil)
+        #expect(IssueMoves.hold(jobs: jobs, repo: F.repo, now: F.now, cap: 2) == "2 issue jobs in a day")
+        #expect(try F.candidate([F.issue()], flow: flow, jobs: jobs) == nil)
+    }
+
+    @Test(arguments: [(2.0, true), (0.5, false)])
+    func theFlowCooldownAllowsAnOldTriagerCommentAndHoldsARecentOne(hoursAgo: Double, mayStart: Bool) throws {
+        var json = try #require(JSONSerialization.jsonObject(with: F.data()) as? [String: Any])
+        json["caps"] = ["issueCooldownHours": 1]
+        let flow = try #require(Flow.load(JSONSerialization.data(withJSONObject: json)).flow)
+        let issue = F.issue(comments: [F.triagers("triaged", author: "teammate", hoursAgo: hoursAgo)])
+        #expect((IssueMoves.cooldownHold(move: "triage", comments: issue.comments, at: F.now, cooldown: 3600) == nil) == mayStart)
+        #expect((try F.candidate([issue], flow: flow) != nil) == mayStart)
+    }
+
+    @Test(arguments: ["triage", "stage", "restage"])
+    func everyIssueMoveCandidateCarriesTheFlowCostCap(move: String) throws {
+        let rules = "[{\"move\":\"\(move)\",\"when\":[\"no_assignee\"]}]"
+        var json = try #require(JSONSerialization.jsonObject(with: F.data(issues: rules)) as? [String: Any])
+        json["caps"] = ["costPerJob": 1.25]
+        let flow = try #require(Flow.load(JSONSerialization.data(withJSONObject: json)).flow)
+        let candidate = try #require(try F.candidate([F.issue()], flow: flow))
+        #expect(candidate.costCap == Decimal(string: "1.25"))
+        #expect(try F.candidate([F.issue()])?.costCap == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func intakeCandidatesCarryTheFlowCostCapWithoutRequiringPRCaps(capped: Bool) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "caps": capped ? ["costPerJob": 1.25] : [:]
+        ])).flow)
+        let intake = try #require(flow.intake)
+        let candidate = try #require(IssueIntake.candidate(
+            issues: [F.issue(labels: ["stage:ready"])], intake: intake, caps: flow.caps,
+            pullRequests: [F.pr(body: "Unrelated")], jobs: [], repo: F.repo, base: flow.base, me: F.me, agents: F.agents))
+        #expect(candidate.costCap == (capped ? Decimal(string: "1.25") : nil))
+    }
+
+    @Test(arguments: [false, true])
+    func decideCandidatesCarryTheFlowCostCap(capped: Bool) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "caps": capped ? ["costPerJob": 1.25] : [:], "decide": ["by": [F.me]]
+        ])).flow)
+        let issue = F.issue(comments: [F.comment("ask", author: "lee", hoursAgo: 1, body: "@dani should we choose A or B?")])
+        let ask = try #require(IssueAsks.ask(in: issue, me: F.me))
+        let candidate = try #require(IssueDecisions.candidate(ask: ask, issue: issue, flow: flow,
+            agents: F.agents, defaultBranch: flow.base, me: F.me))
+        #expect(candidate.costCap == (capped ? Decimal(string: "1.25") : nil))
+    }
+
+    @Test func notDemotedParsesCaseInsensitiveLabelsAndRejectsAnEmptyLabel() {
+        #expect(IssuePredicate("not_demoted:Stage:Ready") == .notDemoted(label: "stage:ready", claim: nil))
+        #expect(IssuePredicate("not_demoted:Stage:Ready,Stage:In-Progress") == .notDemoted(label: "stage:ready", claim: "stage:in-progress"))
+        #expect(IssuePredicate("not_demoted:") == nil)
+    }
+
+    @Test func anIssueWithNoLabelHistoryIsNotDemoted() {
+        let issue = F.issue()
+        #expect(issue.labelEvents.isEmpty)
+        #expect(IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now).holds(all: ["not_demoted:stage:ready"]))
+    }
+
+    @Test(arguments: [-120.0, -3.0, 0.0, 3.0, 120.0])
+    func aClaimWithinTwoMinutesBeforeOrAfterRemovalIsNotADemotion(offset: Double) throws {
+        let issue = F.issue(labelEvents: [
+            LabelEvent(kind: .removed, label: "Stage:Ready", at: F.now),
+            LabelEvent(kind: .added, label: "Stage:In-Progress", at: F.now.addingTimeInterval(offset))
+        ])
+        let predicate = "not_demoted:STAGE:READY,STAGE:IN-PROGRESS"
+        #expect(IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now).holds(all: [predicate]))
+        let rules = "[{\"move\":\"stage\",\"when\":[\"\(predicate)\"]}]"
+        #expect(try F.candidate([issue], flow: F.flow(issues: rules))?.move.name == "stage")
+    }
+
+    @Test(arguments: [-121.0, 121.0])
+    func aClaimOutsideTwoMinutesDoesNotUndoADemotion(offset: Double) {
+        let issue = F.issue(labelEvents: [
+            LabelEvent(kind: .removed, label: "stage:ready", at: F.now),
+            LabelEvent(kind: .added, label: "stage:in-progress", at: F.now.addingTimeInterval(offset))
+        ])
+        #expect(!IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now)
+            .holds(all: ["not_demoted:stage:ready,stage:in-progress"]))
+    }
+
+    @Test(arguments: ["nothing", "different label", "claim removed"])
+    func anUnpairedRemovalOrADifferentAddedLabelIsADemotion(scenario: String) throws {
+        var events = [LabelEvent(kind: .removed, label: "stage:ready", at: F.now)]
+        if scenario == "different label" {
+            events.append(LabelEvent(kind: .added, label: "stage:spec", at: F.now.addingTimeInterval(3)))
+        } else if scenario == "claim removed" {
+            events.append(LabelEvent(kind: .removed, label: "stage:in-progress", at: F.now.addingTimeInterval(3)))
+        }
+        let issue = F.issue(labelEvents: events)
+        let predicate = "not_demoted:stage:ready,stage:in-progress"
+        #expect(!IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now).holds(all: [predicate]))
+        let rules = "[{\"move\":\"stage\",\"when\":[\"\(predicate)\"]}]"
+        #expect(try F.candidate([issue], flow: F.flow(issues: rules)) == nil)
+    }
+
+    @Test func withoutAClaimLabelEvenAnIntakeClaimIsADemotion() {
+        let issue = F.issue(labelEvents: [
+            LabelEvent(kind: .removed, label: "stage:ready", at: F.now),
+            LabelEvent(kind: .added, label: "stage:in-progress", at: F.now.addingTimeInterval(3))
+        ])
+        #expect(!IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now).holds(all: ["not_demoted:stage:ready"]))
+    }
+
+    @Test func aLaterClaimDoesNotEraseAnEarlierUnpairedDemotion() {
+        let issue = F.issue(labelEvents: [
+            LabelEvent(kind: .removed, label: "stage:ready", at: F.now.addingTimeInterval(-3600)),
+            LabelEvent(kind: .removed, label: "stage:ready", at: F.now),
+            LabelEvent(kind: .added, label: "stage:in-progress", at: F.now.addingTimeInterval(3))
+        ])
+        #expect(!IssueFacts.of(issue, issues: [], pullRequests: [], now: F.now)
+            .holds(all: ["not_demoted:stage:ready,stage:in-progress"]))
+    }
 
     @Test func theRulesDecodeAndAFlowWithoutThemStaysValid() throws {
         let flow = try F.flow()

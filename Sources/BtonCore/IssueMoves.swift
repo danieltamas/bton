@@ -18,6 +18,13 @@ public enum IssuePredicate: Equatable, Sendable {
     /// The repo has fewer than this many unassigned `stage:ready` issues: the stage move stops
     /// promoting when enough work is lined up.
     case unassignedReadyUnder(Int)
+    /// No person took `label` off the issue: a removal counts as a person's unless a `claim`
+    /// label was added within two minutes of it (Bton's own intake claim swaps the two in one
+    /// edit). An issue a person moved out of ready is never put back by an agent.
+    case notDemoted(label: String, claim: String?)
+
+    /// How far apart a removal and the claim label's addition may be and still be one edit.
+    public static let claimWindow: TimeInterval = 120
 
     public init?(_ text: String) {
         let parts = text.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
@@ -36,6 +43,11 @@ public enum IssuePredicate: Equatable, Sendable {
         case let ("unassigned_ready_under", value?):
             guard let count = Int(value), count > 0 else { return nil }
             self = .unassignedReadyUnder(count)
+        case let ("not_demoted", value?):
+            let labels = value.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            guard let label = labels.first, !label.isEmpty, labels.count < 2 || !labels[1].isEmpty else { return nil }
+            self = .notDemoted(label: label, claim: labels.count == 2 ? labels[1] : nil)
         default: return nil
         }
     }
@@ -52,9 +64,14 @@ public struct IssueFacts: Codable, Hashable, Sendable {
     public var hasOpenPR: Bool
     public var unassignedReady: Int
     public var now: Date
+    /// The issue's label additions and removals as read, oldest first; empty in a plan written
+    /// before they were read.
+    public var labelEvents: [LabelEvent]
+
+    enum CodingKeys: String, CodingKey { case state, labels, assignees, authorAssociation, lastActivity, hasOpenPR, unassignedReady, now, labelEvents }
 
     public init(state: String = "OPEN", labels: [String], assignees: [String] = [], authorAssociation: String = "MEMBER",
-                lastActivity: Date, hasOpenPR: Bool = false, unassignedReady: Int = 0, now: Date = .now) {
+                lastActivity: Date, hasOpenPR: Bool = false, unassignedReady: Int = 0, now: Date = .now, labelEvents: [LabelEvent] = []) {
         self.state = state
         self.labels = labels
         self.assignees = assignees
@@ -63,12 +80,44 @@ public struct IssueFacts: Codable, Hashable, Sendable {
         self.hasOpenPR = hasOpenPR
         self.unassignedReady = unassignedReady
         self.now = now
+        self.labelEvents = labelEvents
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        state = try container.decode(String.self, forKey: .state)
+        labels = try container.decode([String].self, forKey: .labels)
+        assignees = try container.decode([String].self, forKey: .assignees)
+        authorAssociation = try container.decode(String.self, forKey: .authorAssociation)
+        lastActivity = try container.decode(Date.self, forKey: .lastActivity)
+        hasOpenPR = try container.decode(Bool.self, forKey: .hasOpenPR)
+        unassignedReady = try container.decode(Int.self, forKey: .unassignedReady)
+        now = try container.decode(Date.self, forKey: .now)
+        labelEvents = try container.decodeIfPresent([LabelEvent].self, forKey: .labelEvents) ?? []
     }
 
     public static func of(_ issue: OpenIssue, issues: [OpenIssue], pullRequests: [PullRequest], now: Date = .now) -> IssueFacts {
         IssueFacts(labels: issue.labels, assignees: issue.assignees, authorAssociation: issue.authorAssociation,
                    lastActivity: IssueMoves.lastActivity(of: issue), hasOpenPR: pullRequests.contains { IssueMoves.mentions($0, issue: issue.number) },
-                   unassignedReady: issues.filter { IssueIntake.isReady($0) && $0.assignees.isEmpty }.count, now: now)
+                   unassignedReady: issues.filter { IssueIntake.isReady($0) && $0.assignees.isEmpty }.count, now: now,
+                   labelEvents: issue.labelEvents)
+    }
+
+    /// A person took `label` off and nobody put it back: the latest of the label's removals has
+    /// no `claim` label added within the claim window, and no addition of the label after it
+    /// (a person who promotes the issue again ends the demotion).
+    public func demoted(_ label: String, claim: String?) -> Bool {
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        let claims = labelEvents.filter { event in event.kind == .added && claim.map { same(event.label, $0) } == true }
+        var demoted = false
+        for event in labelEvents.sorted(by: { $0.at < $1.at }) where same(event.label, label) {
+            switch event.kind {
+            case .added: demoted = false
+            case .removed where claims.contains(where: { abs($0.at.timeIntervalSince(event.at)) <= IssuePredicate.claimWindow }): break
+            case .removed: demoted = true
+            }
+        }
+        return demoted
     }
 
     public func holds(_ predicate: IssuePredicate) -> Bool {
@@ -86,6 +135,7 @@ public struct IssueFacts: Codable, Hashable, Sendable {
         case let .quietHours(hours): return now.timeIntervalSince(lastActivity) >= hours * 3600
         case .authorWrites: return FlowEngine.trustedAssociations.contains(authorAssociation)
         case let .unassignedReadyUnder(count): return unassignedReady < count
+        case let .notDemoted(label, claim): return !demoted(label, claim: claim)
         }
     }
 
@@ -142,7 +192,7 @@ public enum IssueMoves {
     /// Why the move waits on the issue, or nil: the last word is a triager's for this move within
     /// the cooldown, which is another Mac's run of it that this read came before. A person's
     /// answer after it, or a triager's comment for another move (triage before stage), holds nothing.
-    static func cooldownHold(move: String, comments: [IssueComment], at time: Date) -> String? {
+    static func cooldownHold(move: String, comments: [IssueComment], at time: Date, cooldown: TimeInterval = cooldown) -> String? {
         guard let newest = comments.max(by: { $0.createdAt < $1.createdAt }), isTriagers(newest),
               time.timeIntervalSince(newest.createdAt) < cooldown,
               triagerMove(of: newest).map({ $0 == move }) ?? true
@@ -172,8 +222,10 @@ public enum IssueMoves {
         /// The move, for the cooldown: a triager's comment for another move holds nothing.
         /// Absent in a plan written before v0.24.2, which reads as `triage`.
         public var move: String = "triage"
+        /// The flow's cooldown at the time of the plan; the default in a plan written before it was read.
+        public var cooldown: TimeInterval = IssueMoves.cooldown
 
-        enum CodingKeys: String, CodingKey { case number, when, round, me, facts, move }
+        enum CodingKeys: String, CodingKey { case number, when, round, me, facts, move, cooldown }
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -183,10 +235,13 @@ public enum IssueMoves {
             me = try container.decode(String.self, forKey: .me)
             facts = try container.decode(IssueFacts.self, forKey: .facts)
             move = try container.decodeIfPresent(String.self, forKey: .move) ?? "triage"
+            cooldown = try container.decodeIfPresent(TimeInterval.self, forKey: .cooldown) ?? IssueMoves.cooldown
         }
 
-        public init(number: Int, when: [String], round: String, me: String, facts: IssueFacts, move: String = "triage") {
+        public init(number: Int, when: [String], round: String, me: String, facts: IssueFacts, move: String = "triage",
+                    cooldown: TimeInterval = IssueMoves.cooldown) {
             self.move = move
+            self.cooldown = cooldown
             self.number = number
             self.when = when
             self.round = round
@@ -241,10 +296,10 @@ public enum IssueMoves {
     }
 
     /// Why no issue job starts in the repo now, or nil: one at a time per repo, and the day's cap.
-    public static func hold(jobs: [Job], repo: String, now: Date = .now) -> String? {
+    public static func hold(jobs: [Job], repo: String, now: Date = .now, cap: Int = dailyCap) -> String? {
         let mine = jobs.filter { moves.contains($0.key.move) && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame }
         if mine.contains(where: { $0.status == .running }) { return "an issue job is running" }
-        if mine.filter({ now.timeIntervalSince($0.startedAt) < 24 * 3600 }).count >= dailyCap { return "\(dailyCap) issue jobs in a day" }
+        if mine.filter({ now.timeIntervalSince($0.startedAt) < 24 * 3600 }).count >= cap { return "\(cap) issue jobs in a day" }
         return nil
     }
 
@@ -253,7 +308,7 @@ public enum IssueMoves {
     /// denied tools are its settings) or a command.
     public static func candidate(issues: [OpenIssue], flow: Flow, pullRequests: [PullRequest], jobs: [Job], repo: String,
                                  me: String, agents: [String: AgentTemplate], ranElsewhere: Set<JobKey> = [], now: Date = .now) -> DispatchCandidate? {
-        guard let rules = flow.issues, !rules.isEmpty, hold(jobs: jobs, repo: repo, now: now) == nil else { return nil }
+        guard let rules = flow.issues, !rules.isEmpty, hold(jobs: jobs, repo: repo, now: now, cap: flow.issuesPerDay) == nil else { return nil }
         // A key another Mac ran (its lease history said so) would be first again every sync, and nothing behind it would start.
         let ran = Set(jobs.filter { $0.retry != true }.map(\.key)).union(ranElsewhere)
         let priority = flow.intake?.priority ?? IssueIntake.defaultPriority
@@ -270,7 +325,7 @@ public enum IssueMoves {
             guard !ran.contains(key), let dispatch = flow.dispatch[move] else { continue }
             // An issue the cooldown would refuse under the lease is skipped here, so it never
             // stands first every sync with the eligible issues behind it.
-            if cooldownHold(move: move, comments: issue.comments, at: now) != nil { continue }
+            if cooldownHold(move: move, comments: issue.comments, at: now, cooldown: flow.issueCooldown) != nil { continue }
             let agent = dispatch.agent?.value(for: "")
             if let agent, agents[agent]?.argv.first.map(AgentHardening.isClaude) != true { continue }
             if agent == nil, dispatch.command == nil { continue }
@@ -285,7 +340,9 @@ public enum IssueMoves {
             made.attachments = [attachment: IssueDrafts.thread(issue)]
             made.denied = denied(for: move)
             made.issueMove = Plan(number: issue.number, when: rules[index].when, round: round(of: issue.comments), me: me,
-                                  facts: IssueFacts.of(issue, issues: issues, pullRequests: pullRequests, now: now), move: move)
+                                  facts: IssueFacts.of(issue, issues: issues, pullRequests: pullRequests, now: now), move: move,
+                                  cooldown: flow.issueCooldown)
+            made.costCap = flow.costPerJob
             return made
         }
         return nil
@@ -315,10 +372,17 @@ public enum IssueMoves {
         facts.state = now.state
         facts.labels = now.labels
         facts.assignees = now.assignees
+        // The live read has no timeline: a label gone or come since the plan is an event now,
+        // so a person's removal in the meantime still counts as theirs.
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        facts.labelEvents += plan.facts.labels.filter { label in !now.labels.contains { same($0, label) } }
+            .map { LabelEvent(kind: .removed, label: $0, at: time) }
+        facts.labelEvents += now.labels.filter { label in !plan.facts.labels.contains { same($0, label) } }
+            .map { LabelEvent(kind: .added, label: $0, at: time) }
         guard now.state == "OPEN" else { return "the issue is no longer open" }
         guard facts.holds(all: plan.when) else { return "the issue no longer meets the move's conditions" }
         if round(of: comments) != plan.round { return "a comment came since the read; the next sync reads it" }
-        return cooldownHold(move: plan.move, comments: comments, at: time)
+        return cooldownHold(move: plan.move, comments: comments, at: time, cooldown: plan.cooldown)
     }
 
     /// What the job did, read back from GitHub and the agent's report.

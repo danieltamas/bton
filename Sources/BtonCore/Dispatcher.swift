@@ -177,6 +177,7 @@ actor Dispatcher {
                       supervises: candidate.supervises, steered: candidate.steered ? true : nil)
         job.pressed = candidate.pressed ? true : nil
         job.pushes = candidate.pushes ? true : nil
+        job.costCap = candidate.costCap ?? flow?.costPerJob
         job.issueMove = candidate.issueMove
         job.queueHeads = candidate.queueHeads
         // The agent may have logged out while the lease was claimed: its job waits with the others.
@@ -487,6 +488,11 @@ actor Dispatcher {
             }
             if clock.now - lastCost >= .seconds(30) {
                 await refreshCost(&job)
+                if let overrun = JobBudget.overrun(cost: job.cost, cap: job.costCap) {
+                    try? jobs.save(job)
+                    await terminateAll(job)
+                    return await finish(job, status: .failed, detail: overrun)
+                }
                 if job.key.move == IssueIntake.move, let idleWindow {
                     let seen = await worktreeActivity(of: job)
                     if seen != activity {

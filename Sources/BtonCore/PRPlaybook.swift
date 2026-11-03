@@ -89,6 +89,9 @@ public enum PRPlaybook {
     one but the teammate and holds no HTML comment. It posts as the owner, once;
     "already posted" is success. Never use it for a PR or for anything a flow, label
     or check already carries.
+    A reply or hand-back comment never contains a review routine's hidden marker (an HTML
+    comment such as agentic-review head=...), not even quoted: a marker in a reply wakes
+    the routine's session as a new review and starts a loop. Describe it in words.
     Output only the required result: findings, changes, checks and material limits.
     No narration, praise, repeated context or speculative improvements.
     """

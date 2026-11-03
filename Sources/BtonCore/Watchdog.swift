@@ -54,3 +54,16 @@ public enum Watchdog {
         return cost > median * costFactor
     }
 }
+
+/// The flow's cap on what one job spends, judged on the cost read from the session logs.
+public enum JobBudget {
+    /// Why the job stops now, or nil: under the cap, or no cap, or no cost known yet.
+    public static func overrun(cost: Decimal?, cap: Decimal?) -> String? {
+        guard let cost, let cap, cost > cap else { return nil }
+        return "budget: $\(dollars(cost)) spent of the $\(dollars(cap)) cap (read from the session logs, so approximate)"
+    }
+
+    private static func dollars(_ value: Decimal) -> String {
+        String(format: "%.2f", NSDecimalNumber(decimal: value).doubleValue)
+    }
+}

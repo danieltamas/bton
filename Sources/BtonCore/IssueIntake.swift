@@ -190,7 +190,7 @@ public enum IssueIntake {
             return (issue, latest.key)
         }.first
         if let (issue, key) = retried,
-           let made = candidate(for: issue, key: key, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work) {
+           let made = candidate(for: issue, key: key, intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: true, work: work, costCap: caps?.costPerJob) {
             return made
         }
         // A repo that does not start its moves still finishes what was already begun, and takes nothing new.
@@ -199,17 +199,18 @@ public enum IssueIntake {
         if let requested,
            let asked = issues.first(where: { $0.number == requested && eligible($0, terms: terms) && !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }) {
             return candidate(for: asked, key: key(repo: repo, number: asked.number, round: round(of: asked)),
-                             intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work)
+                             intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob)
         }
         if let caps {
             let mine = pullRequests.filter { $0.author.caseInsensitiveCompare(me) == .orderedSame }.count
-            guard mine < caps.openPullRequestsPerDeveloper, pullRequests.count < caps.openPullRequestsTeam else { return nil }
+            if let perDeveloper = caps.openPullRequestsPerDeveloper, mine >= perDeveloper { return nil }
+            if let team = caps.openPullRequestsTeam, pullRequests.count >= team { return nil }
         }
         let taken = ordered(issues.filter { eligible($0, terms: terms) }, priority: intake.priority)
             .first { !ran.contains(key(repo: repo, number: $0.number, round: round(of: $0))) }
         return taken.flatMap {
             candidate(for: $0, key: key(repo: repo, number: $0.number, round: round(of: $0)),
-                      intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work)
+                      intake: intake, terms: terms, repo: repo, base: base, me: me, resumes: false, work: work, costCap: caps?.costPerJob)
         }
     }
 
@@ -230,7 +231,7 @@ public enum IssueIntake {
     }
 
     private static func candidate(for issue: OpenIssue, key: JobKey, intake: Intake, terms: Terms, repo: String, base: String, me: String,
-                                  resumes: Bool, work: AgentPick?) -> DispatchCandidate? {
+                                  resumes: Bool, work: AgentPick?, costCap: Decimal? = nil) -> DispatchCandidate? {
         guard let type = type(of: issue.labels, rule: intake.type) else { return nil }
         let values = ["{repo}": repo, "{issue}": String(issue.number), "{base}": base, "{type}": type]
         let filling = { (template: String) in DispatchPlanner.fill(template, values) }
@@ -243,6 +244,7 @@ public enum IssueIntake {
                                      timeout: .seconds(60 * (intake.timeoutMinutes ?? 60)))
         made.model = work?.model
         made.effort = work?.effort
+        made.costCap = costCap
         return made
     }
 

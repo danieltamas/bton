@@ -19,13 +19,16 @@ public struct OpenIssue: Hashable, Sendable {
     /// When the issue was last assigned, unassigned, labeled or unlabeled; nil when never, or on a
     /// read that did not ask. With the latest person's comment, it is when the issue's state began.
     public let stateChangedAt: Date?
+    /// The last label additions and removals, oldest first; empty on a read that did not ask.
+    public let labelEvents: [LabelEvent]
 
     public init(repo: String, number: Int, title: String, url: URL, createdAt: Date, author: String?,
                 authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = [],
-                assignees: [String] = [], stateChangedAt: Date? = nil) {
+                assignees: [String] = [], stateChangedAt: Date? = nil, labelEvents: [LabelEvent] = []) {
         self.labels = labels
         self.assignees = assignees
         self.stateChangedAt = stateChangedAt
+        self.labelEvents = labelEvents
         self.repo = repo
         self.number = number
         self.title = title
@@ -41,7 +44,7 @@ public struct OpenIssue: Hashable, Sendable {
     public func with(comments: [IssueComment]) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
                   authorAssociation: authorAssociation, body: body, comments: comments.sorted { $0.createdAt < $1.createdAt },
-                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt)
+                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents)
     }
 
     /// The same issue after a label edit made here: the labels replaced, and when given, the
@@ -49,7 +52,8 @@ public struct OpenIssue: Hashable, Sendable {
     public func with(labels: [String], assignees: [String]? = nil, stateChangedAt: Date? = nil) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
                   authorAssociation: authorAssociation, body: body, comments: comments,
-                  labels: labels, assignees: assignees ?? self.assignees, stateChangedAt: stateChangedAt ?? self.stateChangedAt)
+                  labels: labels, assignees: assignees ?? self.assignees, stateChangedAt: stateChangedAt ?? self.stateChangedAt,
+                  labelEvents: labelEvents)
     }
 }
 
@@ -62,6 +66,20 @@ public struct OpenIssues: Sendable {
     public init(issues: [OpenIssue], nextPage: String? = nil) {
         self.issues = issues
         self.nextPage = nextPage
+    }
+}
+
+/// One label put on or taken off an issue, from its timeline.
+public struct LabelEvent: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Sendable { case added, removed }
+    public let kind: Kind
+    public let label: String
+    public let at: Date
+
+    public init(kind: Kind, label: String, at: Date) {
+        self.kind = kind
+        self.label = label
+        self.at = at
     }
 }
 
@@ -268,9 +286,9 @@ extension GitHubClient {
         labels(first: 100) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
-        timelineItems(last: 1, itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) { nodes {
+        timelineItems(last: 30, itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) { nodes { __typename
           ... on AssignedEvent { createdAt } ... on UnassignedEvent { createdAt }
-          ... on LabeledEvent { createdAt } ... on UnlabeledEvent { createdAt } } }
+          ... on LabeledEvent { createdAt label { name } } ... on UnlabeledEvent { createdAt label { name } } } }
     """
 
     static let openIssuesQuery = """
@@ -302,7 +320,18 @@ extension GitHubClient {
             let state: String?
             let timelineItems: Nodes<Event>?
         }
-        struct Event: Decodable { let createdAt: Date? }
+        struct Event: Decodable {
+            let __typename: String?, createdAt: Date?, label: Label?
+
+            var labelEvent: LabelEvent? {
+                guard let createdAt, let name = label?.name else { return nil }
+                switch __typename {
+                case "LabeledEvent": return LabelEvent(kind: .added, label: name, at: createdAt)
+                case "UnlabeledEvent": return LabelEvent(kind: .removed, label: name, at: createdAt)
+                default: return nil
+                }
+            }
+        }
         struct Label: Decodable { let name: String }
         struct Comment: Decodable {
             let databaseId: Int?, author: Author?, authorAssociation: String?, body: String, createdAt: Date, url: URL?
@@ -335,7 +364,8 @@ extension GitHubClient {
                                    createdAt: $0.createdAt, url: $0.url)
                   }.sorted { $0.createdAt < $1.createdAt },
                   labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [],
-                  stateChangedAt: row.timelineItems?.nodes.compactMap(\.createdAt).max())
+                  stateChangedAt: row.timelineItems?.nodes.compactMap(\.createdAt).max(),
+                  labelEvents: row.timelineItems?.nodes.compactMap(\.labelEvent) ?? [])
     }
 
     // MARK: search

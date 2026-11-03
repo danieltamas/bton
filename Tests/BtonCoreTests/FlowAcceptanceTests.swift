@@ -8,8 +8,12 @@ enum FlowFixture {
     static let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
-    static func data(_ example: String = "team") throws -> Data {
-        try Data(contentsOf: root.appendingPathComponent("examples/\(example).flow.json"))
+    static func data(_ example: String = "team", overrides: [String: Any] = [:]) throws -> Data {
+        let data = try Data(contentsOf: root.appendingPathComponent("examples/\(example).flow.json"))
+        if overrides.isEmpty { return data }
+        var json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.merge(overrides) { _, new in new }
+        return try JSONSerialization.data(withJSONObject: json)
     }
 
     static func flow(withoutReviewers: Bool = false) throws -> Flow {
@@ -66,6 +70,111 @@ enum FlowFixture {
 
 @Suite(ProcessBound())
 struct FlowAcceptanceTests {
+    @Test func absentShiftCapsKeepTheExistingDefaults() throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: ["caps": [:]])).flow)
+        #expect(flow.issuesPerDay == 20)
+        #expect(flow.issueCooldown == 6 * 3600)
+        #expect(flow.maxRulings == 2)
+        #expect(IssueDecisions.maxRulings == 2)
+        #expect(flow.costPerJob == nil)
+        #expect(try FlowFixture.flow().issuesPerDay == 20)
+        #expect(try FlowFixture.flow().issueCooldown == 6 * 3600)
+    }
+
+    @Test func capsWithOnlyTheNewKeysDecodeWithoutPRLimits() throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "caps": ["issuesPerDay": 2, "issueCooldownHours": 1.5, "costPerJob": 1.25]
+        ])).flow)
+        #expect(flow.caps?.openPullRequestsPerDeveloper == nil)
+        #expect(flow.caps?.openPullRequestsTeam == nil)
+        #expect(flow.issuesPerDay == 2)
+        #expect(flow.issueCooldown == 5400)
+        #expect(flow.costPerJob == Decimal(string: "1.25"))
+    }
+
+    @Test func aFlowCanChooseOneRulingInsteadOfTheDefaultTwo() throws {
+        // No existing engine fixture drives decideCandidates. Per Part A2, cover the accessor
+        // here; enforcing the limit since the last human comment in Engine is not exercised.
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "decide": ["by": ["lead-dev"], "maxRulings": 1]
+        ])).flow)
+        #expect(flow.maxRulings == 1)
+        #expect(flow.decide?.maxRulings == 1)
+    }
+
+    @Test(arguments: [
+        ("caps", "issuesPerDay", 0.0), ("caps", "issuesPerDay", -1.0),
+        ("caps", "issueCooldownHours", 0.0), ("caps", "issueCooldownHours", -0.5),
+        ("decide", "maxRulings", 0.0), ("decide", "maxRulings", -1.0)
+    ])
+    func nonpositiveShiftLimitsAreInvalidAndNameTheKey(section: String, key: String, value: Double) throws {
+        var settings: [String: Any] = [key: value]
+        if section == "decide" { settings["by"] = ["lead-dev"] }
+        guard case let .invalid(message) = Flow.load(try FlowFixture.data(overrides: [section: settings])) else {
+            Issue.record("\(key): \(value) must make the flow invalid"); return
+        }
+        #expect(message.contains(key), Comment(rawValue: message))
+    }
+
+    @Test(arguments: ["failure", "pending", "success", "missing"])
+    func checksRedSelectsFixOnlyForAFailedCheck(scenario: String) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "moves": [["move": "fix", "when": ["checks_red"], "who": "author"]]
+        ])).flow)
+        var pr = try FlowFixture.pr()
+        pr.changedFilesTruncated = false
+        pr.checksTruncated = false
+        pr.checks = []
+        if let state = CheckResult.State(rawValue: scenario) {
+            pr.checks = [CheckResult(name: "gate", state: state),
+                         CheckResult(name: "green", state: .success), CheckResult(name: "waiting", state: .pending)]
+        }
+        #expect(FlowEngine.move(for: pr, flow: flow)?.name == (scenario == "failure" ? "fix" : nil))
+    }
+
+    @Test(arguments: ["gate", "lint", "other", "pending", "missing"])
+    func namedChecksRedRequiresOneOfItsNamedChecksToFail(scenario: String) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "moves": [["move": "fix", "when": ["checks_red:gate,lint"], "who": "author"]]
+        ])).flow)
+        var pr = try FlowFixture.pr()
+        pr.changedFilesTruncated = false
+        pr.checksTruncated = false
+        pr.checks = scenario == "missing" ? [] : [CheckResult(
+            name: scenario == "pending" ? "gate" : scenario,
+            state: scenario == "pending" ? .pending : .failure)]
+        #expect(FlowEngine.move(for: pr, flow: flow)?.name == (["gate", "lint"].contains(scenario) ? "fix" : nil))
+    }
+
+    @Test(arguments: ["checks_red", "checks_red:gate"], ["checks truncated", "files truncated", "workflow"])
+    func checksRedNeverUsesAnUnreadableRollup(predicate: String, unreadable: String) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "moves": [["move": "fix", "when": [predicate], "who": "author"]]
+        ])).flow)
+        var pr = try FlowFixture.pr()
+        pr.checks = [CheckResult(name: "gate", state: .failure)]
+        pr.checksTruncated = unreadable == "checks truncated"
+        pr.changedFilesTruncated = unreadable == "files truncated"
+        pr.changedFiles = unreadable == "workflow" ? [".github/workflows/gate.yml"] : []
+        #expect(FlowEngine.move(for: pr, flow: flow) == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func redChecksPlaceholderContainsOnlyFailedHeadCheckNames(hasFailures: Bool) throws {
+        let flow = try #require(Flow.load(FlowFixture.data(overrides: [
+            "moves": [["move": "fix", "when": ["no_review_or_response_newer"], "who": "author"]],
+            "dispatch": ["fix": ["agent": "claude", "prompt": "{red_checks}"]]
+        ])).flow)
+        var pr = try FlowFixture.pr()
+        pr.checks = [CheckResult(name: "green", state: .success), CheckResult(name: "waiting", state: .pending)]
+        if hasFailures { pr.checks += [CheckResult(name: "gate", state: .failure), CheckResult(name: "lint", state: .failure)] }
+        let candidate = try #require(DispatchPlanner.candidates([pr], flow: flow, me: pr.author, repo: pr.repo).first)
+        let prompt = try #require(candidate.prompt)
+        let names = prompt.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        #expect(Set(names) == (hasFailures ? ["gate", "lint"] : []))
+        if !hasFailures { #expect(prompt.isEmpty) }
+    }
+
     @Test(arguments: ["team", "sandbox"])
     func examplesLoad(example: String) throws {
         guard case let .ready(flow) = Flow.load(try FlowFixture.data(example)) else {

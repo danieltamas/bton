@@ -81,6 +81,28 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
 }
 
 /// One of GitHub's checks on a commit, reduced to what a gate needs.
+/// GitHub's remaining quota for the token, as `gh api rate_limit` reports it.
+public struct RateLimit: Hashable, Sendable {
+    public let core: Int
+    public let graphql: Int
+    /// When the later of the two buckets fills again.
+    public let resetsAt: Date
+
+    public init(core: Int, graphql: Int, resetsAt: Date) {
+        self.core = core
+        self.graphql = graphql
+        self.resetsAt = resetsAt
+    }
+
+    /// Nil when both buckets are at or above `floor`; else why the sync waits.
+    public func hold(floor: Int) -> String? {
+        guard floor > 0, core < floor || graphql < floor else { return nil }
+        let clock = DateFormatter()
+        clock.dateFormat = "HH:mm"
+        return "GitHub rate limit: core \(core), graphql \(graphql) left; reading again after \(clock.string(from: resetsAt))"
+    }
+}
+
 public struct CheckResult: Hashable, Sendable {
     public let name: String
     public let state: State

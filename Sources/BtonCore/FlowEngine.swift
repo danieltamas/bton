@@ -223,6 +223,12 @@ public enum FlowEngine {
 
     static let checksPredicate = "checks_green"
 
+    /// The names of the head's checks that ended red, in the rollup's order: `checks_red` and
+    /// the `{red_checks}` placeholder of a repo's prompt.
+    public static func redChecks(of pr: PullRequest) -> [String] {
+        pr.checks.filter { $0.state == .failure }.map(\.name)
+    }
+
     /// The names of a `checks_green:` predicate, comma-separated and trimmed; nil when any is
     /// empty, so `checks_green:` gates nothing open.
     static func checkNames(_ list: String) -> [String]? {
@@ -377,6 +383,13 @@ public enum FlowEngine {
             case let ("checks_green", names?):
                 guard let names = FlowEngine.checkNames(names), checksReadable else { return false }
                 return names.allSatisfy { name in pr.checks.contains { $0.name == name && $0.state == .success } }
+            case ("checks_red", nil):
+                // A red check on the head: the author's to fix, where a pending one may yet turn green.
+                return checksReadable && !FlowEngine.redChecks(of: pr).isEmpty
+            case let ("checks_red", names?):
+                guard let names = FlowEngine.checkNames(names), checksReadable else { return false }
+                let red = FlowEngine.redChecks(of: pr)
+                return names.contains { red.contains($0) }
             default:
                 // An unknown predicate never holds, so a typo in a flow never starts anything.
                 return false

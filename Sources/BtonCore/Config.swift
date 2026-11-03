@@ -37,8 +37,14 @@ public struct BtonConfig: Codable, Sendable {
     /// and stops the jobs this Mac runs, until it is flipped back. Kept in the file so a restart
     /// stays paused and the CLI pauses with the app.
     public var paused: Bool? = nil
+    /// GitHub points (REST and GraphQL each) under which a sync reads nothing and waits for the
+    /// reset: every agent on the token shares the hour's quota, and a read that runs it dry
+    /// strands the jobs that need GitHub to finish. Absent: 300; 0: no floor.
+    public var rateLimitFloor: Int? = nil
+    public static let defaultRateLimitFloor = 300
 
     public var isPaused: Bool { paused == true }
+    public var rateFloor: Int { rateLimitFloor ?? Self.defaultRateLimitFloor }
 
     /// The hats as set, with no entry for a role left to Bton.
     public var hatSettings: [String: HatSettings] { hats ?? [:] }
