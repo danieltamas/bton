@@ -102,6 +102,8 @@ public struct DispatchCandidate: Sendable {
     /// A schedule run's view of the queue (`queueHeads`), kept on its job so the next run sees
     /// a head that moved without a newer commit date.
     public var queueHeads: [String]?
+    /// The move's `proof` argv, placeholders filled: red before the agent, green after its push.
+    public var proof: [[String]] = []
 
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }
@@ -291,6 +293,7 @@ public enum DispatchPlanner {
             candidate.secondPrompt = filling(prompt)
         }
         candidate.costCap = flow.costPerJob
+        candidate.proof = (rule.proof ?? []).map { $0.map(filling) }
         return candidate
     }
 

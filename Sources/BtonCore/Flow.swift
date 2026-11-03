@@ -170,7 +170,9 @@ public struct Flow: Decodable, Sendable {
                 if let helpers = rule.helpers, helpers.count > 3 || !helpers.allSatisfy(BtonConfig.isAgentName) {
                     return .invalid("dispatch.\(move).helpers: up to three agent names")
                 }
+                if let index = rule.proof?.firstIndex(where: \.isEmpty) { return .invalid("dispatch.\(move).proof[\(index)]: empty") }
             }
+            if let index = flow.intake?.proof?.firstIndex(where: \.isEmpty) { return .invalid("intake.proof[\(index)]: empty") }
             if let issues = flow.issues {
                 let prMoves = Set(flow.moves.map(\.move))
                 for (index, rule) in issues.enumerated() {
@@ -301,6 +303,8 @@ public struct DispatchRule: Decodable, Sendable {
     /// Agents on the Mac that runs the move which its Claude may ask (Bton's `ask` tool): the
     /// sandbox keeps them from running from the agent's Bash.
     public let helpers: [String]?
+    /// Argv run in the worktree that must fail before the agent and pass after its push (`Proof`).
+    public let proof: [[String]]?
 
     public var timeout: Duration { .seconds(60 * (timeoutMinutes ?? 60)) }
 }
@@ -350,6 +354,8 @@ public struct Intake: Decodable, Sendable {
     public let agent: String
     public let prompt: String
     public let timeoutMinutes: Int?
+    /// As on a dispatch rule: red before the agent, green after the PR is pushed.
+    public let proof: [[String]]?
 
     public struct IssueType: Decodable, Sendable {
         public let `default`: String

@@ -91,6 +91,10 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var second: SecondRun?
     /// An issue move's plan (triage, stage, restage): the labels as read, for what the job changed.
     public var issueMove: IssueMoves.Plan?
+    /// The move's proof argv (`Proof`), run again after the agent's push; nil when the move has none.
+    public var proof: [[String]]?
+    /// The paths in conflict between a PR and its base when its resolve job started.
+    public var conflicts: [String]?
     /// Where `usage` came from, by bucket: `agent` (the job's own Claude session with its
     /// subagents), `second` (the second reviewer's session), `helpers` (every helper it asked),
     /// `codex` (every codex session started in its worktree while it ran, its own or a Claude

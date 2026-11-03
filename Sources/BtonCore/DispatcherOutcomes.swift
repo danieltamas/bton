@@ -80,6 +80,28 @@ extension Dispatcher {
         }
     }
 
+    /// A pushed outcome with the move's proof run again in the tree the agent pushed from: every
+    /// argv green, or the outcome is a failure (`Proof.afterDetail`) and the new head's own move
+    /// runs it before its agent. A proof that cannot run fails the job the same way as before the
+    /// agent: never read as green.
+    func proved(_ job: Job, outcome: (status: Job.Status, detail: String?)) async -> (status: Job.Status, detail: String?) {
+        guard outcome.status == .succeeded, let proof = job.proof, !proof.isEmpty,
+              let path = job.worktree else { return outcome }
+        let worktree = URL(fileURLWithPath: path, isDirectory: true)
+        let timeout: Duration = job.deadline.map { .seconds(max(60, $0.timeIntervalSince(job.startedAt))) } ?? .seconds(3600)
+        for argv in proof {
+            do {
+                let status = try await runLogged(argv, in: worktree, job: job.id,
+                                                 environment: environments[job.key.repo.lowercased()] ?? [:], timeout: timeout)
+                if let detail = Proof.afterDetail(argv, status: status) { return (.failed, detail) }
+                jobs.note(job.id, "proof `\(argv.joined(separator: " "))` passed after the push")
+            } catch {
+                return (.failed, Proof.unrunDetail(argv, reason: error.localizedDescription))
+            }
+        }
+        return outcome
+    }
+
     /// A resolve is done when the PR's head moved: an agent that stops for a ruling exits 0 too,
     /// and a success there would keep Fix conflicts from running again on this head.
     func resolveOutcome(of job: Job) async -> (status: Job.Status, detail: String?) {

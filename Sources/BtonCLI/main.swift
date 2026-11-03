@@ -91,6 +91,11 @@ do {
             let dispatch = FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: read.viewer) ? "\tdispatch" : ""
             print("#\(pr.number)\t\(move.tier)\(move.tierReason.map { " (\($0))" } ?? "")\t\(move.name)\(held)\t\(owner)\(dispatch)")
         }
+        // A move's proof: red before its agent, green after the push.
+        for (name, rule) in flow.dispatch.sorted(by: { $0.key < $1.key }) {
+            for argv in rule.proof ?? [] { print("proof\t\(name)\t\(argv.joined(separator: " "))") }
+        }
+        for argv in flow.intake?.proof ?? [] { print("proof\t\(IssueIntake.move)\t\(argv.joined(separator: " "))") }
     case "lease":
         guard arguments.count >= 4, BtonConfig.isRepoSlug(arguments[2]), let item = LeaseItem(arguments[3]) else { fail(usage) }
         let (action, repo) = (arguments[1], arguments[2])

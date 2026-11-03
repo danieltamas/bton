@@ -187,6 +187,7 @@ actor Dispatcher {
         job.costCap = candidate.costCap ?? flow?.costPerJob
         job.issueMove = candidate.issueMove
         job.queueHeads = candidate.queueHeads
+        job.proof = candidate.proof.isEmpty ? nil : candidate.proof
         // The agent may have logged out while the lease was claimed: its job waits with the others.
         guard !isLoggedOut(candidate.agent), let lock = LocalLock(jobs.lockURL(id)) else {
             try? await leases.release(lease, ran: false)
@@ -293,6 +294,11 @@ actor Dispatcher {
                 worktree = try await prepareIssue(plan, clone: clone, job: job, environment: environment, timeout: candidate.timeout)
             }
             job.worktree = worktree.path
+            // What a resolve starts from: the paths in conflict, for the repo page's hotspots.
+            if candidate.key.move == "resolve", case .pullRequest = candidate.target {
+                job.conflicts = await Worktrees.conflicts(in: worktree, base: base, ghPath: github.ghPath, runner: runner)
+                if job.conflicts == nil { jobs.note(job.id, "git merge-tree could not list the conflicts") }
+            }
             try jobs.save(job)
             jobs.note(job.id, "worktree \(worktree.path)")
             if candidate.agent != nil, candidate.prompt != nil, let pr = candidate.pr,
@@ -309,6 +315,12 @@ actor Dispatcher {
                                                                          reviewHeadings: flow?.allReviewHeadings ?? [], now: .now)
                 candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
                 if let secondPrompt = candidate.secondPrompt { candidate.secondPrompt = secondPrompt + "\n\n" + PREvidence.promptLine() }
+            }
+            // A red check the move is sent to fix that is a known flake: rerun before changing code.
+            if !candidate.move.redChecks.isEmpty,
+               let line = Flakes.line(redChecks: candidate.move.redChecks,
+                                      known: Flakes.known(FlakeStore.load(home: home), repo: candidate.key.repo)) {
+                candidate.prompt = Supervision.adding(line, to: candidate)
             }
             let graphLine = graphLine(for: candidate.key.repo, in: worktree, base: base, job: job.id,
                                       tool: candidate.denied.isEmpty ? nil : Helpers.graphTool)
@@ -337,6 +349,20 @@ actor Dispatcher {
             if let cache, let cacheKey {
                 await CheckCache.save(cache, key: cacheKey, from: worktree, home: home, repo: candidate.key.repo,
                                       note: { [jobs, id = job.id] in jobs.note(id, $0) })
+            }
+            // Red before the work, or the move proves nothing: a proof that passes already is refused,
+            // and one that could not run is never read as red.
+            for argv in candidate.proof {
+                let status: Int32
+                do {
+                    status = try await runLogged(argv, in: worktree, job: job.id, environment: runEnvironment, timeout: candidate.timeout)
+                } catch let error as DispatchError {
+                    return await finish(job, status: .failed, detail: Proof.unrunDetail(argv, reason: error.localizedDescription))
+                }
+                if let detail = Proof.beforeDetail(argv, status: status, head: candidate.key.head) {
+                    return await finish(job, status: .failed, detail: detail)
+                }
+                jobs.note(job.id, "proof `\(argv.joined(separator: " "))` exited \(status) before the agent: red, as it must be")
             }
             if let command = candidate.command, candidate.agent == nil {
                 // The repo's scripts as merged into the base, never the PR's copy: a PR that edits its
@@ -544,7 +570,7 @@ actor Dispatcher {
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
         if job.key.move == IssueIntake.move {
-            let outcome = await intakeOutcome(of: job)
+            let outcome = await proved(job, outcome: await intakeOutcome(of: job))
             if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
@@ -565,7 +591,7 @@ actor Dispatcher {
                                 detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
         }
         if job.pushes == true, job.review == nil {
-            let outcome = await pushOutcome(of: job)
+            let outcome = await proved(job, outcome: await pushOutcome(of: job))
             if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }
