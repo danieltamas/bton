@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.31.1 (2026-11-03)
 
 **A command job's log no longer ends with "graph queries: unknown".** The line counts how often the agent asked the code graph, read from the agent's transcript when the job ends. A merge or a check that runs a command has no agent and no transcript, so every such job ended with "unknown" as if a count had been lost. The line is written for agent jobs only.
 
