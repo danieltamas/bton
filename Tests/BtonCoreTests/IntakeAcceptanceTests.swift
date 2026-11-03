@@ -160,8 +160,9 @@ enum IntakeAcceptanceFixture {
         #expect(plan.claim == [["claim", "7", F.repo, "main", "docs"]])
         #expect(plan.worktree == ["worktree", "7", F.repo, "main", "docs"])
         #expect(plan.worktreePath == ".worktrees/issue-7")
-        #expect(candidate.prompt == "7 synthetic/project main docs")
-        #expect(try F.candidate()?.prompt == "7 synthetic/project main feat")
+        // The prompt ends with the criterion line (spec 2026-11-03 pullboard lessons, section 2).
+        #expect(candidate.prompt == "7 synthetic/project main docs\n\n" + IssueIntake.criterionLine)
+        #expect(try F.candidate()?.prompt == "7 synthetic/project main feat\n\n" + IssueIntake.criterionLine)
     }
 
     @Test func worktreePathSubstitutesAllFourTokens() throws {
