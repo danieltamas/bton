@@ -91,6 +91,11 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
     public var second: SecondRun?
     /// An issue move's plan (triage, stage, restage): the labels as read, for what the job changed.
     public var issueMove: IssueMoves.Plan?
+    /// Where `usage` came from, by bucket: `agent` (the job's own Claude session with its
+    /// subagents), `second` (the second reviewer's session), `helpers` (every helper it asked),
+    /// `codex` (every codex session started in its worktree while it ran, its own or a Claude
+    /// agent's `codex exec`). nil in records from before it.
+    public var sources: [String: [String: TokenUsage]]?
 
     public init(id: UUID, key: JobKey, agent: String?, pid: Int32? = nil, worktree: String? = nil,
                 startedAt: Date, endedAt: Date? = nil, status: Status, detail: String? = nil,
@@ -302,15 +307,52 @@ public struct JobStore: Sendable {
         var cleared = 0
         for job in all() where job.status != .running {
             guard let ended = job.endedAt, ended < cutoff else { continue }
-            let files = [outputURL(job.id), logURL(job.id), exitURL(job.id), helperSessionsURL(job.id), helpersConfigURL(job.id),
-                         secondOutputURL(job.id), secondLogURL(job.id), secondExitURL(job.id), stopURL(job.id),
-                         sessionExportURL(job.id), sessionPreviewURL(job.id)]
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
+            let files = sideFiles(of: job.id).filter { FileManager.default.fileExists(atPath: $0.path) }
             guard !files.isEmpty else { continue }
             files.forEach { try? FileManager.default.removeItem(at: $0) }
             cleared += 1
         }
         return cleared
+    }
+
+    /// Everything a job leaves beside its record.
+    private func sideFiles(of id: UUID) -> [URL] {
+        [outputURL(id), logURL(id), exitURL(id), helperSessionsURL(id), helpersConfigURL(id),
+         secondOutputURL(id), secondLogURL(id), secondExitURL(id), stopURL(id),
+         sessionExportURL(id), sessionPreviewURL(id), lockURL(id)]
+    }
+
+    /// Folds the records of jobs that ended more than `days` ago into the month ledgers
+    /// (`CostLedger`) and removes them; returns how many records went. Kept whatever their age:
+    /// a running job, and for every repo, item and move its newest job and its newest success,
+    /// which schedules read for their last run, last success and `onlyOnChange`. A record that
+    /// was not folded is never removed. The app and the CLI can both run an engine, so one
+    /// retires at a time: another process holding the lock means nothing happens now.
+    @discardableResult
+    public func retire(now: Date = .now, olderThan days: Int, prices: PriceList, calendar: Calendar = .current) throws -> Int {
+        let directory = CostLedger.directory(home: home)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let lock = LocalLock(directory.appendingPathComponent(".lock")) else { return 0 }
+        defer { lock.release() }
+        let all = all()
+        var kept = Set<UUID>()
+        for (_, runs) in Dictionary(grouping: all, by: { "\($0.key.repo.lowercased())|\($0.key.item)|\($0.key.move)" }) {
+            if let newest = runs.max(by: { $0.startedAt < $1.startedAt }) { kept.insert(newest.id) }
+            if let success = runs.filter({ $0.status == .succeeded }).max(by: { $0.startedAt < $1.startedAt }) { kept.insert(success.id) }
+        }
+        let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
+        let old = all.filter { $0.status != .running && ($0.endedAt ?? $0.startedAt) < cutoff && !kept.contains($0.id) }
+        guard !old.isEmpty else { return 0 }
+        try CostLedger.fold(old, home: home, prices: prices, calendar: calendar)
+        let folded = CostLedger.load(home: home).ledgers.reduce(into: Set<UUID>()) { $0.formUnion($1.folded) }
+        var removed = 0
+        for job in old where folded.contains(job.id) {
+            for url in sideFiles(of: job.id) + [directory.deletingLastPathComponent().appendingPathComponent("jobs/\(job.id.uuidString).json")] {
+                try? FileManager.default.removeItem(at: url)
+            }
+            removed += 1
+        }
+        return removed
     }
 
     /// The Claude sessions of the job's helpers, one id per line, so their cost is the job's.

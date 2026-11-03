@@ -35,6 +35,7 @@ struct SettingsView: View {
         case .supervisor: SupervisorPane()
         case .voice: VoicePane()
         case .prices: PricesPane()
+        case .costs: CostsPane()
         case .more: MorePane()
         case .about: AboutPane()
         }
@@ -91,6 +92,7 @@ extension SettingsPane {
         case .supervisor: Theme.symbol(forMove: Supervision.move)
         case .voice: "mic"
         case .prices: "dollarsign.circle"
+        case .costs: "chart.bar"
         case .more: "square.grid.2x2"
         case .about: "info.circle"
         }
@@ -105,6 +107,7 @@ extension SettingsPane {
         case .supervisor: Theme.color(forMove: Supervision.move)
         case .voice: Theme.hue(0xFF7A8A, light: 0xC2415A)
         case .prices: Theme.hue(0xFFB547, light: 0x9E6801)
+        case .costs: Theme.hue(0xF2A1FF, light: 0x9C3FB2)
         case .more: Theme.hue(0x5BE3A4, light: 0x1F8A5C)
         case .about: Theme.neutral
         }

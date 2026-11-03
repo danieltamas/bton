@@ -791,20 +791,30 @@ actor Dispatcher {
         let secondSession = job.second.map { [$0.session] } ?? []
         let helperSessions = ((try? String(contentsOf: jobs.helperSessionsURL(id), encoding: .utf8)) ?? "")
             .split(whereSeparator: \.isNewline).compactMap { UUID(uuidString: String($0)) }
-        let (usage, cost) = await Task.detached(priority: .utility) { () -> ([String: TokenUsage], Decimal?) in
-            var usage: [String: TokenUsage] = [:]
-            for session in [id] + secondSession + helperSessions {
-                if let file = ClaudeSessions.sessionFile(id: session, worktree: worktree), let found = try? ClaudeSessions.usage(ofSessionFile: file) {
-                    usage.merge(found, uniquingKeysWith: +)
+        let (sources, cost) = await Task.detached(priority: .utility) { () -> ([String: [String: TokenUsage]], Decimal?) in
+            // By bucket, so the Costs pane can say what the agent itself, its second, its helpers
+            // and codex each spent; `usage` stays the sum.
+            var sources: [String: [String: TokenUsage]] = [:]
+            let add = { (bucket: String, found: [String: TokenUsage]) in
+                guard !found.isEmpty else { return }
+                sources[bucket, default: [:]].merge(found, uniquingKeysWith: +)
+            }
+            for (bucket, sessions) in [("agent", [id]), ("second", secondSession), ("helpers", helperSessions)] {
+                for session in sessions {
+                    if let file = ClaudeSessions.sessionFile(id: session, worktree: worktree), let found = try? ClaudeSessions.usage(ofSessionFile: file) {
+                        add(bucket, found)
+                    }
                 }
             }
             if let worktree {
-                usage.merge(CodexSessions.usage(inWorktree: worktree, from: start, to: end), uniquingKeysWith: +)
+                add("codex", CodexSessions.usage(inWorktree: worktree, from: start, to: end))
             }
-            return (usage, PriceList.cost(of: usage, prices: PriceList.load(home: home)))
+            let usage = sources.values.reduce(into: [String: TokenUsage]()) { $0.merge($1, uniquingKeysWith: +) }
+            return (sources, PriceList.cost(of: usage, prices: PriceList.load(home: home)))
         }.value
-        guard !usage.isEmpty else { return }
-        job.usage = usage
+        guard !sources.isEmpty else { return }
+        job.sources = sources
+        job.usage = sources.values.reduce(into: [:]) { $0.merge($1, uniquingKeysWith: +) }
         job.cost = cost
     }
 

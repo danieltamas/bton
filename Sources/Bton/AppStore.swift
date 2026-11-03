@@ -100,6 +100,7 @@ final class AppStore {
     /// Where `missingProgram` looked, for the hint beside the warning.
     static let programSearchHint = "Bton looks for it on PATH and in ~/.local/bin, /opt/homebrew/bin and /usr/local/bin"
     var supervisor: SupervisorSettings? { config.supervisor }
+    var costSettings: CostSettings? { config.costs }
     /// Set by `showDemo`: the screenshots never read this Mac's voice models.
     private(set) var isDemo = false
     var voiceSettings: VoiceSettings? { config.voice }
@@ -800,7 +801,7 @@ enum SettingsError: Error, LocalizedError {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general = "General", repos = "Repos", agents = "Agents", schedules = "Schedules", supervisor = "Supervisor",
-         voice = "Voice", prices = "Prices", more = "More apps", about = "About"
+         voice = "Voice", prices = "Prices", costs = "Costs", more = "More apps", about = "About"
     var id: Self { self }
 }
 

@@ -230,14 +230,13 @@ public actor Engine {
         // A pick made while this tick awaits GitHub is the next tick's to judge.
         let picksAtStart = Set(next)
         deferred = [:]
-        if dispatching, lastPrune.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true {
-            lastPrune = .now
-            let cleared = jobs.prune()
-            if cleared > 0 { log("jobs: removed the logs of \(cleared) jobs older than \(JobStore.keepDays) days") }
-        }
         do {
             // Read every tick: the app's Repos panel and a hand edit both change it.
             let config = try BtonConfig.loadOrCreate(home: home)
+            if dispatching, lastPrune.map({ Date.now.timeIntervalSince($0) >= 86_400 }) ?? true {
+                lastPrune = .now
+                housekeep(retentionDays: config.costs?.retentionDays ?? CostSettings.defaultRetentionDays)
+            }
             // Paused: GitHub is not read, nothing starts, and what this Mac runs is stopped now.
             if config.isPaused {
                 await pause()
@@ -612,6 +611,20 @@ public actor Engine {
         }
         issueLists(into: &snapshot, config: config)
         return reads
+    }
+
+    /// Once a day: finished jobs lose their logs after `JobStore.keepDays`, and their records go
+    /// into the month ledgers after `retentionDays`. One line says what went, when anything did.
+    private func housekeep(retentionDays: Int) {
+        let cleared = jobs.prune()
+        var retired = 0
+        do {
+            retired = try jobs.retire(olderThan: retentionDays, prices: PriceList.load(home: home))
+        } catch {
+            log("jobs: could not retire old records into the month ledgers: \(error.localizedDescription)")
+        }
+        guard cleared > 0 || retired > 0 else { return }
+        log("jobs: removed the logs of \(cleared) jobs older than \(JobStore.keepDays) days; retired \(retired) records older than \(retentionDays) days into the month ledgers")
     }
 
     /// Why the sync waits on GitHub's quota, or nil. Logged once when the hold begins and once

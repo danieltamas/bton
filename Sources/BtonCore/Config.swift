@@ -41,6 +41,8 @@ public struct BtonConfig: Codable, Sendable {
     /// reset: every agent on the token shares the hour's quota, and a read that runs it dry
     /// strands the jobs that need GitHub to finish. Absent: 300; 0: no floor.
     public var rateLimitFloor: Int? = nil
+    /// How long finished job records stay before the month ledger takes them (`CostSettings`).
+    public var costs: CostSettings? = nil
     public static let defaultRateLimitFloor = 300
 
     public var isPaused: Bool { paused == true }
