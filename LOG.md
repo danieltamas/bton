@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.31.0 (2026-11-03)
 
 **A build that ends without a PR says why and gives the issue back.** An implement whose agent stopped without opening a PR (a question it could not answer, a blocked tool, a forgotten push) ended as a failed job on one Mac and nothing else: the issue stayed assigned at `stage:in-progress`, nobody on GitHub saw a word, and a day later it was stale-pinged; six of eight such builds on 2026-11-01 cost $26 for nothing visible. Now the issue gets a comment with the agent's last lines (within 400 characters, under an `implement-failed` marker, so no Bton reads it as an ask), goes back to `stage:ready` and loses the assignment in one edit, so the team reads the reason where they work and the issue is free again. Bton's own notices (that comment, a stale ping, a failed check) no longer count as a new round of an issue for the intake or the issue moves: a round is a person's comment, and a notice making one would have built the same issue again on its own report.
 
