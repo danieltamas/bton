@@ -58,6 +58,31 @@ enum Worktrees {
         return tree
     }
 
+    /// The paths in conflict between the worktree's head and `base`, from `git merge-tree`, which
+    /// touches nothing: exit 1 lists them, exit 0 is a clean merge, anything else is nil (git could
+    /// not say; the job's note has it).
+    static func conflicts(in worktree: URL, base: String, ghPath: String, runner: ProcessRunner) async -> [String]? {
+        let arguments = ["merge-tree", "--write-tree", "--name-only", "refs/remotes/origin/\(base)", "HEAD"]
+        guard let result = try? await runner.run("/usr/bin/git", arguments, in: worktree,
+                                                 environment: Dispatcher.gitOverHTTPS(ghPath: ghPath), timeout: .seconds(120)) else { return nil }
+        switch result.status {
+        case 0: return []
+        case 1: return conflictPaths(in: String(decoding: result.stdout, as: UTF8.self))
+        default: return nil
+        }
+    }
+
+    /// `merge-tree --name-only` output: the tree id first, then one conflicted path a line up to
+    /// the blank line before the informational messages. A path listed twice counts once.
+    static func conflictPaths(in output: String) -> [String] {
+        var seen = Set<String>(), paths: [String] = []
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false).dropFirst() {
+            if line.isEmpty { break }
+            if seen.insert(String(line)).inserted { paths.append(String(line)) }
+        }
+        return paths
+    }
+
     /// The commit a prepared tree is at: what a run in it sees, whatever the remote ref says by then.
     static func head(of worktree: URL, ghPath: String, runner: ProcessRunner) async throws -> String {
         try await git(["rev-parse", "HEAD"], in: worktree, ghPath: ghPath, runner: runner)

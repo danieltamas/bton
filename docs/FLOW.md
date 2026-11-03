@@ -306,6 +306,15 @@ agent's review would be posted as the author and ignored.
   same environment, time allowance and receipts (a gate that passed on this head for another
   move is not run again). Gates are chosen per move because a lint or type check that stops a
   review before it spawns must not stop the `fix` move from repairing what it found.
+- `proof`: optional, a list of argv with the same placeholders as `command`, run in the worktree
+  after the checks and before the agent. Each must fail there: one that passes already shows
+  nothing to fix, and the job is refused with "proves nothing: `<argv>` already passes on
+  <head>" (the supervisor escalates it: sharpen the issue or the findings, then Retry). After
+  the agent pushed, every proof runs again in the same tree; one still red fails the job with
+  "proof still red", and the new head's own move runs it before its agent. A proof that cannot
+  run (a program this Mac lacks, a timeout) fails the job as "proof: ..." and is never read as
+  red or green. `["bun", "test", "--filter", "{number}"]` on a `fix` move is the usual form. An
+  empty argv is refused when the flow loads.
 
 A move is dispatched only when it is mine, has a `dispatch` entry, the PR targets `base`, and
 the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
@@ -411,6 +420,14 @@ repo, taken or not, and every `stage:in-progress` issue with who has it, so nobo
   `moves` take over on the Mac of the PR's author: the reviewer rotation assigns a reviewer, and
   when a review asks for changes the author's Bton runs the flow's `fix` move, so the answer to a
   review reaches whoever worked the issue. A flow should therefore have a `fix` dispatch.
+- **The bar.** The agent's scratch directory holds `criterion.md`: the issue's title and body as
+  they stood when the job started, stamped in UTC and cut at 12,000 characters. The prompt says
+  that file is the bar for the job and that an edit to the issue after it is not part of this
+  job, only something to mention in the PR, so a criterion that moves mid-run cannot move the
+  work with it.
+- **`proof`.** Optional on `intake`, as on a dispatch rule: argv with the intake's placeholders
+  (`{repo}`, `{issue}`, `{base}`, `{type}`) that must fail before the agent and pass after the
+  PR is pushed, with the same refusals.
 - **Once.** Like a PR move, an issue runs once per Bton home and repo. Retry on the failed or stopped job in
   the Jobs tab runs it again: the claim is skipped when the issue is already mine, and an existing
   worktree is reused.

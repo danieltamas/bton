@@ -2,6 +2,20 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**What a failure is, and whether it keeps happening.** Every failed job now has a cause (`check:<argv>`, `red:<checks>`, `timeout`, `no-push`, `agent-exit:<n>`, `lease-lost`, `post-failed`, `proof-red`, `environment`...), and a cause that failed the same way on another item of the repo in the last 14 days flags the job `recurring`. The supervisor's facts name the cause and the items it recurred on, and its prompt says a recurring cause is a setup problem: prefer propose, and say which rule or check would catch it before the next run.
+
+**The issue as it stood.** An implement job starts with `criterion.md` in its scratch directory: the issue's title and body at the moment the job started, stamped in UTC. The prompt says that file is the bar for the job and that an edit to the issue after it is not part of this job, only something to mention in the PR.
+
+**A move that proves something.** A dispatch rule or the intake can name `proof`: argv run in the worktree before the agent, which must fail there, and again after the push, where each must pass. A proof green before the work refuses the job ("proves nothing: ... already passes on <head>", escalated so the issue or the findings get sharpened), one red after it fails the job and the new head's own move runs it again, and one that cannot run is never read either way. `bton moves --flow` lists each move's proof.
+
+**Flaky checks, named.** A check read red on one sync and green on a later one on the same commit is a flake: Bton records it in `~/.bton/flakes.json`, labels the PR `flaky:<check>`, tells you once, and a `fix` move sent at that check is told to rerun the failed run before changing code (`gh run rerun <id> --failed`) and to change code only for a failure it reproduces. Nothing is softened: `checks not green` still refuses a merge on a flaky check.
+
+**Where the conflicts are.** Every Fix conflicts job records the paths in conflict between its PR and the base when it started (`git merge-tree`, which touches nothing), and a repo's page lists the files that stopped the most PRs in the last 14 days under its summary.
+
+**Handoff from a sandbox.** `bton handoff` and the Give to comments post their body on gh's standard input instead of a temporary file: a session whose sandbox cannot write to the system temporary folder (exit 3, "You don't have permission to save the file ... in the folder T") now posts.
+
 ## 0.33.0 (2026-11-03)
 
 **A Costs pane, and job records that fold into month ledgers.** Settings > Costs shows what the agents this Mac started have cost: the last 30 days as bars (a click lists that day's jobs, each with what its own session, its second reviewer, its helpers and codex spent), a table by project, hat, move, agent or model over today, 7 days, 30 days or the month, and every month with its projects. A finished job's record now stays 90 days (30, 60, 90 or 180 in the pane) and is then folded into `~/.bton/costs/<month>.json`, which stays; a schedule's newest run and newest success are kept whatever their age. This Mac only: your own sessions and teammates' Macs are not counted.

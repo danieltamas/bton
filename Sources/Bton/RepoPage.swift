@@ -86,6 +86,10 @@ struct RepoPage: View {
                 if let number = report?.previewPullRequest {
                     Text("From PR #\(number), not merged yet").font(.meta).foregroundStyle(Theme.unassigned).lineLimit(1)
                 }
+                if let line = ConflictHotspots.line(ConflictHotspots.rank(jobs: store.jobs, repo: slug)) {
+                    Text(line).font(.meta).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                        .help("Files in conflict when Fix conflicts started, by how many PRs each one stopped")
+                }
             }
             Spacer(minLength: 4)
             IconButton(symbol: "arrow.up.right", help: "Open the repo on GitHub", size: 24) {
