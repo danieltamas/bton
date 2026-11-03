@@ -4,6 +4,8 @@ import Foundation
 /// notification show it, and a flagged job is what the supervisor looks at.
 public enum JobFlag: String, Codable, Sendable, CaseIterable {
     case timedOut, leaseLost, noVerdict, postFailed, agentFailed, failed, repeated, costly, loggedOut
+    /// The same cause (`Cause.key`) failed on another item of the repo within `Cause.window`.
+    case recurring
 }
 
 /// The deterministic half of supervision: no model, the same flags for the same jobs every time.
@@ -21,6 +23,7 @@ public enum Watchdog {
             flags.append(failure(job.detail))
             let others = jobs.filter { $0.id != job.id && $0.key == job.key && $0.status == .failed }
             if !others.isEmpty { flags.append(.repeated) }
+            if !Cause.repeats(of: job, among: jobs, now: job.endedAt ?? .now).isEmpty { flags.append(.recurring) }
         }
         if isCostly(job, among: jobs) { flags.append(.costly) }
         return flags

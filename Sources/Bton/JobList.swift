@@ -147,6 +147,7 @@ extension JobFlag {
         case .failed: nil
         case .repeated: "failed again"
         case .costly: "costly"
+        case .recurring: "recurring"
         }
     }
 }
