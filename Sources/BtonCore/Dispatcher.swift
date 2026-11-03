@@ -41,6 +41,10 @@ actor Dispatcher {
     private var stopReasons: [UUID: String] = [:]
     /// Each watched repo's environment, by lowercased slug, to redact what a job posts.
     var environments: [String: [String: String]] = [:]
+    /// What each running job's proof ran with before its agent, so the run after the push sees
+    /// the same inputs: a setting changed meanwhile, or the pressed marker, must not turn a red
+    /// proof green on its own.
+    var proofRuns: [UUID: (environment: [String: String], timeout: Duration)] = [:]
     /// Each watched repo's work label, by lowercased slug.
     private(set) var workLabels: [String: String] = [:]
     /// The code graph store of each repo that builds one, by lowercased slug.
@@ -352,11 +356,12 @@ actor Dispatcher {
             }
             // Red before the work, or the move proves nothing: a proof that passes already is refused,
             // and one that could not run is never read as red.
+            if !candidate.proof.isEmpty { proofRuns[job.id] = (runEnvironment, candidate.timeout) }
             for argv in candidate.proof {
                 let status: Int32
                 do {
                     status = try await runLogged(argv, in: worktree, job: job.id, environment: runEnvironment, timeout: candidate.timeout)
-                } catch let error as DispatchError {
+                } catch {
                     return await finish(job, status: .failed, detail: Proof.unrunDetail(argv, reason: error.localizedDescription))
                 }
                 if let detail = Proof.beforeDetail(argv, status: status, head: candidate.key.head) {
@@ -564,7 +569,7 @@ actor Dispatcher {
                 status: exitStatus(job.id), output: AgentFailure.tail(of: jobs.outputURL(job.id)), log: AgentFailure.tail(of: jobs.logURL(job.id))))
         }
         if job.key.move == "resolve" {
-            let outcome = await resolveOutcome(of: job)
+            let outcome = await proved(job, outcome: await resolveOutcome(of: job))
             // A Stop pressed while GitHub was read stands over what it said.
             if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
@@ -737,6 +742,7 @@ actor Dispatcher {
         var job = job
         try? FileManager.default.removeItem(at: Self.scratch(job.id))
         jobs.clearStopRequest(job.id)
+        proofRuns[job.id] = nil
         // Both loops are waited out: a renewal push still in flight would land after the release
         // and leave the lease held until it expired.
         for loop in [expiryWatches.removeValue(forKey: job.id), renewals.removeValue(forKey: job.id)].compactMap({ $0 }) {

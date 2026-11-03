@@ -80,19 +80,20 @@ extension Dispatcher {
         }
     }
 
-    /// A pushed outcome with the move's proof run again in the tree the agent pushed from: every
-    /// argv green, or the outcome is a failure (`Proof.afterDetail`) and the new head's own move
-    /// runs it before its agent. A proof that cannot run fails the job the same way as before the
-    /// agent: never read as green.
+    /// A pushed outcome with the move's proof run again in the tree the agent pushed from, with
+    /// the environment and time allowance of the run before the agent (`proofRuns`): every argv
+    /// green, or the outcome is a failure (`Proof.afterDetail`) and the new head's own move runs
+    /// it before its agent. A proof that cannot run fails the job the same way as before the
+    /// agent: never read as green. A job whose first run this process did not see (a restart
+    /// between) runs with the repo's environment now and the move's default hour.
     func proved(_ job: Job, outcome: (status: Job.Status, detail: String?)) async -> (status: Job.Status, detail: String?) {
         guard outcome.status == .succeeded, let proof = job.proof, !proof.isEmpty,
               let path = job.worktree else { return outcome }
         let worktree = URL(fileURLWithPath: path, isDirectory: true)
-        let timeout: Duration = job.deadline.map { .seconds(max(60, $0.timeIntervalSince(job.startedAt))) } ?? .seconds(3600)
+        let run = proofRuns.removeValue(forKey: job.id) ?? (environments[job.key.repo.lowercased()] ?? [:], .seconds(3600))
         for argv in proof {
             do {
-                let status = try await runLogged(argv, in: worktree, job: job.id,
-                                                 environment: environments[job.key.repo.lowercased()] ?? [:], timeout: timeout)
+                let status = try await runLogged(argv, in: worktree, job: job.id, environment: run.environment, timeout: run.timeout)
                 if let detail = Proof.afterDetail(argv, status: status) { return (.failed, detail) }
                 jobs.note(job.id, "proof `\(argv.joined(separator: " "))` passed after the push")
             } catch {
