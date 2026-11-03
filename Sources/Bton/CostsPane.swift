@@ -39,11 +39,18 @@ struct CostsPane: View {
         .animation(Motion.spring, value: problem)
     }
 
-    /// The ledgers are a few small files; the records are already in the store.
+    /// Off the main thread: the ledgers grow for as long as the Mac runs jobs, and the store's
+    /// jobs change on every sync while the pane is open.
     private func reload() {
-        let loaded = CostLedger.load(home: store.home)
-        unreadable = loaded.unreadable
-        report = CostReport(ledgers: loaded.ledgers, jobs: store.jobs, prices: store.prices)
+        let (home, jobs, prices) = (store.home, store.jobs, store.prices)
+        Task {
+            let (report, unreadable) = await Task.detached(priority: .userInitiated) { () -> (CostReport, [String]) in
+                let loaded = CostLedger.load(home: home)
+                return (CostReport(ledgers: loaded.ledgers, jobs: jobs, prices: prices), loaded.unreadable)
+            }.value
+            self.report = report
+            self.unreadable = unreadable
+        }
     }
 
     // MARK: days

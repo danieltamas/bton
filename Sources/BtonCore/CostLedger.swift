@@ -16,16 +16,29 @@ public struct CostSettings: Codable, Hashable, Sendable {
 /// (`folded`), so retiring the same jobs again changes nothing, and the ledger stays after the
 /// records are gone.
 public struct CostLedger: Codable, Sendable {
-    /// Tokens and cost of one model inside a row; `jobs` counts the jobs that used it.
+    /// Tokens and cost of one model inside a row; `jobs` counts the jobs that used it, `unpriced`
+    /// those among them whose record had no cost.
     public struct ModelShare: Codable, Hashable, Sendable {
         public var jobs: Int
         public var usage: TokenUsage
         public var cost: Decimal
+        public var unpriced: Int
 
-        public init(jobs: Int = 0, usage: TokenUsage = TokenUsage(), cost: Decimal = 0) {
+        public init(jobs: Int = 0, usage: TokenUsage = TokenUsage(), cost: Decimal = 0, unpriced: Int = 0) {
             self.jobs = jobs
             self.usage = usage
             self.cost = cost
+            self.unpriced = unpriced
+        }
+
+        enum CodingKeys: String, CodingKey { case jobs, usage, cost, unpriced }
+
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            jobs = try values.decode(Int.self, forKey: .jobs)
+            usage = try values.decode(TokenUsage.self, forKey: .usage)
+            cost = try values.decode(Decimal.self, forKey: .cost)
+            unpriced = try values.decodeIfPresent(Int.self, forKey: .unpriced) ?? 0
         }
     }
 
@@ -143,6 +156,7 @@ public struct CostLedger: Codable, Sendable {
             share.jobs += 1
             share.usage = share.usage + tokens
             share.cost += shares?[model] ?? 0
+            if shares == nil { share.unpriced += 1 }
             rows[index].models[model] = share
         }
     }
@@ -186,9 +200,28 @@ public enum JobValuation {
 }
 
 extension Job {
-    /// Each source bucket of `sources` priced; nil for a bucket with an unpriced model.
+    /// What each source bucket of `sources` cost. A priced job's recorded `cost` is split across
+    /// the buckets in proportion to their token cost at `prices`, so the parts add up to the
+    /// figure the row shows whatever the prices did since; an unpriced job's buckets are priced
+    /// one by one, nil where a model has no price.
     public func sourceCosts(prices: PriceList) -> [String: Decimal?] {
-        (sources ?? [:]).mapValues { PriceList.cost(of: $0, prices: prices) }
+        let sources = sources ?? [:]
+        guard let total = cost else { return sources.mapValues { PriceList.cost(of: $0, prices: prices) } }
+        let buckets = sources.keys.sorted()
+        guard !buckets.isEmpty else { return [:] }
+        let weights = buckets.map { bucket in
+            sources[bucket]!.reduce(Decimal(0)) { $0 + (prices.price(for: $1.key)?.cost(of: $1.value) ?? 0) }
+        }
+        let sum = weights.reduce(0, +)
+        var shares: [String: Decimal?] = [:]
+        var given: Decimal = 0
+        for (bucket, weight) in zip(buckets, weights).dropLast() {
+            let share = sum > 0 ? total * weight / sum : total / Decimal(buckets.count)
+            shares[bucket] = share
+            given += share
+        }
+        shares[buckets.last!] = total - given
+        return shares
     }
 }
 
@@ -294,12 +327,9 @@ public struct CostReport: Sendable {
                 for (model, share) in row.models {
                     var entry = totals[model] ?? (0, 0, 0)
                     entry.jobs += share.jobs
+                    entry.unpriced += share.unpriced
                     entry.cost += share.cost
                     totals[model] = entry
-                }
-                // An unpriced job's count goes to the models it used, so the column stays honest.
-                if row.unpriced > 0 {
-                    for model in row.models.keys { totals[model]!.unpriced += row.unpriced }
                 }
                 continue
             }

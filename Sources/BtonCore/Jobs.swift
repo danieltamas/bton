@@ -315,6 +315,25 @@ public struct JobStore: Sendable {
         return cleared
     }
 
+    /// The records some reader needs whatever their age: for every repo, item and move the
+    /// newest job and the newest success (a schedule's last run, last success and
+    /// `onlyOnChange`); every decide (the count of rulings since a person last spoke); each
+    /// agent's newest finished job (a logged-out agent stays held until the owner says so). The
+    /// watchdog's costly baseline (the newest priced successes per repo and move) is not kept:
+    /// a move that runs rarely rebuilds it from the records inside the retention window.
+    static func retained(among jobs: [Job]) -> Set<UUID> {
+        var kept = Set<UUID>()
+        for (_, runs) in Dictionary(grouping: jobs, by: { "\($0.key.repo.lowercased())|\($0.key.item)|\($0.key.move)" }) {
+            if let newest = runs.max(by: { $0.startedAt < $1.startedAt }) { kept.insert(newest.id) }
+            if let success = runs.filter({ $0.status == .succeeded }).max(by: { $0.startedAt < $1.startedAt }) { kept.insert(success.id) }
+        }
+        for (_, runs) in Dictionary(grouping: jobs.filter { $0.agent != nil && $0.endedAt != nil }, by: { $0.agent! }) {
+            if let newest = runs.max(by: { $0.endedAt! < $1.endedAt! }) { kept.insert(newest.id) }
+        }
+        kept.formUnion(jobs.filter { $0.key.move == IssueDecisions.move }.map(\.id))
+        return kept
+    }
+
     /// Everything a job leaves beside its record.
     private func sideFiles(of id: UUID) -> [URL] {
         [outputURL(id), logURL(id), exitURL(id), helperSessionsURL(id), helpersConfigURL(id),
@@ -323,11 +342,10 @@ public struct JobStore: Sendable {
     }
 
     /// Folds the records of jobs that ended more than `days` ago into the month ledgers
-    /// (`CostLedger`) and removes them; returns how many records went. Kept whatever their age:
-    /// a running job, and for every repo, item and move its newest job and its newest success,
-    /// which schedules read for their last run, last success and `onlyOnChange`. A record that
-    /// was not folded is never removed. The app and the CLI can both run an engine, so one
-    /// retires at a time: another process holding the lock means nothing happens now.
+    /// (`CostLedger`) and removes them; returns how many records went. A record that was not
+    /// folded is never removed, nor is one some reader still needs (`retained`). The app and the
+    /// CLI can both run an engine, so one retires at a time: another process holding the lock
+    /// means nothing happens now.
     @discardableResult
     public func retire(now: Date = .now, olderThan days: Int, prices: PriceList, calendar: Calendar = .current) throws -> Int {
         let directory = CostLedger.directory(home: home)
@@ -335,11 +353,7 @@ public struct JobStore: Sendable {
         guard let lock = LocalLock(directory.appendingPathComponent(".lock")) else { return 0 }
         defer { lock.release() }
         let all = all()
-        var kept = Set<UUID>()
-        for (_, runs) in Dictionary(grouping: all, by: { "\($0.key.repo.lowercased())|\($0.key.item)|\($0.key.move)" }) {
-            if let newest = runs.max(by: { $0.startedAt < $1.startedAt }) { kept.insert(newest.id) }
-            if let success = runs.filter({ $0.status == .succeeded }).max(by: { $0.startedAt < $1.startedAt }) { kept.insert(success.id) }
-        }
+        let kept = Self.retained(among: all)
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
         let old = all.filter { $0.status != .running && ($0.endedAt ?? $0.startedAt) < cutoff && !kept.contains($0.id) }
         guard !old.isEmpty else { return 0 }
