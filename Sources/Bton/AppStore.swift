@@ -192,10 +192,11 @@ final class AppStore {
             }
         }
         watchLoop = Task { [weak self] in
+            // The first question comes at once: no repo has a known tag, so the lists are read now,
+            // not after the first sync, which reads each repo's registry before it shows anything.
             while !Task.isCancelled {
+                if let self, !self.isPaused, await self.engine?.listsChanged() == true { await self.liveRead() }
                 try? await Task.sleep(for: .seconds(Self.watchSeconds))
-                guard let self, !self.isPaused, self.lastRefresh != nil else { continue }
-                if await self.engine?.listsChanged() == true { await self.liveRead() }
             }
         }
         loop = Task { [weak self] in
