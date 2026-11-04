@@ -757,7 +757,7 @@ final class AppStore {
     /// my own Give to, shows in seconds instead of when the sync ends. The sync stays what reads the
     /// issues, the registry and the checks.
     func liveRead() async {
-        guard let snapshot = await engine?.readLists(), let readAt = snapshot.listsAt, readAt >= listsReadAt else { return }
+        guard let snapshot = await engine?.readLists(), !isPaused, let readAt = snapshot.listsAt, readAt >= listsReadAt else { return }
         listsReadAt = readAt
         me = snapshot.me ?? me
         flows = flows.merging(snapshot.flows) { _, read in read }

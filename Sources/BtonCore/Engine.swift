@@ -123,6 +123,8 @@ public actor Engine {
     var lastReads: [String: RepoRead] = [:]
     /// The ETag of each repo's open-PR list at the last probe, by lowercased slug (`listsChanged`).
     var pullTags: [String: String] = [:]
+    /// Tags seen at a probe that found a change, kept until `readLists` reads that repo.
+    var pendingTags: [String: String] = [:]
     var readingLists = false
     /// Each repo's check states at the last read, by lowercased slug then head and check name: a
     /// check red there and green now on the same head is a flake (`Flakes.flips`).
@@ -265,6 +267,7 @@ public actor Engine {
             var reads: [RepoRead] = []
             var failures: [String] = [], unread: Set<String> = []
             issuesReadThisTick = []
+            let listsAt = Date.now
             for repo in config.repos {
                 // One repo GitHub won't read leaves the others' work to start.
                 do {
@@ -299,8 +302,8 @@ public actor Engine {
                 }
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
-            snapshot.listsAt = .now
             snapshot.unread = unread
+            snapshot.listsAt = listsAt
             issueLists(into: &snapshot, config: config)
             // Started here, before dispatch, and never awaited: a build runs beside the agents.
             for read in reads where config.buildsGraph(read.repo) {
@@ -488,6 +491,7 @@ public actor Engine {
                                    wanted: max(1, issuePages[slug] ?? 1), now: .now, maxAge: maxAge) else { return nil }
             }
             let reads = keptReads(into: &snapshot, config: config)
+            snapshot.listsAt = reads.map(\.at).min()
             guard let me = snapshot.me else { return nil }
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
             for read in reads where wanted.contains(read.repo.slug.lowercased()) {
