@@ -41,6 +41,9 @@ public actor Engine {
         public var features: [String: FeatureReport] = [:]
         /// Checks seen red then green on one commit this tick (`Flakes`).
         public var flakes: [Flake] = []
+        /// When the PR and merged lists were read from GitHub, which can be long before the snapshot
+        /// ends: a window that already holds a later read keeps it (`readLists`).
+        public var listsAt: Date?
 
         public init() {}
     }
@@ -118,6 +121,9 @@ public actor Engine {
     /// What the last sync read of each repo, by lowercased slug: a New issue turn starts from it
     /// while it is under one poll old (`composeTick`), instead of reading GitHub again.
     var lastReads: [String: RepoRead] = [:]
+    /// The ETag of each repo's open-PR list at the last probe, by lowercased slug (`listsChanged`).
+    var pullTags: [String: String] = [:]
+    var readingLists = false
     /// Each repo's check states at the last read, by lowercased slug then head and check name: a
     /// check red there and green now on the same head is a flake (`Flakes.flips`).
     var checkStates: [String: [String: [String: CheckResult.State]]] = [:]
@@ -293,6 +299,7 @@ public actor Engine {
                 }
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
+            snapshot.listsAt = .now
             snapshot.unread = unread
             issueLists(into: &snapshot, config: config)
             // Started here, before dispatch, and never awaited: a build runs beside the agents.
@@ -637,7 +644,7 @@ public actor Engine {
     /// when it ends, not every tick. Known gap: a Bton restarted under a hold adopts the jobs
     /// that survived only when the hold ends (adoption reads GitHub); until then nobody watches
     /// their cost cap or deadline.
-    private func rateLimitHold(floor: Int) async -> String? {
+    func rateLimitHold(floor: Int) async -> String? {
         guard floor > 0 else { return nil }
         let hold: String?
         do {
@@ -655,7 +662,7 @@ public actor Engine {
     }
 
     /// The snapshot with this Mac's jobs, picks and costs, newest first.
-    private func decorated(_ read: Snapshot) -> Snapshot {
+    func decorated(_ read: Snapshot) -> Snapshot {
         var snapshot = read
         // The rows were built before dispatch; a label edit made here since then (the owner
         // pressed while the tick ran) is in the list, not in those rows: those repos' rows again.

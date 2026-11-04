@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**The lists no longer wait for the sync.** A sync reads GitHub, then cleans up and starts jobs, and while it ran, a teammate's push, review request or assignment stayed unseen until it ended, then until the next five-minute poll. Every 30 seconds Bton now asks GitHub one cheap question per repo (has the open-PR list changed; an unchanged answer costs no quota) and, when it has, reads the PR and merged lists at once, even in the middle of a sync. Give to uses the same read, so the row shows the new owner in seconds. Issues, the registry and the checks are still read by the sync.
+
 ## 0.35.1 (2026-11-04)
 
 **A repo renamed twice no longer fails its jobs on the graph.** A worktree whose code-graph link led to a store the rename had since removed was kept as it was, and every job that needs the graph failed with "the code graph could not be linked". A link to a store of Bton's that is no longer there is now pointed at the repo's current one.

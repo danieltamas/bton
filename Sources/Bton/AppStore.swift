@@ -161,6 +161,11 @@ final class AppStore {
     private(set) var engine: Engine?
     private var loop: Task<Void, Never>?
     private var focusLoop: Task<Void, Never>?
+    private var watchLoop: Task<Void, Never>?
+    /// When the lists on screen were read from GitHub: a sync that read them earlier does not replace them.
+    private var listsReadAt = Date.distantPast
+    /// How often GitHub is asked, for nothing but whether a PR list changed (a 304 costs no quota).
+    static let watchSeconds = 30
 
     func start() {
         guard loop == nil else { return }
@@ -184,6 +189,13 @@ final class AppStore {
             while !Task.isCancelled {
                 if let self { await work.read(jobs) }
                 try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        watchLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.watchSeconds))
+                guard let self, !self.isPaused, self.lastRefresh != nil else { continue }
+                if await self.engine?.listsChanged() == true { await self.liveRead() }
             }
         }
         loop = Task { [weak self] in
@@ -741,6 +753,20 @@ final class AppStore {
         }
     }
 
+    /// The PR lists read now, beside a sync that may still be starting jobs: a change on GitHub, or
+    /// my own Give to, shows in seconds instead of when the sync ends. The sync stays what reads the
+    /// issues, the registry and the checks.
+    func liveRead() async {
+        guard let snapshot = await engine?.readLists(), let readAt = snapshot.listsAt, readAt >= listsReadAt else { return }
+        listsReadAt = readAt
+        me = snapshot.me ?? me
+        flows = flows.merging(snapshot.flows) { _, read in read }
+        jobs = snapshot.jobs.reversed()
+        let unread = { (repo: String) in snapshot.unread.contains(repo.lowercased()) }
+        openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
+        merged = snapshot.merged + merged.filter { unread($0.repo) }
+    }
+
     private func apply(_ snapshot: Engine.Snapshot) {
         // A paused tick read no flow: the last read ones keep the lists' controls.
         if !snapshot.paused { flows = snapshot.flows }
@@ -767,8 +793,12 @@ final class AppStore {
         }
         guard snapshot.problem == nil || !snapshot.unread.isEmpty else { return }
         let unread = { (repo: String) in snapshot.unread.contains(repo.lowercased()) }
-        openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
-        merged = snapshot.merged + merged.filter { unread($0.repo) }
+        // A read that landed beside this sync, later than the one this sync holds, keeps its lists.
+        if snapshot.listsAt.map({ $0 >= listsReadAt }) ?? true {
+            openPullRequests = snapshot.openPullRequests + openPullRequests.filter { unread($0.repo) }
+            merged = snapshot.merged + merged.filter { unread($0.repo) }
+            listsReadAt = snapshot.listsAt ?? listsReadAt
+        }
         issueAsks = snapshot.issueAsks
         // A repo that could not be read keeps its issues, like its PRs; so does one whose rows
         // here come from a later read than the snapshot's (a Load more that landed mid-sync).
