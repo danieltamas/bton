@@ -6,6 +6,8 @@ What changed in each release, newest first. Each entry is also that release's no
 
 **A repo renamed twice no longer fails its jobs on the graph.** A worktree whose code-graph link led to a store the rename had since removed was kept as it was, and every job that needs the graph failed with "the code graph could not be linked". A link to a store of Bton's that is no longer there is now pointed at the repo's current one.
 
+**Give to no longer sits on "Giving...".** The row waited for a full sync before it let go of the button, and a sync can run for minutes behind a graph build or a check, so a review already handed to a teammate still read "Giving..." with the old owner. The row now shows the new owner as soon as GitHub has it, and the sync follows in the background.
+
 ## 0.35.0 (2026-11-03)
 
 **A filter beside every search box.** Each tab's search row has the dropdown the repo page already had: everything, or one kind or state of row with its count. Issues narrows to the questions that still need a reply, those with a draft ready or a reply posted, the ones handed to you, and the ready issues unclaimed, owned, working or failed. PRs narrows to mine, unassigned, working, draft, conflicts or one move; Triage to a type or priority label; Jobs to a status, the flagged ones or a move; Merged to mine. The tab's badge counts what the filter leaves, the choice stays while you look at another tab, and the cross beside it clears it. The repo dropdown next to it now wears a folder, so the two read apart, and the search row ends where the list ends.

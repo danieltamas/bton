@@ -578,6 +578,14 @@ final class AppStore {
         }
     }
 
+    /// The shown row's move belongs to `login` now, GitHub having said so; the next sync confirms it.
+    func showOwner(_ login: String, of pr: PullRequest) {
+        guard let index = openPullRequests.firstIndex(where: { $0.id == pr.id }), let move = openPullRequests[index].move else { return }
+        openPullRequests[index].move = Move(name: move.name, owner: login, ownerFromRotation: false, tier: move.tier,
+                                            hasDispatch: move.hasDispatch, labels: move.labels, ownerWroteIt: move.ownerWroteIt,
+                                            tierReason: move.tierReason, redChecks: move.redChecks, pendingChecks: move.pendingChecks)
+    }
+
     /// Starts a PR's move or a schedule before anything else, as soon as its repo is free.
     func runNext(repo: String, item: String) async {
         markStarting(repo: repo, item: item)

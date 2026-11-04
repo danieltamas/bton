@@ -52,16 +52,21 @@ struct GiveButton: View {
 }
 
 extension AppStore {
-    /// The row shows the new owner after the refresh; a refusal names why and changes nothing.
+    /// The row shows the new owner as soon as GitHub has it, the sync following in the background:
+    /// a full sync can wait minutes behind a graph build or a check, and "Giving..." must not wait
+    /// with it. A refusal names why and changes nothing.
     func give(_ pr: PullRequest, to login: String) async {
         guard let engine, taking.insert(pr.id).inserted else { return }
+        defer { taking.remove(pr.id) }
         takeProblems[pr.id] = nil
         do {
             try await engine.give(repo: pr.repo, number: pr.number, to: login)
         } catch {
             takeProblems[pr.id] = "Not given: \(error.localizedDescription)"
+            await refresh()
+            return
         }
-        await refresh()
-        taking.remove(pr.id)
+        showOwner(login, of: pr)
+        Task { await refresh() }
     }
 }
