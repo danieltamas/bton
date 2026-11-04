@@ -198,10 +198,7 @@ public enum CodeGraph {
                 // Followed to the end: a team's own hook may link the worktree to the clone's
                 // graphify-out, which is itself a link to the store.
                 let target = try files.destinationOfSymbolicLink(atPath: path.path)
-                // A dangling link does not resolve: its own destination stands for it.
-                let followed = path.resolvingSymlinksInPath().standardizedFileURL
-                let resolved = followed.path == path.standardizedFileURL.path
-                    ? URL(fileURLWithPath: target, relativeTo: checkout).standardizedFileURL : followed
+                let resolved = lastHop(of: path)
                 let wanted = store.resolvingSymlinksInPath().standardizedFileURL
                 if resolved.path == wanted.path { return .alreadyLinked }
                 // A sibling store: a directory straight under the same `graphs`, named as a slug
@@ -238,6 +235,17 @@ public enum CodeGraph {
         }
         try files.createSymbolicLink(atPath: path.path, withDestinationPath: store.path)
         return .linked
+    }
+
+    /// Where a link chain ends, hop by hop: a hop that dangles still names the place it led to, which
+    /// `resolvingSymlinksInPath` would not give. A chain past 16 hops stays at its 16th.
+    private static func lastHop(of link: URL) -> URL {
+        var current = link.standardizedFileURL
+        for _ in 0..<16 {
+            guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path) else { break }
+            current = URL(fileURLWithPath: target, relativeTo: current.deletingLastPathComponent()).standardizedFileURL
+        }
+        return current.resolvingSymlinksInPath().standardizedFileURL
     }
 
     /// What the store's graph was built from; written after a successful build only, so a failed

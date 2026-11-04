@@ -52,6 +52,25 @@ struct CodeGraphStoreAcceptanceTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == f.store.path)
     }
 
+    @Test func linkFollowsAChainToAStoreThatIsGoneAndKeepsAnAliasElsewhere() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let graphs = f.store.deletingLastPathComponent()
+        let hop = f.root.appendingPathComponent("clone-graphify-out")
+        let gone = graphs.appendingPathComponent("owner__renamed")
+        try FileManager.default.createSymbolicLink(at: hop, withDestinationURL: gone)
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: hop)
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .relinked(from: hop.path))
+
+        try FileManager.default.removeItem(at: f.link)
+        let alias = graphs.appendingPathComponent("custom__graph")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: f.root.appendingPathComponent("missing"))
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: alias)
+        guard case .kept = try CodeGraph.link(into: f.checkout, store: f.store) else {
+            Issue.record("expected kept for an alias that leads outside the graphs directory"); return
+        }
+    }
+
     @Test func linkMovesExistingGraphIntoEmptyStore() throws {
         let f = try fixture()
         defer { try? FileManager.default.removeItem(at: f.root) }
