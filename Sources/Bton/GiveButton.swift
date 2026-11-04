@@ -63,7 +63,7 @@ extension AppStore {
             try await engine.give(repo: pr.repo, number: pr.number, to: login)
         } catch {
             takeProblems[pr.id] = "Not given: \(error.localizedDescription)"
-            await refresh()
+            Task { await refresh() }
             return
         }
         showOwner(login, of: pr)
