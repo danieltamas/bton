@@ -198,16 +198,21 @@ public enum CodeGraph {
                 // Followed to the end: a team's own hook may link the worktree to the clone's
                 // graphify-out, which is itself a link to the store.
                 let target = try files.destinationOfSymbolicLink(atPath: path.path)
-                let resolved = path.resolvingSymlinksInPath().standardizedFileURL
+                // A dangling link does not resolve: its own destination stands for it.
+                let followed = path.resolvingSymlinksInPath().standardizedFileURL
+                let resolved = followed.path == path.standardizedFileURL.path
+                    ? URL(fileURLWithPath: target, relativeTo: checkout).standardizedFileURL : followed
                 let wanted = store.resolvingSymlinksInPath().standardizedFileURL
                 if resolved.path == wanted.path { return .alreadyLinked }
                 // A sibling store: a directory straight under the same `graphs`, named as a slug
                 // (`owner__repo`), so a staging directory or a stray file there does not count.
                 let graphs = wanted.deletingLastPathComponent().path + "/"
                 var isDirectory: ObjCBool = false
+                // A store that is gone (renamed away, or cleaned) leaves the link dangling: still Bton's.
+                let exists = files.fileExists(atPath: resolved.path, isDirectory: &isDirectory)
                 guard resolved.path.hasPrefix(graphs), !resolved.path.dropFirst(graphs.count).contains("/"),
                       resolved.lastPathComponent.contains("__"), !resolved.lastPathComponent.hasPrefix("."),
-                      files.fileExists(atPath: resolved.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                      !exists || isDirectory.boolValue else {
                     return .kept("\(linkName) links to \(target)")
                 }
                 // Swapped in one rename, so a job resolving the link meanwhile never finds it gone.

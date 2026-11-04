@@ -43,6 +43,15 @@ struct CodeGraphStoreAcceptanceTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == elsewhere.path)
     }
 
+    @Test func linkReplacesALinkToAStoreThatIsGone() throws {
+        let f = try fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let gone = f.store.deletingLastPathComponent().appendingPathComponent("owner__renamed")
+        try FileManager.default.createSymbolicLink(at: f.link, withDestinationURL: gone)
+        #expect(try CodeGraph.link(into: f.checkout, store: f.store) == .relinked(from: gone.path))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: f.link.path) == f.store.path)
+    }
+
     @Test func linkMovesExistingGraphIntoEmptyStore() throws {
         let f = try fixture()
         defer { try? FileManager.default.removeItem(at: f.root) }
