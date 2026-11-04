@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.35.1 (2026-11-04)
 
 **A repo renamed twice no longer fails its jobs on the graph.** A worktree whose code-graph link led to a store the rename had since removed was kept as it was, and every job that needs the graph failed with "the code graph could not be linked". A link to a store of Bton's that is no longer there is now pointed at the repo's current one.
 
