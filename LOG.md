@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.36.1 (2026-11-06)
 
 **The feature registry no longer reruns on its own PRs.** The registry job counted every merged PR as a change, its own `bton/features-*` PRs too, so each merge of one started another run an hour later that linked the PR just merged and opened a new PR, which waited for a hand-press like the last. Its own merged PRs no longer make it due, and the agent is told never to link them.
 
