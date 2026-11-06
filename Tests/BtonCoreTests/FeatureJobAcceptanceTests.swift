@@ -26,9 +26,9 @@ private enum FeatureJobData {
             comments: [], updatedAt: now)
     }
 
-    static func merged(at date: Date) -> MergedPullRequest {
+    static func merged(at date: Date, head: String = "") -> MergedPullRequest {
         MergedPullRequest(repo: repo, number: 8, title: untrusted, author: "owner",
-            url: url, mergedAt: date)
+            url: url, mergedAt: date, headRef: head)
     }
 
     static func issue(at date: Date) -> OpenIssue {
@@ -135,6 +135,18 @@ struct FeatureJobAcceptanceTests {
             }
         }
         #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 3_601)]))
+    }
+
+    @Test func itsOwnMergedPullRequestIsNotAChange() {
+        let last = FeatureJobData.job(age: 3_601)
+        let after = last.startedAt.addingTimeInterval(1)
+        #expect(!FeatureJobData.due(jobs: [last],
+            merged: [FeatureJobData.merged(at: after, head: "bton/features-20261028-0045")]))
+        #expect(FeatureJobData.due(jobs: [last],
+            merged: [FeatureJobData.merged(at: after, head: "bton/features-20261028-0045"),
+                     FeatureJobData.merged(at: after, head: "feat/other")]))
+        #expect(FeatureJob.prompt(repo: FeatureJobData.repo, base: "main", branch: "b", tier: nil, loads: true)
+            .contains("Never link a PR whose branch starts with `bton/features-`"))
     }
 
     @Test func candidateRequiresTheSelectedAgent() {
