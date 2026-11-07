@@ -203,7 +203,8 @@ enum DemoShots {
                move: Move(name: "fix", owner: "lee", ownerFromRotation: false, tier: "high-risk", hasDispatch: true),
                cost: 2.12),
             pr(418, "Raise image CDN timeouts", by: "lee", minutes: 7,
-               move: Move(name: "review", owner: "jonas", ownerFromRotation: true, tier: "quick fix", hasDispatch: true)),
+               move: Move(name: "review", owner: "jonas", ownerFromRotation: true, tier: "quick fix", hasDispatch: true),
+               checks: [CheckResult(name: "gate", state: .failure)]),
         ]
         snapshot.issueAsks = [
             IssueAsk(repo: repo, number: 388, title: "Apple Pay button missing on Safari 17",
@@ -283,7 +284,7 @@ enum DemoShots {
     }
 
     private static func pr(_ number: Int, _ title: String, by author: String, minutes: Double, move: Move,
-                           cost: Decimal? = nil, working: Bool = false) -> PullRequest {
+                           cost: Decimal? = nil, working: Bool = false, checks: [CheckResult] = []) -> PullRequest {
         var pr = PullRequest(repo: repo, number: number, title: title, author: author, authorAssociation: "MEMBER",
                              url: URL(string: "https://github.com/\(repo)/pull/\(number)")!,
                              headSha: String(repeating: "\(number % 10)", count: 40), headRef: "feature/\(number)",
@@ -291,6 +292,7 @@ enum DemoShots {
                              updatedAt: now.addingTimeInterval(-minutes * 60), move: move)
         pr.cost = cost
         pr.isWorking = working
+        pr.checks = checks
         return pr
     }
 

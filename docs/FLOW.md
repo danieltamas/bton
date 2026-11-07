@@ -220,6 +220,11 @@ agent's review would be posted as the author and ignored.
   as it already held its merge, for good. A review without a dispatch entry (a person's) is
   never held, and no other move is. A review run by a schedule's agent is held by its playbook:
   a PR whose checks are still running is not eligible work.
+- **A red check shows on its row, whatever the move.** Any PR whose head has a failed check
+  carries it beside the time, and a click re-runs the failed workflow on that commit. Moves are
+  tried in order, so a `checks_red` move (a CI fix by the author) placed after `review`, `fix`
+  or `decide` waits until none of those hold: put it right after `resolve` to have a red head
+  fixed before anyone reviews it.
 - **A review of a head that moved is dropped, not posted.** A push while a review agent runs
   makes its review nobody's: a sync that reads the new head stops this Mac's review of the old
   one, and a review that finishes before that is posted only after one more read of the PR's head

@@ -654,8 +654,8 @@ final class AppStore {
         await refresh()
     }
 
-    /// Runs the failed workflows on the PR's head again, for a move held by a red check; the
-    /// flow starts the move once a sync reads the check green. Names the workflows asked.
+    /// Runs the failed workflows on the PR's head again, from a move held by a red check or the
+    /// row's red chip; the flow moves on once a sync reads the check green. Names the workflows asked.
     func rerunRedChecks(on pr: PullRequest) async throws -> [String] {
         guard let github else { throw GitHubClient.Failure.ghNotFound }
         return try await github.rerunFailedRuns(repo: pr.repo, sha: pr.headSha)

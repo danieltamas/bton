@@ -135,6 +135,11 @@ private struct PullRequestRow: View {
                         Text(pr.author).foregroundStyle(Theme.textSecondary).truncationMode(.tail)
                         Text("·").foregroundStyle(Theme.textTertiary)
                         RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary).fixedSize()
+                        // Beside the time, not in the top line: there it pushed the move's pill
+                        // under the chips. A move held by its red check names it in the pill
+                        // already, with its own Re-run.
+                        let red = FlowEngine.redChecks(of: pr)
+                        if !red.isEmpty, pr.move?.redChecks.isEmpty ?? true { RedChecksChip(pr: pr, red: red) }
                     }
                     .font(.meta).lineLimit(1)
                     Spacer(minLength: 4)
