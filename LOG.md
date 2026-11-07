@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.36.3 (2026-11-07)
 
 **The feature registry opens one PR a night, not one per merge.** The registry job ran an hour after every merged PR or new issue, so a busy repo got a `features: 0 added, 1 linked` PR after nearly every merge, each one more PR for the team to read and merge. It now runs once a day, and links everything merged since in that one PR; Build the registry on the repo's page still runs it at once.
 
