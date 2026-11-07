@@ -1,7 +1,7 @@
 import Foundation
 
-/// The job that builds and extends a repo's `.bton/features.json`: nightly, after a merged PR or
-/// a new issue, or when the owner presses it on the repo's page. One Bton on the team runs it,
+/// The job that builds and extends a repo's `.bton/features.json`: nightly, or when the owner
+/// presses it on the repo's page. One Bton on the team runs it,
 /// through the lease on its item like every job. The agent reads the issues and PRs itself,
 /// edits the file in a worktree at the default branch tip and opens the PR.
 public enum FeatureJob {
@@ -10,38 +10,31 @@ public enum FeatureJob {
     public static let defaultAgent = "claude"
     public static let branchPrefix = "bton/features-"
     public static let timeout: Duration = .seconds(40 * 60)
-    /// Without a change, the registry is rebuilt this often.
+    /// The registry is rebuilt this often, whatever merged meanwhile: one PR a day at most,
+    /// where a run an hour after each merge opened one small PR per merge for the team to merge.
     static let nightly: TimeInterval = 86_400
-    /// A change starts a run no sooner than this after the last: ten merges in an hour make one job.
-    static let floor: TimeInterval = 3_600
 
     /// In order: never beside a running run or an open PR of the last one; always when pressed;
-    /// otherwise only for a repo that starts its moves, nightly or after a change past the floor.
+    /// otherwise only for a repo that starts its moves, once a day.
     /// `teamLast`: the last start on any Mac, from the item's lease, so two Btons share one clock.
     public static func isDue(jobs: [Job], repo: String, pullRequests: [PullRequest], me: String,
-                             merged: [MergedPullRequest], issues: [OpenIssue], startsMoves: Bool, pressed: Bool, now: Date,
-                             teamLast: Date? = nil) -> Bool {
+                             startsMoves: Bool, pressed: Bool, now: Date, teamLast: Date? = nil) -> Bool {
         let mine = jobs.filter { $0.key.move == move && $0.key.repo.caseInsensitiveCompare(repo) == .orderedSame }
         guard !mine.contains(where: { $0.status == .running }), openPullRequest(pullRequests, repo: repo, me: me) == nil
         else { return false }
         if pressed { return true }
         guard startsMoves else { return false }
         guard let last = (mine.map(\.startedAt) + [teamLast].compactMap { $0 }).max() else { return true }
-        let age = now.timeIntervalSince(last)
-        if age > nightly { return true }
-        // The job's own merged PRs are not a change: counting them reran it after every merge.
-        let others = merged.filter { !$0.headRef.hasPrefix(branchPrefix) }
-        let changed = (others.map(\.mergedAt) + issues.map(\.createdAt)).contains { $0 > last }
-        return changed && age > floor
+        return now.timeIntervalSince(last) > nightly
     }
 
     public static func candidate(jobs: [Job], repo: String, flow: Flow?, defaultBranch: String, me: String,
                                  agents: [String: AgentTemplate], work: AgentPick?, registry: RegistryStatus,
-                                 pullRequests: [PullRequest], merged: [MergedPullRequest], issues: [OpenIssue],
-                                 startsMoves: Bool, pressed: Bool, now: Date = .now, teamLast: Date? = nil) -> DispatchCandidate? {
+                                 pullRequests: [PullRequest], startsMoves: Bool, pressed: Bool,
+                                 now: Date = .now, teamLast: Date? = nil) -> DispatchCandidate? {
         let agent = work?.agent ?? defaultAgent
         guard agents[agent] != nil, !defaultBranch.isEmpty,
-              isDue(jobs: jobs, repo: repo, pullRequests: pullRequests, me: me, merged: merged, issues: issues,
+              isDue(jobs: jobs, repo: repo, pullRequests: pullRequests, me: me,
                     startsMoves: startsMoves, pressed: pressed, now: now, teamLast: teamLast) else { return nil }
         let base = flow?.base ?? defaultBranch
         let tier = flow.flatMap { flow in flow.tier.values.first.map { "\(flow.tier.marker) \($0)" } }
@@ -61,7 +54,7 @@ public enum FeatureJob {
         made.skipsChecks = true
         made.needsGraph = true
         made.pressed = pressed
-        made.cooldown = pressed ? nil : floor
+        made.cooldown = pressed ? nil : nightly
         made.attachments = attachments
         return made
     }

@@ -26,35 +26,24 @@ private enum FeatureJobData {
             comments: [], updatedAt: now)
     }
 
-    static func merged(at date: Date, head: String = "") -> MergedPullRequest {
-        MergedPullRequest(repo: repo, number: 8, title: untrusted, author: "owner",
-            url: url, mergedAt: date, headRef: head)
-    }
-
-    static func issue(at date: Date) -> OpenIssue {
-        OpenIssue(repo: repo, number: 9, title: untrusted, url: url, createdAt: date,
-            author: "owner", authorAssociation: "OWNER", body: untrusted, comments: [])
-    }
-
     static func flow() throws -> Flow {
         let json = #"{"version":1,"base":"develop","tier":{"marker":"Tier:","values":["small","large"],"default":"large"},"reviews":{},"fixed":"Fixed:","moves":[],"dispatch":{}}"#
         return try #require(Flow.load(Data(json.utf8)).flow)
     }
 
-    static func due(jobs: [Job] = [], prs: [PullRequest] = [], merged: [MergedPullRequest] = [],
-                    issues: [OpenIssue] = [], startsMoves: Bool = true, pressed: Bool = false) -> Bool {
+    static func due(jobs: [Job] = [], prs: [PullRequest] = [],
+                    startsMoves: Bool = true, pressed: Bool = false) -> Bool {
         FeatureJob.isDue(jobs: jobs, repo: repo, pullRequests: prs, me: "owner",
-            merged: merged, issues: issues, startsMoves: startsMoves, pressed: pressed, now: now)
+            startsMoves: startsMoves, pressed: pressed, now: now)
     }
 
     static func candidate(flow: Flow? = nil, agents: [String: AgentTemplate] = agents,
                           work: AgentPick? = nil, registry: RegistryStatus = .none,
                           pressed: Bool = false, startsMoves: Bool = true,
-                          jobs: [Job] = [], prs: [PullRequest] = [],
-                          merged: [MergedPullRequest] = [], issues: [OpenIssue] = []) -> DispatchCandidate? {
+                          jobs: [Job] = [], prs: [PullRequest] = []) -> DispatchCandidate? {
         FeatureJob.candidate(jobs: jobs, repo: repo, flow: flow, defaultBranch: "main", me: "owner",
-            agents: agents, work: work, registry: registry, pullRequests: prs, merged: merged,
-            issues: issues, startsMoves: startsMoves, pressed: pressed, now: now)
+            agents: agents, work: work, registry: registry, pullRequests: prs,
+            startsMoves: startsMoves, pressed: pressed, now: now)
     }
 }
 
@@ -65,7 +54,6 @@ struct FeatureJobAcceptanceTests {
         #expect(FeatureJob.branchPrefix == "bton/features-")
         #expect(FeatureJob.timeout == .seconds(40 * 60))
         #expect(FeatureJob.nightly == 86_400)
-        #expect(FeatureJob.floor == 3_600)
         let now = FeatureJobData.now
         let expected = JobKey(repo: FeatureJobData.repo, item: "features", move: "features",
             head: "m\(Int(now.timeIntervalSince1970 / 60))")
@@ -80,8 +68,7 @@ struct FeatureJobAcceptanceTests {
 
     @Test(arguments: [false, true])
     func runningJobBlocksEvenPressedAndOverdue(pressed: Bool) {
-        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 90_000, status: .running)],
-            issues: [FeatureJobData.issue(at: FeatureJobData.now)], pressed: pressed))
+        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 90_000, status: .running)], pressed: pressed))
     }
 
     @Test(arguments: [false, true])
@@ -104,9 +91,7 @@ struct FeatureJobAcceptanceTests {
 
     @Test func unpressedSyncOnlyNeverRuns() {
         #expect(!FeatureJobData.due(startsMoves: false))
-        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 90_000)],
-            merged: [FeatureJobData.merged(at: FeatureJobData.now)],
-            issues: [FeatureJobData.issue(at: FeatureJobData.now)], startsMoves: false))
+        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 90_000)], startsMoves: false))
     }
 
     @Test func nightlyUsesLatestStartForThisRepoAndMove() {
@@ -122,31 +107,19 @@ struct FeatureJobAcceptanceTests {
         #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 10), FeatureJobData.job(age: 90_000)]))
     }
 
-    @Test(arguments: [false, true])
-    func changesMustBeNewerThanLatestStartAndOutsideTheFloor(useIssue: Bool) {
-        for age in [3_599.0, 3_600.0, 3_601.0] {
-            let last = FeatureJobData.job(age: age)
-            for delta in [-1.0, 0.0, 1.0] {
-                let changed = last.startedAt.addingTimeInterval(delta)
-                let due = FeatureJobData.due(jobs: [FeatureJobData.job(age: 90_000), last],
-                    merged: useIssue ? [] : [FeatureJobData.merged(at: changed)],
-                    issues: useIssue ? [FeatureJobData.issue(at: changed)] : [])
-                #expect(due == (age > 3_600 && delta > 0))
-            }
-        }
-        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 3_601)]))
-    }
-
-    @Test func itsOwnMergedPullRequestIsNotAChange() {
-        let last = FeatureJobData.job(age: 3_601)
-        let after = last.startedAt.addingTimeInterval(1)
-        #expect(!FeatureJobData.due(jobs: [last],
-            merged: [FeatureJobData.merged(at: after, head: "bton/features-20261028-0045")]))
-        #expect(FeatureJobData.due(jobs: [last],
-            merged: [FeatureJobData.merged(at: after, head: "bton/features-20261028-0045"),
-                     FeatureJobData.merged(at: after, head: "feat/other")]))
+    @Test func itsOwnPullRequestsAreNeverLinked() {
         #expect(FeatureJob.prompt(repo: FeatureJobData.repo, base: "main", branch: "b", tier: nil, loads: true)
             .contains("Never link a PR whose branch starts with `bton/features-`"))
+    }
+
+    /// Behavior change: a merge or a new issue no longer starts a run before the nightly one.
+    @Test func automaticRunsAreNightlyAndCarryTheNightlyCooldown() throws {
+        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 3_601)]))
+        #expect(!FeatureJobData.due(jobs: [FeatureJobData.job(age: 86_399)]))
+        let automatic = try #require(FeatureJobData.candidate())
+        #expect(automatic.cooldown == 86_400)
+        let pressed = try #require(FeatureJobData.candidate(pressed: true, jobs: [FeatureJobData.job(age: 10)]))
+        #expect(pressed.cooldown == nil)
     }
 
     @Test func candidateRequiresTheSelectedAgent() {
@@ -204,9 +177,7 @@ struct FeatureJobAcceptanceTests {
         let ready = RegistryStatus.ready(try FeatureAcceptanceData.registry(FeatureAcceptanceData.object()))
         for registry in [RegistryStatus.none, ready, .invalid(reason)] {
             let made = try #require(FeatureJobData.candidate(registry: registry,
-                prs: [FeatureJobData.pr(head: "ordinary-branch")],
-                merged: [FeatureJobData.merged(at: FeatureJobData.now)],
-                issues: [FeatureJobData.issue(at: FeatureJobData.now)]))
+                prs: [FeatureJobData.pr(head: "ordinary-branch")]))
             let prompt = try #require(made.prompt)
             #expect(!prompt.contains(reason))
             #expect(!prompt.contains(FeatureJobData.untrusted))

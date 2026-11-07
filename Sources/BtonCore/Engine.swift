@@ -399,7 +399,7 @@ public actor Engine {
                                                              queueHeads: DispatchPlanner.queueHeads(read.pullRequests))
                             .map { ($0, clone, nil) }
                     }
-                    // The registry job needs no flow either: nightly, after a change, or pressed on the repo's page.
+                    // The registry job needs no flow either: nightly, or pressed on the repo's page.
                     if let registry = await featureJob(read, config: config, leases: dispatcher.leases) { pending.append((registry, clone, read.flow)) }
                     // The release: opened here when due, merged through a job once its PR is open.
                     if let release = await planRelease(read) { pending.append((release, clone, read.flow)) }

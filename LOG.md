@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**The feature registry opens one PR a night, not one per merge.** The registry job ran an hour after every merged PR or new issue, so a busy repo got a `features: 0 added, 1 linked` PR after nearly every merge, each one more PR for the team to read and merge. It now runs once a day, and links everything merged since in that one PR; Build the registry on the repo's page still runs it at once.
+
 ## 0.36.2 (2026-11-07)
 
 **A red check shows on its PR, whatever the move.** A PR's row named a failed check only when the check was all that held a merge; a red head waiting on a review, a fix or a CI fix showed nothing red, so a failed gate could sit for hours unseen, and a gate an agent had called a runner flake waited for a person nobody told. Every PR whose head has a failed check now carries it beside the time, and a click on it re-runs the failed workflow on that commit.

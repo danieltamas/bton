@@ -149,9 +149,7 @@ extension Engine {
                                  defaultBranch: read.repo.branch ?? read.defaultBranch, me: read.viewer,
                                  agents: agents, work: Self.coderPick(read.repo, config: config),
                                  registry: self.featureStates[slug.lowercased()]?.report?.registry ?? .none,
-                                 pullRequests: read.pullRequests, merged: read.merged,
-                                 issues: self.openIssues[slug.lowercased()] ?? [],
-                                 startsMoves: read.repo.startsMoves, pressed: pressed, teamLast: teamLast)
+                                 pullRequests: read.pullRequests, startsMoves: read.repo.startsMoves, pressed: pressed, teamLast: teamLast)
         }
         guard let local = make(nil) else { return nil }
         if pressed { return local }
