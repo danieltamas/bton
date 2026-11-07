@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.36.2 (2026-11-07)
 
 **A red check shows on its PR, whatever the move.** A PR's row named a failed check only when the check was all that held a merge; a red head waiting on a review, a fix or a CI fix showed nothing red, so a failed gate could sit for hours unseen, and a gate an agent had called a runner flake waited for a person nobody told. Every PR whose head has a failed check now carries it beside the time, and a click on it re-runs the failed workflow on that commit.
 
