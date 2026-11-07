@@ -74,7 +74,7 @@ private struct PullRequestRow: View {
     private func pill(pillStart: String?, unchanged: Job?, busy: Bool) -> some View {
         if let move = pr.move {
             if !move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
-                HumanMoveButton(pr: pr, move: move, me: me)
+                HumanMoveButton(pr: pr, move: move, me: me).id(pr.headSha)
             } else if let pillStart, let me {
                 // The agent's move runs here, in Bton: the pill starts it.
                 AsyncPress(id: "run:\(pr.repo)#\(pr.number):\(pillStart)", action: { await store.runNow(pr, move: pillStart) }) { running, press in
@@ -84,7 +84,7 @@ private struct PullRequestRow: View {
                         .opacity(running ? 0.6 : 1)
                 }
             } else {
-                MoveChip(move: move, me: me, working: busy)
+                MoveChip(move: move, me: me, working: busy, shownApart: FlowEngine.failedChecks(of: pr))
             }
         }
     }
@@ -136,10 +136,10 @@ private struct PullRequestRow: View {
                         Text("·").foregroundStyle(Theme.textTertiary)
                         RelativeTime(date: pr.updatedAt).foregroundStyle(Theme.textTertiary).fixedSize()
                         // Beside the time, not in the top line: there it pushed the move's pill
-                        // under the chips. A move held by its red check names it in the pill
-                        // already, with its own Re-run.
-                        let red = FlowEngine.redChecks(of: pr)
-                        if !red.isEmpty, pr.move?.redChecks.isEmpty ?? true { RedChecksChip(pr: pr, red: red) }
+                        // under the chips. Keyed by the head, so a re-run asked for one head is
+                        // never shown as asked for the next.
+                        let failed = FlowEngine.failedChecks(of: pr)
+                        if !failed.isEmpty { RedChecksChip(pr: pr, red: failed).id(pr.headSha) }
                     }
                     .font(.meta).lineLimit(1)
                     Spacer(minLength: 4)
@@ -458,6 +458,8 @@ struct MoveChip: View {
     var working = false
     /// In place of "move · who": the pill is the action, and what it does is its whole text.
     var title: String?
+    /// The red checks the row's own chip shows: the pill does not name them twice.
+    var shownApart: [String] = []
 
     var body: some View {
         let color = Theme.color(forMove: move.name)
@@ -469,7 +471,8 @@ struct MoveChip: View {
             Chip(text: title, symbol: symbol ?? Theme.symbol(forMove: move.name), color: color, style: .filled)
         } else if let owner = move.owner {
             let mine = me.map(move.isMine) ?? false
-            let held = !move.redChecks.isEmpty ? " · \(move.redChecks.joined(separator: ", ")) red"
+            let red = move.redChecks.filter { !shownApart.contains($0) }
+            let held = !red.isEmpty ? " · \(red.joined(separator: ", ")) red"
                 : !move.pendingChecks.isEmpty ? " · waiting for \(move.pendingChecks.joined(separator: ", "))" : ""
             Chip(text: "\(move.name)\(held) · \(mine ? "you" : owner)", symbol: symbol ?? Theme.symbol(forMove: move.name),
                  color: mine ? color : color.opacity(0.85), style: mine && !working ? .filled : .tinted)
@@ -520,7 +523,7 @@ private struct HumanMoveButton: View {
     @State private var rerun: [String]?
 
     var body: some View {
-        Button { open = true } label: { MoveChip(move: move, me: me) }
+        Button { open = true } label: { MoveChip(move: move, me: me, shownApart: FlowEngine.failedChecks(of: pr)) }
             .buttonStyle(PressStyle())
             .pointingHandCursor()
             .help("What \(move.name) needs")

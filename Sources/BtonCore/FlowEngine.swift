@@ -229,6 +229,12 @@ public enum FlowEngine {
         pr.checks.filter { $0.state == .failure }.map(\.name)
     }
 
+    /// The head's checks that ran and failed, for the row: a skipped or neutral check holds a
+    /// gate but is no failure to show or re-run.
+    public static func failedChecks(of pr: PullRequest) -> [String] {
+        pr.checks.filter(\.failed).map(\.name)
+    }
+
     /// The names of a `checks_green:` predicate, comma-separated and trimmed; nil when any is
     /// empty, so `checks_green:` gates nothing open.
     static func checkNames(_ list: String) -> [String]? {

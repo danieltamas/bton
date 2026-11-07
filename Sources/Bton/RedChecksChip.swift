@@ -2,9 +2,10 @@ import AppKit
 import BtonCore
 import SwiftUI
 
-/// A red check on the PR's head, whatever move the flow gives it: a red head under a review or
-/// a fix still has to go green before it merges, and its pill names only the move. The chip
-/// opens a way to run the failed workflows again, for a failure that was the runner's.
+/// A check that failed on the PR's head, whatever move the flow gives it and whoever owns it:
+/// a red head under a review or a fix still has to go green before it merges, and its pill
+/// names only the move. The chip opens a way to run the failed workflows again, for a failure
+/// that was the runner's.
 struct RedChecksChip: View {
     @Environment(AppStore.self) private var store
     let pr: PullRequest
@@ -16,11 +17,13 @@ struct RedChecksChip: View {
 
     var body: some View {
         Button { open = true } label: {
-            Chip(text: "\(red.joined(separator: ", ")) red", symbol: "xmark.octagon.fill", color: Theme.danger, style: .outline)
+            // One name fits the meta line; more would push past the panel, so they go in the popover.
+            Chip(text: red.count == 1 ? "\(red[0]) red" : "\(red.count) checks red", symbol: "xmark.octagon.fill",
+                 color: Theme.danger, style: .outline)
         }
         .buttonStyle(PressStyle())
         .pointingHandCursor()
-        .help("A check failed on this head")
+        .help("Failed on this head: \(red.joined(separator: ", "))")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Red on #\(pr.number)").font(.rowTitle).foregroundStyle(Theme.textPrimary)

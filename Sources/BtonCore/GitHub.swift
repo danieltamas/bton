@@ -394,37 +394,42 @@ public struct GitHubClient: Sendable {
         let contexts: Contexts?
     }
 
+    /// The check-run conclusions of a run that ran and failed: the ones `failedRuns` re-runs.
+    static let ranAndFailed: Set<String> = ["FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"]
+
     /// One result per name, the newest run of a name winning; nothing is read as green that
     /// GitHub did not call SUCCESS.
     static func reduce(_ rollup: Rollup?) -> (checks: [CheckResult], truncated: Bool) {
         guard let contexts = rollup?.contexts else { return ([], false) }
-        var newest: [String: (started: Date?, state: CheckResult.State)] = [:]
+        var newest: [String: (started: Date?, state: CheckResult.State, failed: Bool)] = [:]
         var order: [String] = []
         for node in contexts.nodes {
-            let name: String, state: CheckResult.State
+            let name: String, state: CheckResult.State, failed: Bool
             if let runName = node.name {
                 name = runName
                 state = node.status != "COMPLETED" ? .pending : node.conclusion == "SUCCESS" ? .success : .failure
+                failed = state == .failure && ranAndFailed.contains(node.conclusion ?? "")
             } else if let context = node.context {
                 name = context
                 state = node.state == "SUCCESS" ? .success : ["PENDING", "EXPECTED"].contains(node.state ?? "") ? .pending : .failure
+                failed = state == .failure && ["FAILURE", "ERROR"].contains(node.state ?? "")
             } else { continue }
             if let earlier = newest[name] {
                 // A run without a start is the one just created: it is the newest, wherever it
                 // sits in the list; between two dated runs the later start wins.
                 switch (node.startedAt, earlier.started) {
-                case (nil, _): newest[name] = (nil, state)
+                case (nil, _): newest[name] = (nil, state, failed)
                 case (_, nil): break
-                case let (started?, before?) where started > before: newest[name] = (started, state)
+                case let (started?, before?) where started > before: newest[name] = (started, state, failed)
                 default: break
                 }
             } else {
                 order.append(name)
-                newest[name] = (node.startedAt, state)
+                newest[name] = (node.startedAt, state, failed)
             }
         }
         let truncated = (contexts.totalCount ?? contexts.nodes.count) > contexts.nodes.count
-        return (order.map { CheckResult(name: $0, state: newest[$0]!.state) }, truncated)
+        return (order.map { CheckResult(name: $0, state: newest[$0]!.state, failed: newest[$0]!.failed) }, truncated)
     }
 
     private struct OpenResponse: Decodable {

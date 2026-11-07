@@ -112,9 +112,15 @@ public struct CheckResult: Hashable, Sendable {
     /// cancelled, is `failure`: a gate that reads SKIPPED as green would pass a check that never ran.
     public enum State: String, Hashable, Sendable { case success, pending, failure }
 
-    public init(name: String, state: State) {
+    /// It ran and failed (failure, error, cancelled, timed out, startup failure): what a row
+    /// shows red and a re-run can repeat. A skipped or neutral check is `failure` to a gate but
+    /// never failed.
+    public let failed: Bool
+
+    public init(name: String, state: State, failed: Bool? = nil) {
         self.name = name
         self.state = state
+        self.failed = failed ?? (state == .failure)
     }
 }
 
