@@ -376,13 +376,21 @@ extension GitHubClient {
         let parts = repo.split(separator: "/").map(String.init)
         guard parts.count == 2 else { return [] }
         if let number = IssueSearch.number(in: text) {
-            let data = try await gh(["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
-                                     "-F", "number=\(number)", "-f", "query=\(Self.issueByNumberQuery)"])
-            return try Self.decodeIssue(data, repo: repo).map { [$0] } ?? []
+            return try await openIssue(repo: repo, number: number).map { [$0] } ?? []
         }
         let data = try await gh(["api", "graphql", "-f", "q=\(IssueSearch.query(repo: repo, text: text))",
                                  "-f", "query=\(Self.issueSearchQuery)"])
         return try Self.decodeIssueSearch(data, repo: repo)
+    }
+
+    /// One issue read on its own, nil when it is closed. Its label events are whole: inside a page
+    /// of 50 issues GitHub answers a long timeline with only its oldest few events.
+    public func openIssue(repo: String, number: Int) async throws -> OpenIssue? {
+        let parts = repo.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { return nil }
+        let data = try await gh(["api", "graphql", "-f", "owner=\(parts[0])", "-f", "name=\(parts[1])",
+                                 "-F", "number=\(number)", "-f", "query=\(Self.issueByNumberQuery)"])
+        return try Self.decodeIssue(data, repo: repo)
     }
 
     static let issueSearchQuery = """

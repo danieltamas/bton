@@ -241,11 +241,16 @@ enum IntakeAcceptanceFixture {
                              author: seed.author, authorAssociation: seed.authorAssociation, body: seed.body, comments: [],
                              labels: seed.labels, labelEvents: [LabelEvent(kind: .added, label: "stage:spec", at: Date(timeIntervalSince1970: time))])
         }
-        // The agent's own hand-back lands before the job ends: the report is still to be read.
+        // The agent's own hand-back lands before the job ends, or a second after it on a Mac whose
+        // clock runs behind GitHub's: the report is still to be read.
         #expect(IssueIntake.held(issue(relabeledAt: 140), jobs: [failed]))
+        #expect(IssueIntake.held(issue(relabeledAt: 151), jobs: [failed]))
         // Someone acted on it afterwards (made it a tracker, sent it to spec): the card goes.
-        #expect(!IssueIntake.held(issue(relabeledAt: 200), jobs: [failed]))
-        #expect(IssueIntake.ready([issue(relabeledAt: 200)], jobs: [failed]).isEmpty)
+        #expect(!IssueIntake.held(issue(relabeledAt: 300), jobs: [failed]))
+        #expect(IssueIntake.ready([issue(relabeledAt: 300)], jobs: [failed]).isEmpty)
+        // Only these are read again one by one; a ready issue, or one with no ended build, is not.
+        #expect(IssueIntake.heldByEvents([issue(relabeledAt: 300), F.issue(7)], jobs: [failed]).map(\.labels) == [["stage:spec"]])
+        #expect(IssueIntake.heldByEvents([issue(relabeledAt: 300)], jobs: [F.job(7)]).isEmpty)
     }
 
     @Test func issueAliasesMergeWithoutDuplicatesAndDecodeAssignees() throws {

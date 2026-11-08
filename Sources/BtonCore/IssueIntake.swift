@@ -125,10 +125,24 @@ public enum IssueIntake {
     /// relabeled the issue since it ended. A job that succeeded has opened its PR, which is where
     /// the work shows from then on; a label set after the end is someone acting on the outcome
     /// (the issue turned into a tracker, sent back to spec), so the outcome has been read.
+    /// The end is this Mac's clock and the label's time GitHub's, and the build's own give-back
+    /// lands a second before its end: a label within `clockSlack` after it is still the build's.
     public static func held(_ issue: OpenIssue, jobs: [Job]) -> Bool {
         guard let latest = latestJob(for: issue.number, repo: issue.repo, jobs: jobs), latest.status != .succeeded else { return false }
         guard let ended = latest.endedAt else { return true }
-        return !issue.labelEvents.contains { $0.at > ended }
+        return !issue.labelEvents.contains { $0.at > ended + clockSlack }
+    }
+
+    static let clockSlack: TimeInterval = 60
+
+    /// The issues whose card rests on their label events: out of ready and progress, with a build
+    /// of mine that ended without success. A page of 50 cuts a long timeline to its oldest events,
+    /// so these few are read again one by one (`GitHubClient.openIssue`).
+    public static func heldByEvents(_ issues: [OpenIssue], jobs: [Job]) -> [OpenIssue] {
+        issues.filter { issue in
+            guard !isReady(issue), !isInProgress(issue), let latest = latestJob(for: issue.number, repo: issue.repo, jobs: jobs) else { return false }
+            return latest.status != .succeeded && latest.endedAt != nil
+        }
     }
 
     private static func isIntake(_ job: Job, number: Int, repo: String) -> Bool {

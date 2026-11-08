@@ -52,6 +52,14 @@ extension Engine {
             }
             if after == nil { break }
         }
+        // A failed read keeps the page's copy: the card stays rather than vanishing on a hiccup.
+        for held in IssueIntake.heldByEvents(issues, jobs: jobs.all()) {
+            let whole: OpenIssue?
+            do { whole = try await github.openIssue(repo: repo, number: held.number) } catch { continue }
+            guard let index = issues.firstIndex(where: { $0.number == held.number }) else { continue }
+            // Closed since the page was read: gone from the list like any closed issue.
+            if let whole { issues[index] = whole } else { issues.remove(at: index) }
+        }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
         var seen = Set<Int>()
