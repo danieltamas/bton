@@ -455,7 +455,7 @@ public actor Engine {
         snapshot.issueRevisions = issueRevisions
         snapshot.ready = config.repos.flatMap { repo in
             IssueIntake.ready(openIssues[repo.slug.lowercased()] ?? [], priority: snapshot.flows[repo.slug]?.flow?.intake?.priority,
-                              held: IssueIntake.held(by: jobs.all(), repo: repo.slug))
+                              jobs: jobs.all(), me: snapshot.me)
         }
         snapshot.loggedOut = heldAgents().sorted()
     }

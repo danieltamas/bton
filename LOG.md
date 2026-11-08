@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A build's own report no longer sends its issue back to an agent, and a read hand-back leaves the list.** An agent that did one step of an issue's plan and said so on the issue, then ended without a PR, gave the issue a new round with that comment: Bton put it back at ready and took it again, five times on one issue, failing in seconds only because the old worktree was still there. A comment written under this Mac's login while its build of the issue ran is now the build's output, not new work, so the round stays and the issue waits for a person. And a failed or handed-back build kept its card in Issues for as long as the issue stayed open, even after someone had turned the issue into a tracker; once anyone relabels the issue after the build ended, the card goes.
+
 ## 0.36.3 (2026-11-07)
 
 **The feature registry opens one PR a night, not one per merge.** The registry job ran an hour after every merged PR or new issue, so a busy repo got a `features: 0 added, 1 linked` PR after nearly every merge, each one more PR for the team to read and merge. It now runs once a day, and links everything merged since in that one PR; Build the registry on the repo's page still runs it at once.

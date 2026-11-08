@@ -218,7 +218,7 @@ enum IntakeAcceptanceFixture {
         let issues = [F.issue(1, labels: ["stage:ready", "priority:high"], assignees: ["other"]),
                       F.issue(2, labels: ["stage:ready", "priority:high"], age: 10), F.issue(3),
                       F.issue(4, labels: ["stage:in-progress"]), F.issue(5, labels: ["stage:in-progress"])]
-        let ready = IssueIntake.ready(issues, held: [4])
+        let ready = IssueIntake.ready(issues, jobs: [F.job(4)])
         // Owner decision 2026-10-27: a teammate's in-progress issue shows too, against two people starting one.
         #expect(ready.map(\.number) == [2, 1, 3, 4, 5])
         #expect(ready.first { $0.number == 1 }?.assignees == ["other"])
@@ -228,7 +228,24 @@ enum IntakeAcceptanceFixture {
         let jobs = [F.job(1, status: .running), F.job(2), F.job(3, status: .cancelled), F.job(4, status: .succeeded),
                     F.job(5), F.job(5, status: .succeeded, time: 200), F.job(6, status: .succeeded), F.job(6, time: 200),
                     F.job(7, repo: "other/repo"), F.job(8, move: "draft")]
-        #expect(IssueIntake.held(by: jobs.reversed(), repo: F.repo) == [1, 2, 3, 6])
+        let held = (1...8).filter { IssueIntake.held(F.issue($0, labels: ["stage:spec"]), jobs: jobs.reversed()) }
+        #expect(held == [1, 2, 3, 6])
+    }
+
+    @Test func heldEndsOnceTheIssueIsRelabeledAfterTheJob() {
+        var failed = F.job(7)
+        failed.endedAt = Date(timeIntervalSince1970: 150)
+        func issue(relabeledAt time: Double) -> OpenIssue {
+            let seed = F.issue(labels: ["stage:spec"])
+            return OpenIssue(repo: seed.repo, number: seed.number, title: seed.title, url: seed.url, createdAt: seed.createdAt,
+                             author: seed.author, authorAssociation: seed.authorAssociation, body: seed.body, comments: [],
+                             labels: seed.labels, labelEvents: [LabelEvent(kind: .added, label: "stage:spec", at: Date(timeIntervalSince1970: time))])
+        }
+        // The agent's own hand-back lands before the job ends: the report is still to be read.
+        #expect(IssueIntake.held(issue(relabeledAt: 140), jobs: [failed]))
+        // Someone acted on it afterwards (made it a tracker, sent it to spec): the card goes.
+        #expect(!IssueIntake.held(issue(relabeledAt: 200), jobs: [failed]))
+        #expect(IssueIntake.ready([issue(relabeledAt: 200)], jobs: [failed]).isEmpty)
     }
 
     @Test func issueAliasesMergeWithoutDuplicatesAndDecodeAssignees() throws {

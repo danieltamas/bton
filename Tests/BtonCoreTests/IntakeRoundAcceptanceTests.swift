@@ -54,6 +54,20 @@ import Testing
         #expect(try !F.plan(candidate).resumes)
     }
 
+    @Test func agentsOwnCommentDuringItsBuildStartsNoRound() throws {
+        var build = Job(id: UUID(), key: JobKey(repo: F.repo, item: "issue-7", move: "implement", head: "", round: "1000"),
+                        agent: "claude", startedAt: Date(timeIntervalSince1970: 1100), status: .failed, retry: false)
+        build.endedAt = Date(timeIntervalSince1970: 1900)
+        // The agent reports a step it did on the issue, under the login it runs as, mid-build.
+        let reported = issue([comment(1000.9), comment(1500, author: "Me")])
+        #expect(IssueIntake.round(of: reported, jobs: [build], me: "me") == "1000")
+        #expect(try F.candidate([reported], jobs: [build]) == nil)
+        #expect(IssueIntake.ready([reported], jobs: [build], me: "me").first?.round == "1000")
+        // Someone else mid-build, or me after it ended, is new work.
+        #expect(IssueIntake.round(of: issue([comment(1000.9), comment(1500)]), jobs: [build], me: "me") == "1500")
+        #expect(IssueIntake.round(of: issue([comment(1000.9), comment(2000, author: "me")]), jobs: [build], me: "me") == "2000")
+    }
+
     @Test func succeededRoundStaysUsedUntilANewerComment() throws {
         try checkNewRound(after: .succeeded)
     }
@@ -64,7 +78,7 @@ import Testing
 
     @Test func readyCarriesItsOpenIssuesRound() throws {
         let open = issue([comment(2000.9), comment(1000)])
-        let ready = try #require(IssueIntake.ready([open], priority: ["priority:high"], held: []).first)
+        let ready = try #require(IssueIntake.ready([open], priority: ["priority:high"]).first)
         #expect(ready.round == "2000")
         #expect(ready.round == IssueIntake.round(of: open))
         #expect(IssueIntake.ready([issue([])]).first?.round == "")
