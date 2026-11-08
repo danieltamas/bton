@@ -56,16 +56,18 @@ extension Engine {
         var seen = Set<Int>()
         issues = issues.filter { seen.insert($0.number).inserted }
         // A failed read keeps the page's copy: the card stays rather than vanishing on a hiccup.
+        var whole = Set<Int>()
         for held in IssueIntake.heldByEvents(issues, jobs: jobs.all()) {
-            let whole: OpenIssue?
-            do { whole = try await github.openIssue(repo: repo, number: held.number) } catch { continue }
+            let read: OpenIssue?
+            do { read = try await github.openIssue(repo: repo, number: held.number) } catch { continue }
             guard let index = issues.firstIndex(where: { $0.number == held.number }) else { continue }
             // Closed since the page was read: gone from the list like any closed issue.
-            if let whole { issues[index] = whole } else { issues.remove(at: index) }
+            if let read { issues[index] = read; whole.insert(held.number) } else { issues.remove(at: index) }
         }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
         openIssues[slug] = issues
+        wholeIssues[slug] = whole
         // An edit made here after this read began is not in what GitHub answered: it stays on
         // top until a read that started after it; one this read already saw is done with.
         let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
@@ -191,11 +193,41 @@ extension Engine {
 
     /// The repo's next issue move (triage, stage, restage), when the repo starts its moves and
     /// its issues were read this tick: one new per sync, after the PRs, the intake and the decisions.
+    /// A rule that asks whether a person demoted the issue reads its label events, which a page of
+    /// 50 cuts to the oldest few: the issue it picks is read again on its own and the pick made
+    /// again, until the pick stands on a whole read (or `wholeReadsPerPick` reads are spent and
+    /// nothing starts this sync).
     func issueMoveCandidates(repo: String, flow: Flow, pullRequests: [PullRequest], me: String,
-                             agents: [String: AgentTemplate]) -> [DispatchCandidate] {
-        guard flow.issues?.isEmpty == false, issuesReadThisTick.contains(repo.lowercased()) else { return [] }
-        return [IssueMoves.candidate(issues: openIssues[repo.lowercased()] ?? [], flow: flow, pullRequests: pullRequests,
-                                     jobs: jobs.all(), repo: repo, me: me, agents: agents, ranElsewhere: issueMovesRanElsewhere)].compactMap { $0 }
+                             agents: [String: AgentTemplate]) async -> [DispatchCandidate] {
+        let slug = repo.lowercased()
+        guard flow.issues?.isEmpty == false, issuesReadThisTick.contains(slug) else { return [] }
+        var reads = 0
+        while true {
+            guard let candidate = IssueMoves.candidate(issues: openIssues[slug] ?? [], flow: flow, pullRequests: pullRequests,
+                                                       jobs: jobs.all(), repo: repo, me: me, agents: agents, ranElsewhere: issueMovesRanElsewhere),
+                  let plan = candidate.issueMove else { return [] }
+            guard IssueMoves.readsLabelEvents(plan.when), !(wholeIssues[slug] ?? []).contains(plan.number) else { return [candidate] }
+            guard reads < Self.wholeReadsPerPick, await readWhole(plan.number, in: repo) else { return [] }
+            reads += 1
+        }
+    }
+
+    static let wholeReadsPerPick = 5
+
+    /// The issue read on its own, in place of its page copy: its label events and state change
+    /// whole. False when the read failed; a closed issue leaves the list.
+    func readWhole(_ number: Int, in repo: String) async -> Bool {
+        let slug = repo.lowercased()
+        let whole: OpenIssue?
+        do { whole = try await github.openIssue(repo: repo, number: number) } catch {
+            log("\(repo)#\(number): not read on its own: \(error.localizedDescription)")
+            return false
+        }
+        guard var issues = openIssues[slug], let index = issues.firstIndex(where: { $0.number == number }) else { return false }
+        if let whole { issues[index] = whole } else { issues.remove(at: index) }
+        openIssues[slug] = issues
+        wholeIssues[slug, default: []].insert(number)
+        return true
     }
 
     /// Asks the agent for the next turn of a new issue, first in line at the next sync.

@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**An issue a person moved back is never promoted again, and a ping waits the full time.** GitHub reads a long issue's history through Bton's list of 50 issues as only its oldest few changes, so a person who took `stage:ready` off an issue days ago could look like nobody had, and a flow's `not_demoted` rule would promote it again; and an issue's last label or assignment change could read as days earlier than it was, so its stale ping came early. The issue a move is about to start on is now read on its own when the move's rule asks whether it was demoted, and a ping checks the issue the same way before it is posted.
+
 ## 0.36.4 (2026-11-08)
 
 **A build's own report no longer sends its issue back to an agent, and a read hand-back leaves the list.** An agent that did one step of an issue's plan and said so on the issue, then ended without a PR, gave the issue a new round with that comment: Bton put it back at ready and took it again, five times on one issue, failing in seconds only because the old worktree was still there. A comment written under this Mac's login while its build of the issue ran is now the build's output, not new work, so the round stays and the issue waits for a person. And a failed or handed-back build kept its card in Issues for as long as the issue stayed open, even after someone had turned the issue into a tracker; once anyone relabels the issue after the build ended, the card goes.

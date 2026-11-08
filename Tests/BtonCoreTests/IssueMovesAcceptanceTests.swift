@@ -129,6 +129,9 @@ struct IssueMovesAcceptanceTests {
         #expect(IssuePredicate("not_demoted:Stage:Ready") == .notDemoted(label: "stage:ready", claim: nil))
         #expect(IssuePredicate("not_demoted:Stage:Ready,Stage:In-Progress") == .notDemoted(label: "stage:ready", claim: "stage:in-progress"))
         #expect(IssuePredicate("not_demoted:") == nil)
+        // Only these conditions need the issue's whole label history, read on its own.
+        #expect(IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:stage:ready"]))
+        #expect(!IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:"]))
     }
 
     @Test func anIssueWithNoLabelHistoryIsNotDemoted() {

@@ -89,6 +89,9 @@ public actor Engine {
     /// Each repo's issue reads so far, by lowercased slug: a read commits only while it is the
     /// latest started, so a sync's older read never lands over a Load more that finished first.
     var issueRevisions: [String: Int] = [:]
+    /// The issues of each repo's last read that were read again on their own, so their label
+    /// events and state change are whole (a page of 50 cuts a long timeline): by lowercased slug.
+    var wholeIssues: [String: Set<Int>] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
     /// Issue-move keys another Mac ran (the lease history said so when this Mac tried): without
@@ -380,8 +383,8 @@ public actor Engine {
                             pending += decideCandidates(repo: read.repo.slug, flow: flow, defaultBranch: read.repo.branch ?? read.defaultBranch,
                                                         me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
                             // The issues' own moves, last: the triager sorts what nobody is building.
-                            pending += issueMoveCandidates(repo: read.repo.slug, flow: flow, pullRequests: read.pullRequests,
-                                                           me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
+                            pending += await issueMoveCandidates(repo: read.repo.slug, flow: flow, pullRequests: read.pullRequests,
+                                                                 me: read.viewer, agents: config.agents).map { ($0, clone, flow) }
                         }
                     }
                     // A schedule runs a repo without a flow: this Mac's own agent, like its agents,
@@ -969,8 +972,11 @@ public actor Engine {
             }
             // Under the lease, every comment of the issue, not the read's last 20: a notice another
             // Mac posted a moment ago, or one older than twenty comments, is seen and not posted again.
-            guard let comments = try? await github.issueComments(repo: repo, number: issue.number),
-                  Staleness.notice(for: issue.with(comments: comments), stale: stale, askedOfMe: askedOfMe)?.marker == notice.marker else {
+            // And the issue read on its own: a page of 50 cuts a long timeline to its oldest events,
+            // so the page's last label or assignment change can be days early and the wait too long.
+            guard let whole = try? await github.openIssue(repo: repo, number: issue.number),
+                  let comments = try? await github.issueComments(repo: repo, number: issue.number),
+                  Staleness.notice(for: whole.with(comments: comments), stale: stale, askedOfMe: askedOfMe)?.marker == notice.marker else {
                 log("\(repo)#\(issue.number): \(notice.marker) not posted, the issue changed since the read")
                 try? await dispatcher.leases.release(lease)
                 continue

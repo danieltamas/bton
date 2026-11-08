@@ -290,6 +290,11 @@ public enum IssueMoves {
     }
 
     /// The first rule whose predicates hold on the issue, by index.
+    /// The conditions read the issue's label events (`not_demoted`).
+    public static func readsLabelEvents(_ when: [String]) -> Bool {
+        when.contains { if case .notDemoted = IssuePredicate($0) { true } else { false } }
+    }
+
     public static func rule(for issue: OpenIssue, flow: Flow, issues: [OpenIssue], pullRequests: [PullRequest], now: Date = .now) -> Int? {
         let facts = IssueFacts.of(issue, issues: issues, pullRequests: pullRequests, now: now)
         return flow.issues?.firstIndex { facts.holds(all: $0.when) }
