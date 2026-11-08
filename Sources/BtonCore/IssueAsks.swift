@@ -292,16 +292,21 @@ extension GitHubClient {
     }
 
     /// The fields every issue read carries, on a connection or a single issue.
-    static let issueFields = """
-        number title url createdAt updatedAt body authorAssociation
-        author { login }
-        labels(first: 100) { nodes { name } }
-        assignees(first: 5) { nodes { login } }
-        comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
-        timelineItems(last: 30, itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) { nodes { __typename
-          ... on AssignedEvent { createdAt } ... on UnassignedEvent { createdAt }
-          ... on LabeledEvent { createdAt label { name } } ... on UnlabeledEvent { createdAt label { name } } } }
-    """
+    static let issueFields = issueFields(events: 30)
+
+    /// The issue read on its own is the whole read (`Engine.WholeRead`): GitHub's most events.
+    static func issueFields(events: Int) -> String {
+        """
+            number title url createdAt updatedAt body authorAssociation
+            author { login }
+            labels(first: 100) { nodes { name } }
+            assignees(first: 5) { nodes { login } }
+            comments(last: 20) { nodes { databaseId author { login } authorAssociation body createdAt url } }
+            timelineItems(last: \(events), itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) { nodes { __typename
+              ... on AssignedEvent { createdAt } ... on UnassignedEvent { createdAt }
+              ... on LabeledEvent { createdAt label { name } } ... on UnlabeledEvent { createdAt label { name } } } }
+        """
+    }
 
     static let openIssuesQuery = """
     fragment Fields on IssueConnection {
@@ -421,7 +426,7 @@ extension GitHubClient {
       repository(owner: $owner, name: $name) {
         issue(number: $number) {
           state
-    \(issueFields)
+    \(issueFields(events: 100))
         }
       }
     }
