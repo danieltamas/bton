@@ -92,6 +92,9 @@ public actor Engine {
     /// The issues of each repo's last read that were read again on their own, so their label
     /// events and state change are whole (a page of 50 cuts a long timeline): by lowercased slug.
     var wholeIssues: [String: Set<Int>] = [:]
+    /// The label events of each repo's issues as their last whole read had them, kept across page
+    /// reads while the labels stay the same (`carryingHistories`): by lowercased slug, then number.
+    var labelHistories: [String: [Int: LabelHistory]] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
     /// Issue-move keys another Mac ran (the lease history said so when this Mac tried): without

@@ -55,6 +55,13 @@ public struct OpenIssue: Hashable, Sendable {
                   labels: labels, assignees: assignees ?? self.assignees, stateChangedAt: stateChangedAt ?? self.stateChangedAt,
                   labelEvents: labelEvents)
     }
+
+    /// The same issue with its label history taken from a whole read.
+    public func with(labelEvents: [LabelEvent]) -> OpenIssue {
+        OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
+                  authorAssociation: authorAssociation, body: body, comments: comments,
+                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents)
+    }
 }
 
 /// One page of a repo's open issues, with the cursor of the next.

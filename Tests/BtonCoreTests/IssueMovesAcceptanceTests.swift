@@ -132,18 +132,19 @@ struct IssueMovesAcceptanceTests {
         // Only these conditions need the issue's whole label history, read on its own.
         #expect(IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:stage:ready"]))
         #expect(!IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:"]))
-        // A whole copy outlives a page read that shows nothing moved, and only that.
+        // A whole read's label history outlives a page read while the labels are the same, and
+        // only the history: the rest of the issue is the page's.
         typealias I = IntakeAcceptanceFixture
         let removal = LabelEvent(kind: .removed, label: "stage:ready", at: F.now)
-        let whole = OpenIssue(repo: I.repo, number: 7, title: "UNTRUSTED_TITLE", url: URL(string: "https://github.com/\(I.repo)/issues/7")!,
-                              createdAt: Date(timeIntervalSince1970: 1000), author: "author", authorAssociation: "MEMBER", body: "UNTRUSTED_BODY",
-                              comments: [], labels: ["stage:spec"], labelEvents: [removal])
-        let same = I.issue(7, labels: ["Stage:Spec"]), moved = I.issue(7, labels: ["stage:ready"]), other = I.issue(8, labels: ["stage:spec"])
-        let kept = Engine.keepingWhole([same, other], previous: [whole, other], whole: [7, 8])
+        let history = Engine.LabelHistory(of: I.issue(7, labels: ["stage:spec"]).with(labelEvents: [removal]))
+        let comment = IssueComment(id: "new", author: "dani", authorAssociation: "OWNER", body: "edited", createdAt: F.now, url: nil)
+        let same = I.issue(7, labels: ["Stage:Spec"], comments: [comment]), moved = I.issue(7, labels: ["stage:ready"])
+        let kept = Engine.carryingHistories([same, I.issue(8)], [7: history])
         #expect(kept.issues.first?.labelEvents == [removal])
-        #expect(kept.whole == [7, 8])
-        #expect(Engine.keepingWhole([moved], previous: [whole], whole: [7]).whole.isEmpty)
-        #expect(Engine.keepingWhole([same], previous: [whole], whole: []).issues.first?.labelEvents.isEmpty == true)
+        #expect(kept.issues.first?.comments == [comment])
+        #expect(kept.histories == [7: history])
+        let dropped = Engine.carryingHistories([moved], [7: history])
+        #expect(dropped.histories.isEmpty && dropped.issues.first?.labelEvents.isEmpty == true)
     }
 
     @Test func anIssueWithNoLabelHistoryIsNotDemoted() {

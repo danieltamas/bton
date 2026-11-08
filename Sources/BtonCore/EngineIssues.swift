@@ -66,9 +66,13 @@ extension Engine {
         }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
-        let carried = Self.keepingWhole(issues, previous: openIssues[slug] ?? [], whole: (wholeIssues[slug] ?? []).subtracting(whole))
+        // The held rereads above are whole already: their history is the fresh one.
+        var histories = labelHistories[slug] ?? [:]
+        for issue in issues where whole.contains(issue.number) { histories[issue.number] = LabelHistory(of: issue) }
+        let carried = Self.carryingHistories(issues, histories)
         openIssues[slug] = carried.issues
-        wholeIssues[slug] = whole.union(carried.whole)
+        labelHistories[slug] = carried.histories
+        wholeIssues[slug] = whole
         // An edit made here after this read began is not in what GitHub answered: it stays on
         // top until a read that started after it; one this read already saw is done with.
         let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
@@ -207,7 +211,9 @@ extension Engine {
             guard let candidate = IssueMoves.candidate(issues: openIssues[slug] ?? [], flow: flow, pullRequests: pullRequests,
                                                        jobs: jobs.all(), repo: repo, me: me, agents: agents, ranElsewhere: issueMovesRanElsewhere),
                   let plan = candidate.issueMove else { return [] }
-            guard IssueMoves.readsLabelEvents(plan.when), !(wholeIssues[slug] ?? []).contains(plan.number) else { return [candidate] }
+            let whole = openIssues[slug]?.first { $0.number == plan.number }
+                .map { labelHistories[slug]?[plan.number]?.holds(for: $0) == true } ?? true
+            guard IssueMoves.readsLabelEvents(plan.when), !whole else { return [candidate] }
             guard reads < Self.wholeReadsPerPick, await readWhole(plan.number, in: repo) else { return [] }
             reads += 1
         }
@@ -230,26 +236,42 @@ extension Engine {
               let index = issues.firstIndex(where: { $0.number == number }) else { return false }
         if let whole { issues[index] = whole } else { issues.remove(at: index) }
         openIssues[slug] = issues
+        if let whole {
+            wholeIssues[slug, default: []].insert(number)
+            labelHistories[slug, default: [:]][number] = LabelHistory(of: whole)
+        }
         // A label edit made here that GitHub may not answer with yet stays on top, as after a page read.
         for edit in labelEdits[slug] ?? [] where edit.number == number { applyLabelEdit(edit, in: slug) }
-        if whole != nil { wholeIssues[slug, default: []].insert(number) }
         return whole != nil
     }
 
-    /// The issues a page read finds as the last whole read left them (same labels, assignees and
-    /// newest comment) keep that whole copy: what the page cannot show did not move, and a rule
-    /// or a ping already settled on it is not read again every sync.
-    static func keepingWhole(_ page: [OpenIssue], previous: [OpenIssue], whole: Set<Int>) -> (issues: [OpenIssue], whole: Set<Int>) {
-        let seen = { (issue: OpenIssue) in
-            [issue.title, issue.body, issue.comments.last?.id ?? "", issue.labels.map { $0.lowercased() }.sorted().joined(separator: "\n"),
-             issue.assignees.map { $0.lowercased() }.sorted().joined(separator: "\n")]
+    /// An issue's label events from a whole read, with the labels it had then.
+    struct LabelHistory: Equatable {
+        let labels: Set<String>
+        let events: [LabelEvent]
+
+        init(of issue: OpenIssue) {
+            labels = Self.labels(of: issue)
+            events = issue.labelEvents
         }
-        var kept = Set<Int>()
+
+        static func labels(of issue: OpenIssue) -> Set<String> { Set(issue.labels.map { $0.lowercased() }) }
+
+        /// Still the issue's history while its labels are the same: a demotion ends only when the
+        /// label comes back, which changes them.
+        func holds(for issue: OpenIssue) -> Bool { labels == Self.labels(of: issue) }
+    }
+
+    /// A page's issues with the label history of their last whole read, where it still holds;
+    /// the histories that no longer hold go. Only the label events: comments, assignees and the
+    /// state change come from the page, so a rule settled on a whole read is not read again every
+    /// sync while nothing else about the issue is taken from an older read.
+    static func carryingHistories(_ page: [OpenIssue], _ histories: [Int: LabelHistory]) -> (issues: [OpenIssue], histories: [Int: LabelHistory]) {
+        var kept: [Int: LabelHistory] = [:]
         let issues = page.map { issue -> OpenIssue in
-            guard whole.contains(issue.number), let earlier = previous.first(where: { $0.number == issue.number }),
-                  seen(earlier) == seen(issue) else { return issue }
-            kept.insert(issue.number)
-            return earlier
+            guard let history = histories[issue.number], history.holds(for: issue) else { return issue }
+            kept[issue.number] = history
+            return issue.with(labelEvents: history.events)
         }
         return (issues, kept)
     }
