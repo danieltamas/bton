@@ -89,12 +89,10 @@ public actor Engine {
     /// Each repo's issue reads so far, by lowercased slug: a read commits only while it is the
     /// latest started, so a sync's older read never lands over a Load more that finished first.
     var issueRevisions: [String: Int] = [:]
-    /// The issues of each repo's last read that were read again on their own, so their label
-    /// events and state change are whole (a page of 50 cuts a long timeline): by lowercased slug.
-    var wholeIssues: [String: Set<Int>] = [:]
-    /// The label events of each repo's issues as their last whole read had them, kept across page
-    /// reads while the labels stay the same (`carryingHistories`): by lowercased slug, then number.
-    var labelHistories: [String: [Int: LabelHistory]] = [:]
+    /// What each issue's timeline said when it was last read on its own (a page of 50 cuts a long
+    /// timeline to its oldest events), kept while GitHub's `updatedAt` for the issue is the same:
+    /// by lowercased slug, then number.
+    var wholeReads: [String: [Int: WholeRead]] = [:]
     /// The repos whose issues this tick read: only a current thread starts a draft.
     var issuesReadThisTick: Set<String> = []
     /// Issue-move keys another Mac ran (the lease history said so when this Mac tried): without
@@ -967,8 +965,11 @@ public actor Engine {
             var issue = read
             let askedOfMe = IssueAsks.ask(in: issue, me: me, table: flow.decide?.table) != nil
             // A page of 50 cuts a long timeline to its oldest events, so the page can start the wait
-            // days early: an issue it finds due is read on its own and judged on that read.
-            if Staleness.notice(for: issue, stale: stale, askedOfMe: askedOfMe) != nil, !(wholeIssues[slug] ?? []).contains(issue.number) {
+            // days early (a notice due on the page), or hide a new wait behind an older notice (one
+            // posted on the issue): those issues are judged on a read on its own, made again only
+            // once the issue has changed.
+            if Staleness.notice(for: issue, stale: stale, askedOfMe: askedOfMe) != nil || Staleness.noticed(issue),
+               !isWhole(issue.number, in: slug) {
                 guard await readWhole(issue.number, in: repo), let whole = openIssues[slug]?.first(where: { $0.number == issue.number }) else { continue }
                 issue = whole
             }

@@ -55,24 +55,21 @@ extension Engine {
         // One copy per issue, the first, before the rereads: a second copy would outlive a reread that found it closed.
         var seen = Set<Int>()
         issues = issues.filter { seen.insert($0.number).inserted }
+        // What an earlier read on its own said of an issue's timeline stands while the issue has not changed.
+        var reads = wholeReads[slug] ?? [:]
+        issues = issues.map { WholeRead.carried(reads, into: $0) }
         // A failed read keeps the page's copy: the card stays rather than vanishing on a hiccup.
-        var whole = Set<Int>()
-        for held in IssueIntake.heldByEvents(issues, jobs: jobs.all()) {
+        for held in IssueIntake.heldByEvents(issues, jobs: jobs.all()) where !WholeRead.holds(reads, for: held) {
             let read: OpenIssue?
             do { read = try await github.openIssue(repo: repo, number: held.number) } catch { continue }
             guard let index = issues.firstIndex(where: { $0.number == held.number }) else { continue }
             // Closed since the page was read: gone from the list like any closed issue.
-            if let read { issues[index] = read; whole.insert(held.number) } else { issues.remove(at: index) }
+            if let read { issues[index] = read; reads[held.number] = WholeRead(of: read) ?? reads[held.number] } else { issues.remove(at: index) }
         }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
-        // The held rereads above are whole already: their history is the fresh one.
-        var histories = labelHistories[slug] ?? [:]
-        for issue in issues where whole.contains(issue.number) { histories[issue.number] = LabelHistory(of: issue) }
-        let carried = Self.carryingHistories(issues, histories)
-        openIssues[slug] = carried.issues
-        labelHistories[slug] = carried.histories
-        wholeIssues[slug] = whole
+        openIssues[slug] = issues
+        wholeReads[slug] = reads.filter { number, _ in issues.contains { $0.number == number && WholeRead.holds(reads, for: $0) } }
         // An edit made here after this read began is not in what GitHub answered: it stays on
         // top until a read that started after it; one this read already saw is done with.
         let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
@@ -211,9 +208,7 @@ extension Engine {
             guard let candidate = IssueMoves.candidate(issues: openIssues[slug] ?? [], flow: flow, pullRequests: pullRequests,
                                                        jobs: jobs.all(), repo: repo, me: me, agents: agents, ranElsewhere: issueMovesRanElsewhere),
                   let plan = candidate.issueMove else { return [] }
-            let whole = openIssues[slug]?.first { $0.number == plan.number }
-                .map { labelHistories[slug]?[plan.number]?.holds(for: $0) == true } ?? true
-            guard IssueMoves.readsLabelEvents(plan.when), !whole else { return [candidate] }
+            guard IssueMoves.readsLabelEvents(plan.when), !isWhole(plan.number, in: slug) else { return [candidate] }
             guard reads < Self.wholeReadsPerPick, await readWhole(plan.number, in: repo) else { return [] }
             reads += 1
         }
@@ -236,44 +231,40 @@ extension Engine {
               let index = issues.firstIndex(where: { $0.number == number }) else { return false }
         if let whole { issues[index] = whole } else { issues.remove(at: index) }
         openIssues[slug] = issues
-        if let whole {
-            wholeIssues[slug, default: []].insert(number)
-            labelHistories[slug, default: [:]][number] = LabelHistory(of: whole)
-        }
+        if let whole, let read = WholeRead(of: whole) { wholeReads[slug, default: [:]][number] = read }
         // A label edit made here that GitHub may not answer with yet stays on top, as after a page read.
         for edit in labelEdits[slug] ?? [] where edit.number == number { applyLabelEdit(edit, in: slug) }
         return whole != nil
     }
 
-    /// An issue's label events from a whole read, with the labels it had then.
-    struct LabelHistory: Equatable {
-        let labels: Set<String>
-        let events: [LabelEvent]
-
-        init(of issue: OpenIssue) {
-            labels = Self.labels(of: issue)
-            events = issue.labelEvents
-        }
-
-        static func labels(of issue: OpenIssue) -> Set<String> { Set(issue.labels.map { $0.lowercased() }) }
-
-        /// Still the issue's history while its labels are the same: a demotion ends only when the
-        /// label comes back, which changes them.
-        func holds(for issue: OpenIssue) -> Bool { labels == Self.labels(of: issue) }
+    /// The issue's timeline as held now is a whole read's.
+    func isWhole(_ number: Int, in slug: String) -> Bool {
+        openIssues[slug]?.first { $0.number == number }.map { WholeRead.holds(wholeReads[slug] ?? [:], for: $0) } ?? false
     }
 
-    /// A page's issues with the label history of their last whole read, where it still holds;
-    /// the histories that no longer hold go. Only the label events: comments, assignees and the
-    /// state change come from the page, so a rule settled on a whole read is not read again every
-    /// sync while nothing else about the issue is taken from an older read.
-    static func carryingHistories(_ page: [OpenIssue], _ histories: [Int: LabelHistory]) -> (issues: [OpenIssue], histories: [Int: LabelHistory]) {
-        var kept: [Int: LabelHistory] = [:]
-        let issues = page.map { issue -> OpenIssue in
-            guard let history = histories[issue.number], history.holds(for: issue) else { return issue }
-            kept[issue.number] = history
-            return issue.with(labelEvents: history.events)
+    /// What an issue's timeline said when it was read on its own, and GitHub's `updatedAt` then.
+    /// A label, an assignment or a comment moves `updatedAt`, so while it is the same nothing the
+    /// timeline holds has changed, and the page's cut copy takes the whole one's place.
+    struct WholeRead: Equatable {
+        let updatedAt: Date
+        let stateChangedAt: Date?
+        let labelEvents: [LabelEvent]
+
+        init?(of issue: OpenIssue) {
+            guard let updatedAt = issue.updatedAt else { return nil }
+            self.updatedAt = updatedAt
+            stateChangedAt = issue.stateChangedAt
+            labelEvents = issue.labelEvents
         }
-        return (issues, kept)
+
+        static func holds(_ reads: [Int: WholeRead], for issue: OpenIssue) -> Bool {
+            issue.updatedAt != nil && reads[issue.number]?.updatedAt == issue.updatedAt
+        }
+
+        static func carried(_ reads: [Int: WholeRead], into issue: OpenIssue) -> OpenIssue {
+            guard holds(reads, for: issue), let read = reads[issue.number] else { return issue }
+            return issue.with(stateChangedAt: read.stateChangedAt, labelEvents: read.labelEvents)
+        }
     }
 
     /// Asks the agent for the next turn of a new issue, first in line at the next sync.

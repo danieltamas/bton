@@ -57,6 +57,13 @@ public enum Staleness {
     public static let issuePing = "stale-ping issue"
     public static let issueEscalation = "stale-escalate issue"
 
+    /// A ping or an escalation was posted on the issue, any wait, among the comments read.
+    public static func noticed(_ issue: OpenIssue) -> Bool {
+        issue.comments.contains { comment in
+            BtonMarker.keys(in: comment.body).contains { key in [issuePing, issueEscalation].contains { key == $0 || key.hasPrefix($0 + "@") } }
+        }
+    }
+
     public static func notice(for issue: OpenIssue, stale: Stale, askedOfMe: Bool = false, now: Date = .now) -> Notice? {
         guard !issue.assignees.isEmpty, !askedOfMe else { return nil }
         let since = since(issue)

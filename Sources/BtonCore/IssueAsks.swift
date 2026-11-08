@@ -20,15 +20,20 @@ public struct OpenIssue: Hashable, Sendable {
     /// read that did not ask. With the latest person's comment, it is when the issue's state began.
     public let stateChangedAt: Date?
     /// The last label additions and removals, oldest first; empty on a read that did not ask.
+    /// Read through a page of 50, these and `stateChangedAt` can be cut to the oldest few.
     public let labelEvents: [LabelEvent]
+    /// GitHub's last change to the issue (a label, an assignment, a comment, an edit): a whole
+    /// read stands for the timeline while this is the same. nil on a read that did not ask.
+    public let updatedAt: Date?
 
     public init(repo: String, number: Int, title: String, url: URL, createdAt: Date, author: String?,
                 authorAssociation: String, body: String, comments: [IssueComment], labels: [String] = [],
-                assignees: [String] = [], stateChangedAt: Date? = nil, labelEvents: [LabelEvent] = []) {
+                assignees: [String] = [], stateChangedAt: Date? = nil, labelEvents: [LabelEvent] = [], updatedAt: Date? = nil) {
         self.labels = labels
         self.assignees = assignees
         self.stateChangedAt = stateChangedAt
         self.labelEvents = labelEvents
+        self.updatedAt = updatedAt
         self.repo = repo
         self.number = number
         self.title = title
@@ -44,7 +49,7 @@ public struct OpenIssue: Hashable, Sendable {
     public func with(comments: [IssueComment]) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
                   authorAssociation: authorAssociation, body: body, comments: comments.sorted { $0.createdAt < $1.createdAt },
-                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents)
+                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents, updatedAt: updatedAt)
     }
 
     /// The same issue after a label edit made here: the labels replaced, and when given, the
@@ -53,14 +58,14 @@ public struct OpenIssue: Hashable, Sendable {
         OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
                   authorAssociation: authorAssociation, body: body, comments: comments,
                   labels: labels, assignees: assignees ?? self.assignees, stateChangedAt: stateChangedAt ?? self.stateChangedAt,
-                  labelEvents: labelEvents)
+                  labelEvents: labelEvents, updatedAt: updatedAt)
     }
 
-    /// The same issue with its label history taken from a whole read.
-    public func with(labelEvents: [LabelEvent]) -> OpenIssue {
+    /// The same issue with what its timeline says taken from a whole read (`Engine.WholeRead`).
+    public func with(stateChangedAt: Date?, labelEvents: [LabelEvent]) -> OpenIssue {
         OpenIssue(repo: repo, number: number, title: title, url: url, createdAt: createdAt, author: author,
                   authorAssociation: authorAssociation, body: body, comments: comments,
-                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents)
+                  labels: labels, assignees: assignees, stateChangedAt: stateChangedAt, labelEvents: labelEvents, updatedAt: updatedAt)
     }
 }
 
@@ -288,7 +293,7 @@ extension GitHubClient {
 
     /// The fields every issue read carries, on a connection or a single issue.
     static let issueFields = """
-        number title url createdAt body authorAssociation
+        number title url createdAt updatedAt body authorAssociation
         author { login }
         labels(first: 100) { nodes { name } }
         assignees(first: 5) { nodes { login } }
@@ -322,6 +327,7 @@ extension GitHubClient {
         struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
         struct Row: Decodable {
             let number: Int, title: String, url: URL, createdAt: Date, body: String, authorAssociation: String
+            let updatedAt: Date?
             let author: Author?, comments: Nodes<Comment>, labels: Nodes<Label>?, assignees: Nodes<Author>?
             /// Only the lookup by number asks for it: the other connections are open by query.
             let state: String?
@@ -372,7 +378,7 @@ extension GitHubClient {
                   }.sorted { $0.createdAt < $1.createdAt },
                   labels: row.labels?.nodes.map(\.name) ?? [], assignees: row.assignees?.nodes.map(\.login) ?? [],
                   stateChangedAt: row.timelineItems?.nodes.compactMap(\.createdAt).max(),
-                  labelEvents: row.timelineItems?.nodes.compactMap(\.labelEvent) ?? [])
+                  labelEvents: row.timelineItems?.nodes.compactMap(\.labelEvent) ?? [], updatedAt: row.updatedAt)
     }
 
     // MARK: search

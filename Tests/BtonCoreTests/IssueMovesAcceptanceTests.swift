@@ -125,26 +125,30 @@ struct IssueMovesAcceptanceTests {
         #expect(candidate.costCap == (capped ? Decimal(string: "1.25") : nil))
     }
 
-    @Test func notDemotedParsesCaseInsensitiveLabelsAndRejectsAnEmptyLabel() {
+    @Test func notDemotedParsesCaseInsensitiveLabelsAndRejectsAnEmptyLabel() throws {
         #expect(IssuePredicate("not_demoted:Stage:Ready") == .notDemoted(label: "stage:ready", claim: nil))
         #expect(IssuePredicate("not_demoted:Stage:Ready,Stage:In-Progress") == .notDemoted(label: "stage:ready", claim: "stage:in-progress"))
         #expect(IssuePredicate("not_demoted:") == nil)
         // Only these conditions need the issue's whole label history, read on its own.
         #expect(IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:stage:ready"]))
         #expect(!IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:"]))
-        // A whole read's label history outlives a page read while the labels are the same, and
-        // only the history: the rest of the issue is the page's.
+        // A whole read's timeline outlives a page read while GitHub's updatedAt is the same, and only
+        // the timeline: comments and the rest are the page's. Any change to the issue ends it.
         typealias I = IntakeAcceptanceFixture
+        func issue(updated: Double, comments: [IssueComment] = [], events: [LabelEvent] = [], changed: Date? = nil) -> OpenIssue {
+            let seed = I.issue(7, labels: ["stage:spec"], comments: comments)
+            return OpenIssue(repo: seed.repo, number: 7, title: seed.title, url: seed.url, createdAt: seed.createdAt, author: seed.author,
+                             authorAssociation: seed.authorAssociation, body: seed.body, comments: comments, labels: seed.labels,
+                             stateChangedAt: changed, labelEvents: events, updatedAt: Date(timeIntervalSince1970: updated))
+        }
         let removal = LabelEvent(kind: .removed, label: "stage:ready", at: F.now)
-        let history = Engine.LabelHistory(of: I.issue(7, labels: ["stage:spec"]).with(labelEvents: [removal]))
+        let read = try #require(Engine.WholeRead(of: issue(updated: 5000, events: [removal], changed: F.now)))
         let comment = IssueComment(id: "new", author: "dani", authorAssociation: "OWNER", body: "edited", createdAt: F.now, url: nil)
-        let same = I.issue(7, labels: ["Stage:Spec"], comments: [comment]), moved = I.issue(7, labels: ["stage:ready"])
-        let kept = Engine.carryingHistories([same, I.issue(8)], [7: history])
-        #expect(kept.issues.first?.labelEvents == [removal])
-        #expect(kept.issues.first?.comments == [comment])
-        #expect(kept.histories == [7: history])
-        let dropped = Engine.carryingHistories([moved], [7: history])
-        #expect(dropped.histories.isEmpty && dropped.issues.first?.labelEvents.isEmpty == true)
+        let carried = Engine.WholeRead.carried([7: read], into: issue(updated: 5000, comments: [comment]))
+        #expect(carried.labelEvents == [removal] && carried.stateChangedAt == F.now && carried.comments == [comment])
+        #expect(Engine.WholeRead.carried([7: read], into: issue(updated: 5001)).labelEvents.isEmpty)
+        #expect(!Engine.WholeRead.holds([7: read], for: issue(updated: 5001)))
+        #expect(Engine.WholeRead(of: I.issue(7)) == nil)
     }
 
     @Test func anIssueWithNoLabelHistoryIsNotDemoted() {
