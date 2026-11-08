@@ -52,6 +52,9 @@ extension Engine {
             }
             if after == nil { break }
         }
+        // One copy per issue, the first, before the rereads: a second copy would outlive a reread that found it closed.
+        var seen = Set<Int>()
+        issues = issues.filter { seen.insert($0.number).inserted }
         // A failed read keeps the page's copy: the card stays rather than vanishing on a hiccup.
         for held in IssueIntake.heldByEvents(issues, jobs: jobs.all()) {
             let whole: OpenIssue?
@@ -62,8 +65,7 @@ extension Engine {
         }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
-        var seen = Set<Int>()
-        openIssues[slug] = issues.filter { seen.insert($0.number).inserted }
+        openIssues[slug] = issues
         // An edit made here after this read began is not in what GitHub answered: it stays on
         // top until a read that started after it; one this read already saw is done with.
         let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
