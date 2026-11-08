@@ -66,8 +66,9 @@ extension Engine {
         }
         // A read started later (a Load more during a sync, or the reverse) owns the list now.
         guard issueRevisions[slug] == revision else { return false }
-        openIssues[slug] = issues
-        wholeIssues[slug] = whole
+        let carried = Self.keepingWhole(issues, previous: openIssues[slug] ?? [], whole: (wholeIssues[slug] ?? []).subtracting(whole))
+        openIssues[slug] = carried.issues
+        wholeIssues[slug] = whole.union(carried.whole)
         // An edit made here after this read began is not in what GitHub answered: it stays on
         // top until a read that started after it; one this read already saw is done with.
         let kept = (labelEdits[slug] ?? []).filter { $0.at > started && $0.at > .now - Self.labelEditTTL }
@@ -218,16 +219,39 @@ extension Engine {
     /// whole. False when the read failed; a closed issue leaves the list.
     func readWhole(_ number: Int, in repo: String) async -> Bool {
         let slug = repo.lowercased()
+        let revision = issueRevisions[slug]
         let whole: OpenIssue?
         do { whole = try await github.openIssue(repo: repo, number: number) } catch {
             log("\(repo)#\(number): not read on its own: \(error.localizedDescription)")
             return false
         }
-        guard var issues = openIssues[slug], let index = issues.firstIndex(where: { $0.number == number }) else { return false }
+        // A page read that landed during this one owns the list: its copy stays, read again next time.
+        guard issueRevisions[slug] == revision, var issues = openIssues[slug],
+              let index = issues.firstIndex(where: { $0.number == number }) else { return false }
         if let whole { issues[index] = whole } else { issues.remove(at: index) }
         openIssues[slug] = issues
-        wholeIssues[slug, default: []].insert(number)
-        return true
+        // A label edit made here that GitHub may not answer with yet stays on top, as after a page read.
+        for edit in labelEdits[slug] ?? [] where edit.number == number { applyLabelEdit(edit, in: slug) }
+        if whole != nil { wholeIssues[slug, default: []].insert(number) }
+        return whole != nil
+    }
+
+    /// The issues a page read finds as the last whole read left them (same labels, assignees and
+    /// newest comment) keep that whole copy: what the page cannot show did not move, and a rule
+    /// or a ping already settled on it is not read again every sync.
+    static func keepingWhole(_ page: [OpenIssue], previous: [OpenIssue], whole: Set<Int>) -> (issues: [OpenIssue], whole: Set<Int>) {
+        let seen = { (issue: OpenIssue) in
+            [issue.title, issue.body, issue.comments.last?.id ?? "", issue.labels.map { $0.lowercased() }.sorted().joined(separator: "\n"),
+             issue.assignees.map { $0.lowercased() }.sorted().joined(separator: "\n")]
+        }
+        var kept = Set<Int>()
+        let issues = page.map { issue -> OpenIssue in
+            guard whole.contains(issue.number), let earlier = previous.first(where: { $0.number == issue.number }),
+                  seen(earlier) == seen(issue) else { return issue }
+            kept.insert(issue.number)
+            return earlier
+        }
+        return (issues, kept)
     }
 
     /// Asks the agent for the next turn of a new issue, first in line at the next sync.

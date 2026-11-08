@@ -959,8 +959,16 @@ public actor Engine {
     /// that starts its moves, under the issue's lease (a job holding it is the issue moving).
     private func postIssueStaleNotices(_ issues: [OpenIssue], stale: Stale, flow: Flow, repo: String, me: String,
                                        dispatcher: Dispatcher) async {
-        for issue in issues where issue.author?.caseInsensitiveCompare(me) == .orderedSame {
+        let slug = repo.lowercased()
+        for read in issues where read.author?.caseInsensitiveCompare(me) == .orderedSame {
+            var issue = read
             let askedOfMe = IssueAsks.ask(in: issue, me: me, table: flow.decide?.table) != nil
+            // A page of 50 cuts a long timeline to its oldest events, so the page can start the wait
+            // days early: an issue it finds due is read on its own and judged on that read.
+            if Staleness.notice(for: issue, stale: stale, askedOfMe: askedOfMe) != nil, !(wholeIssues[slug] ?? []).contains(issue.number) {
+                guard await readWhole(issue.number, in: repo), let whole = openIssues[slug]?.first(where: { $0.number == issue.number }) else { continue }
+                issue = whole
+            }
             // Remembered per wait, not per marker: the marker is the same for every wait of the
             // issue, and a new wait after a ping must get its own.
             let remembered = "\(repo)#\(issue.number) \(Int(Staleness.since(issue).timeIntervalSince1970))"
@@ -972,11 +980,8 @@ public actor Engine {
             }
             // Under the lease, every comment of the issue, not the read's last 20: a notice another
             // Mac posted a moment ago, or one older than twenty comments, is seen and not posted again.
-            // And the issue read on its own: a page of 50 cuts a long timeline to its oldest events,
-            // so the page's last label or assignment change can be days early and the wait too long.
-            guard let whole = try? await github.openIssue(repo: repo, number: issue.number),
-                  let comments = try? await github.issueComments(repo: repo, number: issue.number),
-                  Staleness.notice(for: whole.with(comments: comments), stale: stale, askedOfMe: askedOfMe)?.marker == notice.marker else {
+            guard let comments = try? await github.issueComments(repo: repo, number: issue.number),
+                  Staleness.notice(for: issue.with(comments: comments), stale: stale, askedOfMe: askedOfMe)?.marker == notice.marker else {
                 log("\(repo)#\(issue.number): \(notice.marker) not posted, the issue changed since the read")
                 try? await dispatcher.leases.release(lease)
                 continue

@@ -132,6 +132,18 @@ struct IssueMovesAcceptanceTests {
         // Only these conditions need the issue's whole label history, read on its own.
         #expect(IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:stage:ready"]))
         #expect(!IssueMoves.readsLabelEvents(["label:stage:spec", "not_demoted:"]))
+        // A whole copy outlives a page read that shows nothing moved, and only that.
+        typealias I = IntakeAcceptanceFixture
+        let removal = LabelEvent(kind: .removed, label: "stage:ready", at: F.now)
+        let whole = OpenIssue(repo: I.repo, number: 7, title: "UNTRUSTED_TITLE", url: URL(string: "https://github.com/\(I.repo)/issues/7")!,
+                              createdAt: Date(timeIntervalSince1970: 1000), author: "author", authorAssociation: "MEMBER", body: "UNTRUSTED_BODY",
+                              comments: [], labels: ["stage:spec"], labelEvents: [removal])
+        let same = I.issue(7, labels: ["Stage:Spec"]), moved = I.issue(7, labels: ["stage:ready"]), other = I.issue(8, labels: ["stage:spec"])
+        let kept = Engine.keepingWhole([same, other], previous: [whole, other], whole: [7, 8])
+        #expect(kept.issues.first?.labelEvents == [removal])
+        #expect(kept.whole == [7, 8])
+        #expect(Engine.keepingWhole([moved], previous: [whole], whole: [7]).whole.isEmpty)
+        #expect(Engine.keepingWhole([same], previous: [whole], whole: []).issues.first?.labelEvents.isEmpty == true)
     }
 
     @Test func anIssueWithNoLabelHistoryIsNotDemoted() {
