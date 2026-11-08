@@ -106,6 +106,9 @@ extension Engine {
     }
 
     private func applyLabelEdit(_ edit: LabelEdit, in slug: String) {
+        // The edit is not in any whole read's timeline, and GitHub's updatedAt may not show it yet:
+        // the issue is read on its own again before a rule leans on its history.
+        wholeReads[slug]?[edit.number] = nil
         guard let index = openIssues[slug]?.firstIndex(where: { $0.number == edit.number }) else { return }
         let issue = openIssues[slug]![index]
         let assignees = issue.assignees.filter { assignee in
