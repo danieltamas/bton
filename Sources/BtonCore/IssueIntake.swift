@@ -49,15 +49,19 @@ public enum IssueIntake {
     /// back) is not: a round of its own would run the build again on the same issue, which would
     /// fail the same way and post again. Nor is what the agent wrote on the issue while one of
     /// this Mac's builds of it ran (`me`, the login it runs under, during the run): a report of a
-    /// step it did is the job's own output, and a round of its own took the issue again.
+    /// step it did is the job's own output and stands for that build's round, where a round of its
+    /// own took the issue again. Standing for the round, not dropped: with only the newest comments
+    /// read, dropping them all would leave no round and the spent issue would look fresh.
     public static func round(of issue: OpenIssue, jobs: [Job] = [], me: String? = nil) -> String {
         let runs = me == nil ? [] : jobs.filter { isIntake($0, number: issue.number, repo: issue.repo) }
-        let ownOutput = { (comment: IssueComment) in
-            comment.author.map { $0.caseInsensitiveCompare(me ?? "") == .orderedSame } == true
-                && runs.contains { $0.startedAt <= comment.createdAt && comment.createdAt <= ($0.endedAt ?? .distantFuture) }
+        let rounds = issue.comments.filter { !IssueAsks.isNotice($0.body) }.compactMap { comment -> Int? in
+            let mine = comment.author.map { $0.caseInsensitiveCompare(me ?? "") == .orderedSame } == true
+            if mine, let run = runs.first(where: { $0.startedAt <= comment.createdAt && comment.createdAt <= ($0.endedAt ?? .distantFuture) }) {
+                return Int(run.key.round)
+            }
+            return Int(comment.createdAt.timeIntervalSince1970)
         }
-        return issue.comments.filter { !IssueAsks.isNotice($0.body) && !ownOutput($0) }.map(\.createdAt).max()
-            .map { String(Int($0.timeIntervalSince1970)) } ?? ""
+        return rounds.max().map(String.init) ?? ""
     }
 
     public static func isReady(_ issue: OpenIssue) -> Bool {

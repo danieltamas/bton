@@ -63,6 +63,11 @@ import Testing
         #expect(IssueIntake.round(of: reported, jobs: [build], me: "me") == "1000")
         #expect(try F.candidate([reported], jobs: [build]) == nil)
         #expect(IssueIntake.ready([reported], jobs: [build], me: "me").first?.round == "1000")
+        // The comments read are only the newest: when all of them are the build's, the round is still the build's.
+        #expect(IssueIntake.round(of: issue([comment(1500, author: "me")]), jobs: [build], me: "me") == "1000")
+        // Every build of an issue not yet built stays on record: its span is what tells its comments apart.
+        let earlier = Job(id: UUID(), key: build.key, agent: "claude", startedAt: Date(timeIntervalSince1970: 1050), status: .failed)
+        #expect(JobStore.retained(among: [build, earlier]) == [build.id, earlier.id])
         // Someone else mid-build, or me after it ended, is new work.
         #expect(IssueIntake.round(of: issue([comment(1000.9), comment(1500)]), jobs: [build], me: "me") == "1500")
         #expect(IssueIntake.round(of: issue([comment(1000.9), comment(2000, author: "me")]), jobs: [build], me: "me") == "2000")

@@ -322,7 +322,9 @@ public struct JobStore: Sendable {
     /// The records some reader needs whatever their age: for every repo, item and move the
     /// newest job and the newest success (a schedule's last run, last success and
     /// `onlyOnChange`); every decide (the count of rulings since a person last spoke); each
-    /// agent's newest finished job (a logged-out agent stays held until the owner says so). The
+    /// agent's newest finished job (a logged-out agent stays held until the owner says so); every
+    /// build of an issue whose newest build did not succeed (each run's span says which of my
+    /// comments on the issue were its output, not new work: `IssueIntake.round`). The
     /// watchdog's costly baseline (the newest priced successes per repo and move) is not kept:
     /// a move that runs rarely rebuilds it from the records inside the retention window.
     static func retained(among jobs: [Job]) -> Set<UUID> {
@@ -330,6 +332,9 @@ public struct JobStore: Sendable {
         for (_, runs) in Dictionary(grouping: jobs, by: { "\($0.key.repo.lowercased())|\($0.key.item)|\($0.key.move)" }) {
             if let newest = runs.max(by: { $0.startedAt < $1.startedAt }) { kept.insert(newest.id) }
             if let success = runs.filter({ $0.status == .succeeded }).max(by: { $0.startedAt < $1.startedAt }) { kept.insert(success.id) }
+            if let newest = runs.max(by: { $0.startedAt < $1.startedAt }), newest.key.move == IssueIntake.move, newest.status != .succeeded {
+                kept.formUnion(runs.map(\.id))
+            }
         }
         for (_, runs) in Dictionary(grouping: jobs.filter { $0.agent != nil && $0.endedAt != nil }, by: { $0.agent! }) {
             if let newest = runs.max(by: { $0.endedAt! < $1.endedAt! }) { kept.insert(newest.id) }
