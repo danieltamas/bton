@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A reply draft starts while the repo's database is down, and a waiting ask says why.** When a service a repo's environment names stopped answering (a test Postgres that died on a full Docker disk), Bton held every job of the repo, reply drafts included, and the ask's row said only "Starting..." for as long as it lasted, through a restart. A draft, a decision and a new issue only read the issue and the code and write text, so they now start through an outage; the jobs that run checks or tests still wait. A row that does wait now says what it waits on, like the PR and issue rows already did.
+
 ## 0.36.5 (2026-11-08)
 
 **An issue a person moved back is never promoted again, and a ping waits the full time.** GitHub reads a long issue's history through Bton's list of 50 issues as only its oldest few changes, so a person who took `stage:ready` off an issue days ago could look like nobody had, and a flow's `not_demoted` rule would promote it again; and an issue's last label or assignment change could read as days earlier than it was, so its stale ping came early. The issue a move is about to start on is now read on its own when the move's rule asks whether it was demoted, and a ping checks the issue the same way before it is posted.

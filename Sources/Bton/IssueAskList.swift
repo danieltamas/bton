@@ -423,7 +423,7 @@ private struct IssueAskRow: View {
         } else if let job, job.status == .succeeded {
             PillButton(title: "View draft", symbol: "text.bubble") { withAnimation(Motion.spring) { store.readingDraft = ask } }
         } else if store.isNext(repo: ask.repo, item: "issue-\(ask.number)") {
-            StartingLabel(repo: ask.repo)
+            StartingLabel(repo: ask.repo, reason: store.waitingReason(repo: ask.repo, item: "issue-\(ask.number)"))
         } else if let decision, store.canRetry(decision) {
             AsyncPillButton(title: "Retry decision", symbol: "arrow.clockwise", id: "retry:\(decision.id)") { await store.retry(decision) }
                 .help("Decide again, on the same question")

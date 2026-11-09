@@ -429,9 +429,8 @@ public actor Engine {
                         let hatted = Self.hatted(pending[index].candidate, repo: read.repo, hats: config.hatSettings, agents: config.agents)
                         pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
                     }
-                    // Nothing of this repo starts while a service its environment names does not answer.
-                    if first < pending.count, let hold = await environmentHold(read.repo) {
-                        pending.removeSubrange(first...)
+                    // Nothing of this repo but its text-only jobs starts while a service its environment names does not answer.
+                    if first < pending.count, let hold = await environmentHold(read.repo, pending: &pending, from: first) {
                         snapshot.outages[read.repo.slug.lowercased()] = hold
                     }
                 } catch {
@@ -512,8 +511,7 @@ public actor Engine {
                 }
                 guard first < pending.count else { continue }
                 let slug = read.repo.slug.lowercased()
-                if let hold = await environmentHold(read.repo) {
-                    pending.removeSubrange(first...)
+                if let hold = await environmentHold(read.repo, pending: &pending, from: first) {
                     snapshot.outages[slug] = hold
                 } else if let lifted = snapshot.outages.removeValue(forKey: slug) {
                     // The service answers again: the repo's picks no longer wait on it.
