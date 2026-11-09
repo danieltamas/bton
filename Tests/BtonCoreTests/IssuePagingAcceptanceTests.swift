@@ -496,7 +496,15 @@ struct IssuePagingEngineFixture {
         try #require(blocked)
     }
 
-    func clearCalls() throws { try Data("0".utf8).write(to: file("call-count")) }
+    /// The count starts again, and so do the blocked markers: a `blocked-1` left by an earlier
+    /// read would let `waitBlocked(1)` return before the next read has reached GitHub.
+    func clearCalls() throws {
+        try Data("0".utf8).write(to: file("call-count"))
+        let markers = try FileManager.default.contentsOfDirectory(atPath: file("call-count").deletingLastPathComponent().path)
+        for marker in markers where marker.hasPrefix("blocked-") {
+            try FileManager.default.removeItem(at: file(marker))
+        }
+    }
 
     func expectTwoPageCalls() throws {
         #expect(try String(contentsOf: file("call-count"), encoding: .utf8) == "2")
