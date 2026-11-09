@@ -138,6 +138,7 @@ public enum IssueDrafts {
             agent: defaultAgent, prompt: prompt(rows: ask.rows), command: nil, postComment: false,
             timeout: .seconds(60 * timeoutMinutes), model: model)
         candidate.skipsChecks = true
+        candidate.textOnly = true
         candidate.denied = Supervision.deniedTools
         candidate.attachments = [attachment: thread(issue)]
         return candidate

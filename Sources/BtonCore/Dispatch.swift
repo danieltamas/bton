@@ -53,6 +53,9 @@ public struct DispatchCandidate: Sendable {
     /// The flow's `checks` do not run first: a rule's `"checks": false`, and every resolve, whose
     /// PR conflicts with its base and would fail a merge check.
     public var skipsChecks = false
+    /// A draft, a decision or a new issue: the job only reads the issue and the code and writes
+    /// text, with no checks and no tests, so an outage of the repo's environment does not hold it.
+    public var textOnly = false
     /// The job cannot do its work without the repo's code graph linked into its worktree: a link
     /// that fails fails the job, where any other job goes on without the graph.
     public var needsGraph = false

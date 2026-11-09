@@ -1,12 +1,5 @@
 import Foundation
 
-extension DispatchCandidate {
-    /// A draft, a decision or a new issue only reads the issue and the code and writes text: it
-    /// runs no checks and no tests, so a service of the repo's environment it never touches does
-    /// not hold it.
-    var needsEnvironment: Bool { ![IssueDrafts.move, IssueDecisions.move, NewIssues.move].contains(key.move) }
-}
-
 extension Engine {
     /// Why the repo's jobs wait this tick: a service its environment names (`DATABASE_URL`,
     /// a Redis) did not answer the probe. The repo's candidates from `first` on that need the
@@ -19,7 +12,7 @@ extension Engine {
                          from first: Int) async -> String? {
         let endpoints = EnvironmentProbe.endpoints(in: repo.environment ?? [:])
         guard !endpoints.isEmpty, let hold = EnvironmentProbe.hold(await EnvironmentProbe.unreachable(endpoints)) else { return nil }
-        let textOnly = pending[first...].filter { !$0.candidate.needsEnvironment }
+        let textOnly = pending[first...].filter(\.candidate.textOnly)
         pending.removeSubrange(first...)
         pending += textOnly
         let starting = Set(textOnly.map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })

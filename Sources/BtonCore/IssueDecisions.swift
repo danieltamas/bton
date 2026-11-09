@@ -255,6 +255,7 @@ public enum IssueDecisions {
             key: key(for: ask), agent: decide.agent ?? defaultAgent, prompt: prompt,
             command: nil, postComment: false, timeout: .seconds(60 * (decide.timeoutMinutes ?? defaultTimeoutMinutes)))
         candidate.skipsChecks = true
+        candidate.textOnly = true
         candidate.costCap = flow.costPerJob
         candidate.attachments = [attachment: IssueDrafts.thread(issue)]
         candidate.denied = denied

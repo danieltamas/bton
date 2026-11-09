@@ -106,6 +106,7 @@ public enum NewIssues {
             key: request.key, agent: defaultAgent, prompt: prompt, command: nil, postComment: false,
             timeout: .seconds(60 * timeoutMinutes), model: model)
         candidate.skipsChecks = true
+        candidate.textOnly = true
         candidate.denied = Supervision.deniedTools
         candidate.attachments = [conversationFile: request.conversation, existingFile: existing(issues: issues, merged: merged)]
         if let codeMap { candidate.attachments[codeMapFile] = codeMap }
