@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.36.6 (2026-11-09)
 
 **A reply draft starts while the repo's database is down, and a waiting ask says why.** When a service a repo's environment names stopped answering (a test Postgres that died on a full Docker disk), Bton held every job of the repo, reply drafts included, and the ask's row said only "Starting..." for as long as it lasted, through a restart. A draft, a decision and a new issue only read the issue and the code and write text, so they now start through an outage; the jobs that run checks or tests still wait. A row that does wait now says what it waits on, like the PR and issue rows already did.
 
