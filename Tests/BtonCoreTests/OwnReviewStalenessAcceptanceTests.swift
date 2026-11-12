@@ -57,8 +57,42 @@ struct OwnReviewStalenessAcceptanceTests {
         let assigneeMove = try #require(FlowEngine.move(for: pr,
             flow: try OwnReviewStalenessFixture.flow(who: "assignee")))
         #expect(assigneeMove.name == "review")
-        #expect(assigneeMove.owner == "alice")
-        #expect(assigneeMove.ownerWroteIt)
+        #expect(assigneeMove.owner == "carol")
+        #expect(assigneeMove.ownerFromRotation)
+        #expect(!assigneeMove.ownerWroteIt)
+    }
+
+    @Test func assigneeMoveSkipsAuthorCaseInsensitively() throws {
+        var pr = OwnReviewStalenessFixture.pr()
+        pr.assignees = ["Alice", "bob"]
+        let move = try #require(FlowEngine.move(for: pr,
+            flow: try OwnReviewStalenessFixture.flow(who: "assignee")))
+        #expect(move.name == "review")
+        #expect(move.owner == "bob")
+        #expect(!move.ownerFromRotation)
+        #expect(!move.ownerWroteIt)
+    }
+
+    @Test func assigneeMovePreservesNonAuthorAssignee() throws {
+        var pr = OwnReviewStalenessFixture.pr()
+        pr.assignees = ["carol"]
+        let move = try #require(FlowEngine.move(for: pr,
+            flow: try OwnReviewStalenessFixture.flow(who: "assignee")))
+        #expect(move.name == "review")
+        #expect(move.owner == "carol")
+        #expect(!move.ownerFromRotation)
+        #expect(!move.ownerWroteIt)
+    }
+
+    @Test func assigneeMoveWithoutAssigneesUsesRotation() throws {
+        var pr = OwnReviewStalenessFixture.pr()
+        pr.assignees = []
+        let move = try #require(FlowEngine.move(for: pr,
+            flow: try OwnReviewStalenessFixture.flow(who: "assignee")))
+        #expect(move.name == "review")
+        #expect(move.owner == "carol")
+        #expect(move.ownerFromRotation)
+        #expect(!move.ownerWroteIt)
     }
 
     @Test func flaggedReviewPingRequestsReviewerOtherThanAuthor() throws {

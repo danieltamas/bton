@@ -7,7 +7,7 @@ private enum OwnReviewFixture {
 
     static func flow(highRiskReviews: [[String: Any]] = [
         ["heading": "## Review:", "notByAuthor": true]
-    ]) throws -> Flow {
+    ], reviewers: [String] = ["alice", "bob", "carol"]) throws -> Flow {
         let json: [String: Any] = [
             "version": 1, "base": "develop",
             "tier": ["marker": "Tier:", "values": ["quick fix", "feature", "high-risk"],
@@ -17,7 +17,7 @@ private enum OwnReviewFixture {
                 "high-risk": highRiskReviews,
             ],
             "fixed": "## Fixed:",
-            "reviewers": ["alice", "bob", "carol"],
+            "reviewers": reviewers,
             "moves": [
                 ["move": "review", "when": ["no_review_or_response_newer"], "who": "assignee"],
                 ["move": "merge", "when": ["approved_current_head"], "who": "assignee"],
@@ -51,13 +51,26 @@ private enum OwnReviewFixture {
 struct OwnReviewAcceptanceTests {
     @Test(arguments: ["alice", "ALICE"])
     func authorAssignedAnIndependentReviewCannotDispatch(me: String) throws {
-        let flow = try OwnReviewFixture.flow()
+        let flow = try OwnReviewFixture.flow(reviewers: [])
         let pr = OwnReviewFixture.pr()
         let move = try #require(FlowEngine.move(for: pr, flow: flow))
         #expect(move.name == "review")
         #expect(move.owner == "alice")
         #expect(move.ownerWroteIt)
         #expect(!FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me))
+    }
+
+    @Test(arguments: 6...11)
+    func authorAssignedAnIndependentReviewFallsBackToRotation(number: Int) throws {
+        let flow = try OwnReviewFixture.flow()
+        let pr = OwnReviewFixture.pr(assignees: ["ALICE"], number: number)
+        let move = try #require(FlowEngine.move(for: pr, flow: flow))
+        let owner = ["bob", "carol"][number % 2]
+        #expect(move.name == "review")
+        #expect(move.owner == owner)
+        #expect(move.ownerFromRotation)
+        #expect(!move.ownerWroteIt)
+        #expect(FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: owner))
     }
 
     @Test func anotherAssigneeCanDispatchIndependentReview() throws {
@@ -103,7 +116,7 @@ struct OwnReviewAcceptanceTests {
     }
 
     @Test func authorComparisonIgnoresCaseAndPreservesAssignee() throws {
-        let flow = try OwnReviewFixture.flow()
+        let flow = try OwnReviewFixture.flow(reviewers: ["ALICE"])
         let pr = OwnReviewFixture.pr(assignees: ["Alice"])
         let move = try #require(FlowEngine.move(for: pr, flow: flow))
         #expect(move.name == "review")
@@ -113,7 +126,7 @@ struct OwnReviewAcceptanceTests {
     }
 
     @Test func authorsOwnApprovalDoesNotClearIndependentReview() throws {
-        let flow = try OwnReviewFixture.flow()
+        let flow = try OwnReviewFixture.flow(reviewers: ["alice"])
         let pr = OwnReviewFixture.pr(comments: [OwnReviewFixture.approval(by: "alice")])
         let move = try #require(FlowEngine.move(for: pr, flow: flow))
         #expect(move.name == "review")

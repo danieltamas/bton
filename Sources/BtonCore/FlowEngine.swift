@@ -176,13 +176,20 @@ public enum FlowEngine {
             return Move(name: blocked.rule.move, owner: owner, ownerFromRotation: fromRotation, tier: tier, hasDispatch: false,
                         tierReason: verdict.reason, redChecks: blocked.red)
         }
-        let (owner, fromRotation) = resolve(rule.who.value(for: tier), pr: pr, flow: flow)
-        // The rotation never picks the author for `assignee`; an author who assigned themselves
-        // a review their tier won't count from them is flagged instead.
+        let who = rule.who.value(for: tier)
+        var (owner, fromRotation) = resolve(who, pr: pr, flow: flow)
+        // A review the tier never counts from the author is not the author's to hold: an author
+        // in the Assignees field passes it to the next assignee, else the rotation's pick (lexito
+        // #956 sat on its author). With nobody else to take it, it stays flagged on the author.
         let counting = flow.reviews[tier] ?? []
-        let ownerWroteIt = rule.who.value(for: tier).map(takableKinds.contains) ?? false && rule.when.contains("no_review_or_response_newer")
+        let authorCannotCount = who.map(takableKinds.contains) ?? false && rule.when.contains("no_review_or_response_newer")
             && !counting.isEmpty && counting.allSatisfy(\.notByAuthor)
-            && owner?.caseInsensitiveCompare(pr.author) == .orderedSame
+        let isAuthor = { (login: String?) in login?.caseInsensitiveCompare(pr.author) == .orderedSame }
+        if authorCannotCount, who == "assignee", isAuthor(owner) {
+            let other = resolve(who, pr: pr, flow: flow, skippingAuthor: true)
+            if other.owner != nil { (owner, fromRotation) = other }
+        }
+        let ownerWroteIt = authorCannotCount && isAuthor(owner)
         let hasDispatch = flow.dispatch[rule.move] != nil
         // An agent's review waits for the head's CI: a review of a head its checks reject is
         // paid for twice, once now and once on the push that fixes it. A person's review is theirs
@@ -332,15 +339,19 @@ public enum FlowEngine {
     /// The marker of the handover comment on a head.
     public static func handoverMarker(head: String) -> String { "handover review@\(head.prefix(12))" }
 
-    /// `author`, `assignee` (the first assignee), `reviewer` (the first requested reviewer), each
-    /// of the last two with the rotation when the field is empty, `approver` (whoever wrote the
+    /// `author`, `assignee` (the first assignee; with `skippingAuthor`, the first who is not the
+    /// PR's author), `reviewer` (the first requested reviewer), each of the last two with the
+    /// rotation when nobody is left, `approver` (whoever wrote the
     /// latest counting review or decision: GitHub ends a reviewer's request once they review, so
     /// "merge, by whoever approved" cannot be said with `reviewer`), or a literal login.
-    static func resolve(_ who: String?, pr: PullRequest, flow: Flow) -> (owner: String?, fromRotation: Bool) {
+    static func resolve(_ who: String?, pr: PullRequest, flow: Flow,
+                        skippingAuthor: Bool = false) -> (owner: String?, fromRotation: Bool) {
         switch who {
         case nil: return (nil, false)
         case "author": return (pr.author, false)
-        case "assignee": return pr.assignees.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
+        case "assignee":
+            return pr.assignees.first { !skippingAuthor || $0.caseInsensitiveCompare(pr.author) != .orderedSame }
+                .map { ($0, false) } ?? rotation(for: pr, flow: flow)
         case "reviewer": return pr.requestedReviewers.first.map { ($0, false) } ?? rotation(for: pr, flow: flow)
         case "approver": return (reviews(of: pr, flow: flow).last?.author, false)
         case let login?: return (login, false)

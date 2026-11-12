@@ -142,7 +142,8 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 ## Who
 
 - `author`: the PR's author.
-- `assignee`: the PR's first assignee. With none, and `reviewers` set, the **rotation** picks
+- `assignee`: the PR's first assignee (passing over the author on a review the tier never counts
+  from them, below). With none, and `reviewers` set, the **rotation** picks
   one: `reviewers` without the PR author (ignoring case), indexed by the PR number modulo its
   length. Every Mac computes the same pick. The author's Bton assigns that login on GitHub, once
   per PR; an assignee a person sets is never replaced. With no `reviewers` (or none left after
@@ -191,9 +192,14 @@ would then be one the author can't clear, nor for an `author` or named move, whi
 changes.
 
 A move whose `when` has `no_review_or_response_newer`, on a tier where every `reviews` entry has
-`"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` or `reviewer` and the
-owner is the author (they assigned themselves, or requested their own review), Bton shows it as needing another reviewer and never dispatches it: the
-agent's review would be posted as the author and ignored.
+`"notByAuthor": true`, can't be cleared by the PR's author. When its `who` is `assignee` and the
+author is in the Assignees field, the author is passed over: the next assignee owns the move, or,
+with nobody else assigned, the rotation's pick, whom the author's Bton then adds as an assignee
+beside the author. Only when nobody is left (no other assignee and an empty rotation), or when its
+`who` is `reviewer` and the author requested their own review, does the move stay on the author:
+Bton shows it as needing another reviewer and never dispatches it, since the agent's review would
+be posted as the author and ignored. Every other move, and a tier that counts the author's review,
+keeps the first assignee as before.
 
 ## Dispatch
 

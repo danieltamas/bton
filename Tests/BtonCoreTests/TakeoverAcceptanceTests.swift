@@ -17,7 +17,8 @@ struct TakeoverAcceptanceTests {
     func giveTargetsRefuseIneligiblePRs(reason: String) throws {
         let who = reason == "author rule" ? "author" : reason == "named owner" ? "teammate" : "assignee"
         let flow = try TakeoverFixture.flow(who: who,
-            reviewers: reason == "no reviewers" ? [] : ["viewer", "teammate", "chosen"], moves: reason != "no move")
+            reviewers: reason == "no reviewers" ? [] : ["viewer", "teammate", "chosen"], moves: reason != "no move",
+            notByAuthor: reason != "mine")
         let pr = TakeoverFixture.pr(assignees: reason == "mine" ? ["ViEwEr"] : ["teammate"],
             author: reason == "not author" ? "other" : "viewer")
         #expect(FlowEngine.giveTargets(for: pr, flow: flow, me: "viewer").isEmpty)
