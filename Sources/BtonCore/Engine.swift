@@ -794,7 +794,7 @@ public actor Engine {
     private func heldBySession(_ candidate: DispatchCandidate, me: String) -> Bool {
         guard SessionWatch.holds(candidate, me: me),
               !pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item)),
-              let pr = candidate.pr, SessionWatch(home: home).isWatched(repo: candidate.key.repo, number: pr.number) else { return false }
+              let pr = candidate.pr, SessionWatch(home: home).isWatched(pr, repo: candidate.key.repo) else { return false }
         if heldNoted.insert(candidate.key).inserted {
             log("\(candidate.key.repo)#\(pr.number): \(candidate.move.name) left to the session watching it")
         }

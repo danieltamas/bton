@@ -93,6 +93,16 @@ public struct SessionWatch: Sendable {
         return times.filter { $0 > now && $0 <= now + Self.longest }.max()
     }
 
+    /// Whether a session holds `pr` now, under the repo's name as Bton knows it or as GitHub names it
+    /// in the PR's URL: a renamed repo is still watched under the old name on a Mac whose config
+    /// predates the rename, while `gh repo view` in a checkout gives the new one.
+    public func isWatched(_ pr: PullRequest, repo: String, at now: Date = .now) -> Bool {
+        let parts = pr.url.pathComponents  // ["/", owner, name, "pull", number]
+        let canonical = parts.count >= 3 ? "\(parts[1])/\(parts[2])" : repo
+        return isWatched(repo: repo, number: pr.number, at: now)
+            || (canonical.caseInsensitiveCompare(repo) != .orderedSame && isWatched(repo: canonical, number: pr.number, at: now))
+    }
+
     /// Whether a session holds the PR now. Fails closed: a mark that cannot be read, or a watching
     /// directory that cannot be looked into, counts as held, since a second writer on the branch is
     /// the costlier mistake; a mark past its time, or one set further out than `longest`, does not.
