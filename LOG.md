@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A PR its author's session watches is left to that session.** A developer whose own agent wrote a PR and waits on it saw Bton start a second agent on every review: a fix from a fresh worktree and a one-line prompt, without the issue, the decisions or the reasons the code is as it is, pushing to the branch the watching session was about to fix too. That session now marks the PR with `bton watching <owner/name> <pr> --for <seconds> --as <holder>`, and while any holder's mark lasts (6 hours at most) Bton starts no agent that works on that branch: no fix, no red-gate fix, no automatic resolve, no supervisor retry of one. The mark is read again under the PR's lease right before the agent starts, so a session that marks and then checks the lease never races a job. Reviews, decisions and the merge run as before, a person's press still starts the move, and a mark that cannot be read holds the PR.
+
 ## 0.36.6 (2026-11-09)
 
 **A reply draft starts while the repo's database is down, and a waiting ask says why.** When a service a repo's environment names stopped answering (a test Postgres that died on a full Docker disk), Bton held every job of the repo, reply drafts included, and the ask's row said only "Starting..." for as long as it lasted, through a restart. A draft, a decision and a new issue only read the issue and the code and write text, so they now start through an outage; the jobs that run checks or tests still wait. A row that does wait now says what it waits on, like the PR and issue rows already did.

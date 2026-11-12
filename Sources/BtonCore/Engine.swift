@@ -78,6 +78,8 @@ public actor Engine {
     /// Automatic resolves a lease refused, and when: another Mac holds or ran that head, so the flow's
     /// move goes on for a while before the resolve is tried again.
     private var declined: [JobKey: Date] = [:]
+    /// Moves already logged as left to a watching session, so the log says it once per head.
+    private var heldNoted: Set<JobKey> = []
     /// Steered retries are put back in line once, at the first tick after a start.
     var restoredRetries = false
     /// Each repo's open issues as last read, by lowercased slug: a failed read keeps the last.
@@ -363,6 +365,7 @@ public actor Engine {
                         if !read.repo.startsMoves {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
                         }
+                        candidates.removeAll { heldBySession($0, me: read.viewer) }
                         pending += candidates.map { ($0, clone, flow) }
                         // The Mac that works the repo's issues also takes the next ready one, once its PRs have
                         // their turn; any other Mac only resumes what it holds or what the owner pressed.
@@ -783,6 +786,19 @@ public actor Engine {
         guard repo.startsMoves, repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
               fresh(resolve), declined[resolve.key] == nil else { return nil }
         return resolve
+    }
+
+    /// An agent that would work on the branch of a PR of mine that a session here marked
+    /// (`bton watching`): that session answers the PR itself. A person's press (Run next, Fix
+    /// conflicts, Retry) still starts it; a supervisor's retry is not a press and waits too.
+    private func heldBySession(_ candidate: DispatchCandidate, me: String) -> Bool {
+        guard SessionWatch.holds(candidate, me: me),
+              !pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item)),
+              let pr = candidate.pr, SessionWatch(home: home).isWatched(repo: candidate.key.repo, number: pr.number) else { return false }
+        if heldNoted.insert(candidate.key).inserted {
+            log("\(candidate.key.repo)#\(pr.number): \(candidate.move.name) left to the session watching it")
+        }
+        return true
     }
 
     /// A PR's jobs' cost; nil when it has none or one of them has no price yet.

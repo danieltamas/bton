@@ -111,6 +111,12 @@ public struct DispatchCandidate: Sendable {
     public var pr: PullRequest? {
         if case let .pullRequest(pr) = target { pr } else { nil }
     }
+
+    /// An agent on a PR whose work is the branch itself (a fix, a red gate, a resolve), not a
+    /// comment Bton posts for it (a review, a decision) nor a command (the merge).
+    public var writesBranch: Bool {
+        pr != nil && agent != nil && !postComment && !textOnly && supervises == nil
+    }
 }
 
 /// What became of a candidate the dispatcher was handed.

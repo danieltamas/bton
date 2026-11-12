@@ -349,6 +349,22 @@ again when it failed or was stopped on this head on this Mac (a failure on anoth
 retried there). A `resolve` move that fails waits for a new head or one of these buttons:
 it never loops.
 
+**A PR its author's own session watches.** The session that wrote a PR and waits on it (lexito's
+`/lexito-watch`) answers its reviews itself, with the context the PR was written in. It marks the PR
+with `bton watching <owner/name> <pr> --for <seconds> --as <holder>` (at most 6 hours, renewed as it
+goes) and `--stop --as <holder>` when it lets go; the PR stays held while any holder's mark is live.
+While it is held, Bton starts no agent of its own that works on that PR's branch, on a PR of mine: no
+`fix`, no red-gate fix, no automatic resolve, no supervisor retry of one. Moves that only post a
+comment (a review, a decision) and command moves (the merge) run as before, and a person's press (Run
+next, Fix conflicts, Retry) starts the move anyway. The mark is read when the sync plans and again
+under the PR's lease right before the agent starts, so a session that marks the PR and then checks
+the lease (`bton lease check <owner/name> pr-<n>`) before touching the branch always sees a job that
+got there first, and Bton always sees the mark that did. The mark is a file under
+`~/.bton/watching/` on this Mac, which is where the author's moves run; a mark that cannot be read,
+or a directory that cannot be looked into, holds the PR (two writers on one branch cost more than a
+late fix), one past its time does not, so a session that died lets go within the time it set. The
+log says once per head which move was left to the session.
+
 ### Issues that stay open
 
 ```json

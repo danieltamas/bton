@@ -7,6 +7,10 @@ usage: bton moves <owner/name> [--flow <file>]              each open PR's move 
        bton lease renew|release <owner/name> <kind>-<n> --job <uuid>
        bton lease check <owner/name> <kind>-<n>
        bton watch [--for <seconds>]   tick every pollSeconds: dispatch this Mac's moves
+       bton watching <owner/name> <pr> --for <seconds>|--stop [--as <holder>]   a session here answers
+                                      the PR itself: Bton's agents stay off its branch until then (at most
+                                      6 h) or until every holder stopped
+       bton watching <owner/name> <pr>   prints until when; exit 1 when not watched
        bton jobs                      this BTON_HOME's jobs as JSON lines
        bton prs                       one read without dispatching: open PRs and merged totals
        bton handoff <owner/name> [<issue>] --to <login> <text>   comment @login on an issue, once;
@@ -158,6 +162,34 @@ do {
             }
         } catch LeaseError.lost, LeaseError.notHolder {
             fail("not held by this job", status: 1)
+        } catch {
+            fail(error.localizedDescription, status: 3)
+        }
+    case "watching":
+        guard arguments.count >= 3, BtonConfig.isRepoSlug(arguments[1]), let number = Int(arguments[2]), number > 0 else { fail(usage) }
+        let repo = arguments[1]
+        var rest = Array(arguments.dropFirst(3))
+        var holder = SessionWatch.defaultHolder
+        if rest.count >= 2, rest[rest.count - 2] == "--as" {
+            guard SessionWatch.isHolderName(rest[rest.count - 1]) else { fail(usage) }
+            holder = rest[rest.count - 1]
+            rest.removeLast(2)
+        }
+        let watch = SessionWatch(home: BtonHome())
+        do {
+            switch rest.first {
+            case "--for":
+                guard rest.count == 2, let seconds = Double(rest[1]), seconds > 0 else { fail(usage) }
+                print(try watch.mark(repo: repo, number: number, for: seconds, holder: holder).formatted(.iso8601))
+            case "--stop":
+                guard rest.count == 1 else { fail(usage) }
+                try watch.clear(repo: repo, number: number, holder: holder)
+            case nil:
+                guard watch.isWatched(repo: repo, number: number) else { fail("not watched", status: 1) }
+                print((try? watch.until(repo: repo, number: number))?.formatted(.iso8601) ?? "unreadable mark: held")
+            default:
+                fail(usage)
+            }
         } catch {
             fail(error.localizedDescription, status: 3)
         }

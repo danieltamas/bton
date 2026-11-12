@@ -145,6 +145,14 @@ actor Dispatcher {
             try? await leases.release(lease, ran: false)
             return .busy
         }
+        // Under the lease, the mark as it is now: a session that marked the PR after this sync's plan
+        // checks the lease before it touches the branch, so one of the two always sees the other.
+        if let me = candidate.move.owner, !candidate.pressed, SessionWatch.holds(candidate, me: me), let pr = candidate.pr,
+           SessionWatch(home: home).isWatched(repo: candidate.key.repo, number: pr.number) {
+            log("\(candidate.key): not started, the session watching it answers it")
+            try? await leases.release(lease, ran: false)
+            return .busy
+        }
         // Under the lease, so no other Mac is reading the same issue: it must still be free.
         if case var .issue(plan) = candidate.target, let me = candidate.move.owner {
             switch await intakeStanding(plan, repo: candidate.key.repo, me: me) {
