@@ -170,6 +170,13 @@ private struct PullRequestRow: View {
                                     .foregroundStyle(Theme.color(for: .running))
                             }
                             .help("A teammate's Bton runs the move; its session is on their Mac")
+                        } else if pr.heldBySession {
+                            HStack(spacing: 5) {
+                                Image(systemName: "eye").font(.system(size: 9, weight: .semibold))
+                                Text("your session is on it").font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundStyle(Theme.textSecondary)
+                            .help("A session on this Mac watches this PR (bton watching), so Bton leaves the \(pr.move?.name ?? "move") to it. Press the move to run it here anyway.")
                         }
                         if let cost = pr.cost { Cost(value: cost) }
                     }

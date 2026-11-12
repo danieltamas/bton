@@ -46,6 +46,9 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     public var cost: Decimal?
     /// One of this Mac's jobs is working on it now.
     public var isWorking = false
+    /// Its move is mine and due, but held back for the session here that watches the PR
+    /// (`bton watching`): the row says that session is on it rather than nothing.
+    public var heldBySession = false
     /// The paths the PR changes, as far as one read gets (the first 100); empty when GitHub did not say.
     public var changedFiles: [String] = []
     /// The PR changes more files than were read: its tier counts as the highest.

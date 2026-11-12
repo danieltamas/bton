@@ -80,6 +80,8 @@ public actor Engine {
     private var declined: [JobKey: Date] = [:]
     /// Moves already logged as left to a watching session, so the log says it once per head.
     private var heldNoted: Set<JobKey> = []
+    /// The PRs (picks) whose due move this tick left to a watching session, for their rows.
+    private var heldThisTick: Set<String> = []
     /// Steered retries are put back in line once, at the first tick after a start.
     var restoredRetries = false
     /// Each repo's open issues as last read, by lowercased slug: a failed read keeps the last.
@@ -249,6 +251,7 @@ public actor Engine {
         // A pick made while this tick awaits GitHub is the next tick's to judge.
         let picksAtStart = Set(next)
         deferred = [:]
+        heldThisTick = []
         do {
             // Read every tick: the app's Repos panel and a hand edit both change it.
             let config = try BtonConfig.loadOrCreate(home: home)
@@ -686,6 +689,7 @@ public actor Engine {
             var pr = pr
             pr.cost = Self.total(of: snapshot.jobs, repo: pr.repo, number: pr.number)
             pr.isWorking = snapshot.jobs.contains { $0.status == .running && $0.key.repo == pr.repo && $0.key.item == "pr-\(pr.number)" }
+            pr.heldBySession = heldThisTick.contains(Self.pick(repo: pr.repo, item: "pr-\(pr.number)"))
             return pr
         }
         snapshot.merged = snapshot.merged.map { merged in
@@ -795,6 +799,7 @@ public actor Engine {
         guard SessionWatch.holds(candidate, me: me),
               !pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item)),
               let pr = candidate.pr, SessionWatch(home: home).isWatched(pr, repo: candidate.key.repo) else { return false }
+        heldThisTick.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
         if heldNoted.insert(candidate.key).inserted {
             log("\(candidate.key.repo)#\(pr.number): \(candidate.move.name) left to the session watching it")
         }

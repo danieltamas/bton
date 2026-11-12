@@ -363,7 +363,9 @@ got there first, and Bton always sees the mark that did. The mark is a file unde
 `~/.bton/watching/` on this Mac, which is where the author's moves run; a mark that cannot be read,
 or a directory that cannot be looked into, holds the PR (two writers on one branch cost more than a
 late fix), one past its time does not, so a session that died lets go within the time it set. The
-log says once per head which move was left to the session.
+PR's row says "your session is on it" while its move waits for the session, and the log says once
+per head which move was left to it. A renamed repo is matched under both names: the one in Bton's
+settings and the one in the PR's URL.
 
 ### Issues that stay open
 
