@@ -50,7 +50,8 @@ extension Engine {
     /// once per waiting build, that the claim is not abandoned. A teammate reads the issue, not
     /// this Mac's log; a claim that sits silent for days reads as taken and dropped. Checked
     /// against the issue's comments before the first post of each build, so a restarted Bton does
-    /// not post again; a failed post is tried again on the next held tick.
+    /// not post again, and against the issue as it is now (open, mine, in progress); a failed read
+    /// or post is tried again on the next held tick.
     private func noticeHeldBuilds(_ held: [DispatchCandidate], me: String) async {
         for candidate in held {
             guard candidate.key.move == IssueIntake.move, case let .issue(plan) = candidate.target, plan.resumes,
@@ -61,6 +62,12 @@ extension Engine {
                 let said = try await github.issueComments(repo: candidate.key.repo, number: plan.issue).contains { comment in
                     comment.author?.caseInsensitiveCompare(me) == .orderedSame && BtonMarker.keys(in: comment.body).contains(marker)
                 }
+                // Read live right before saying it stays claimed: the sync's copy may be minutes old, and
+                // an issue closed, unassigned from me or moved on since is not mine to speak for.
+                let now = try await github.issueNow(repo: candidate.key.repo, number: plan.issue)
+                guard now.state == "OPEN", now.assignees.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame }),
+                      IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: now.labels) == IssueIntake.inProgressStage
+                else { continue }
                 if !said {
                     try await github.commentOnIssue(repo: candidate.key.repo, number: plan.issue,
                                                     body: IssueIntake.heldComment(login: me, job: job.id))

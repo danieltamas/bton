@@ -332,6 +332,9 @@ public actor Engine {
                 await graphs.refresh(repo: read.repo, branch: read.repo.branch ?? read.defaultBranch,
                                      python: CodeGraph.python(configured: config.graphifyPython), ghPath: github.ghPath)
             }
+            // The last sync's holds stand until this one probes again: shown without them, an outage
+            // would leave the panel, and the sync dot turn green, for the minutes the planning takes.
+            snapshot.outages = outages
             if let onRead { await onRead(decorated(snapshot)) }
             guard dispatching else { return decorated(snapshot) }
             // Pressed while the repos were read: what was read is shown, nothing starts, and the
@@ -340,6 +343,8 @@ public actor Engine {
             await refreshPricesIfDue()
             applyVerdicts()
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
+            // This sync's probes, by lowercased slug: `settleOutages` turns them into the holds shown.
+            var heldNow: [String: String] = [:]
             // Read but not acted on: its run-next picks wait, like an unread repo's.
             var unplanned = unread
             for read in reads {
@@ -350,7 +355,7 @@ public actor Engine {
                     // Probed before anything is taken: a Mac whose services are down must not take a
                     // teammate's review it cannot run (it sat on six for two days, 2026-11-11).
                     let hold = await environmentHold(of: read.repo)
-                    if let hold { snapshot.outages[read.repo.slug.lowercased()] = hold }
+                    if let hold { heldNow[read.repo.slug.lowercased()] = hold }
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, config: config)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
@@ -462,7 +467,7 @@ public actor Engine {
                 }
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
-            snapshot.outages = settleOutages(snapshot.outages, judged: Set(reads.map { $0.repo.slug.lowercased() }).subtracting(unplanned),
+            snapshot.outages = settleOutages(heldNow, judged: Set(reads.map { $0.repo.slug.lowercased() }).subtracting(unplanned),
                                              known: Set(config.repos.map { $0.slug.lowercased() }))
             if let me = snapshot.me {
                 try await start(pending, me: me, config: config, picksAtStart: picksAtStart, unplanned: unplanned)
