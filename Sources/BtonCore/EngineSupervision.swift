@@ -43,8 +43,9 @@ extension Engine {
             return nil
         }
         // The owner's press stands for the same head: a retry of a pressed merge is pressed too, or the repo's
-        // checks that guard a person's decision would fail it at once.
-        runNext(repo: flagged.key.repo, item: flagged.key.item, pressed: flagged.pressed == true)
+        // checks that guard a person's decision would fail it at once. It is not a new press, so a
+        // session watching the PR still holds it.
+        runNext(repo: flagged.key.repo, item: flagged.key.item, pressed: flagged.pressed == true, inherited: true)
         ask(flagged.key)
         log("\(flagged.key): supervisor retry")
         return "retried"

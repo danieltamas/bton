@@ -81,6 +81,9 @@ public struct DispatchCandidate: Sendable {
     /// Started by the owner's press (Merge, the move's pill, Retry, Run Next, Take it), not by the
     /// sync on its own: the flow's checks and the merge command see `BTON_PRESSED=1`.
     public var pressed = false
+    /// The press is a supervisor's retry carrying the retried job's press over: no person asked for
+    /// it now, so a watching session's mark still holds it.
+    public var pressInherited = false
     /// An automatic run that must not follow another Mac's within this long: checked under the
     /// lease, from its history, since two Macs can plan in different minutes before either claims.
     public var cooldown: TimeInterval?

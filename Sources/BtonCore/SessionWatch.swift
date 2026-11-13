@@ -44,16 +44,21 @@ public struct SessionWatch: Sendable {
         let until = now + min(max(seconds, 0), Self.longest)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try locked(repo: repo, number: number) {
-            let others = lines(repo: repo, number: number).filter { Self.holder(of: $0) != holder }
-            try write(others + ["\(until.formatted(.iso8601)) \(holder)"], repo: repo, number: number)
+            // An unreadable mark is replaced rather than kept: marking again is how it heals.
+            let previous = try? read(repo: repo, number: number)
+            let others = (previous?.lines ?? []).filter { Self.holder(of: $0) != holder }
+            try write(others + ["\(until.formatted(.iso8601)) \(holder)"], written: max(previous?.written ?? now, now),
+                      repo: repo, number: number)
         }
         return until
     }
 
-    /// Ends `holder`'s mark; the file goes once no holder is left. Clearing an absent mark does nothing.
+    /// Ends `holder`'s mark; the file goes once no holder is left. Clearing an absent mark does nothing;
+    /// an unreadable one throws and stays, since it may hold another session's line.
     public func clear(repo: String, number: Int, holder: String = defaultHolder) throws {
         try locked(repo: repo, number: number) {
-            let rest = lines(repo: repo, number: number).filter { Self.holder(of: $0) != holder }
+            guard let previous = try read(repo: repo, number: number) else { return }
+            let rest = previous.lines.filter { Self.holder(of: $0) != holder }
             if rest.isEmpty {
                 do {
                     try FileManager.default.removeItem(at: file(repo: repo, number: number))
@@ -61,7 +66,7 @@ public struct SessionWatch: Sendable {
                     // Already clear.
                 }
             } else {
-                try write(rest, repo: repo, number: number)
+                try write(rest, written: previous.written, repo: repo, number: number)
             }
         }
     }
@@ -81,8 +86,8 @@ public struct SessionWatch: Sendable {
 
     /// When the last live hold runs out; nil when the PR has none. A mark that cannot be read throws.
     public func until(repo: String, number: Int, at now: Date = .now) throws -> Date? {
-        guard let lines = try read(repo: repo, number: number) else { return nil }
-        let times = try lines.map { line -> Date in
+        guard let mark = try read(repo: repo, number: number) else { return nil }
+        let times = try mark.lines.map { line -> Date in
             guard let date = try? Date(String(line.split(separator: " ").first ?? ""), strategy: .iso8601) else {
                 throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: file(repo: repo, number: number).path])
             }
@@ -90,7 +95,10 @@ public struct SessionWatch: Sendable {
         }
         // An empty mark file was never written whole: unreadable, not absent.
         guard !times.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-        return times.filter { $0 > now && $0 <= now + Self.longest }.max()
+        // Too far out is judged from when the mark was written, not from the reader's clock: a clock
+        // set back after a six-hour mark would otherwise make it look too far out and let it go. The
+        // second covers the time on the line rounding up.
+        return times.filter { $0 > now && $0 <= mark.written + Self.longest + 1 }.max()
     }
 
     /// Whether a session holds `pr` now, under the repo's name as Bton knows it or as GitHub names it
@@ -105,7 +113,8 @@ public struct SessionWatch: Sendable {
 
     /// Whether a session holds the PR now. Fails closed: a mark that cannot be read, or a watching
     /// directory that cannot be looked into, counts as held, since a second writer on the branch is
-    /// the costlier mistake; a mark past its time, or one set further out than `longest`, does not.
+    /// the costlier mistake; a mark past its time, or one set further out than `longest` from when it
+    /// was written, does not.
     public func isWatched(repo: String, number: Int, at now: Date = .now) -> Bool {
         do {
             return try until(repo: repo, number: number, at: now) != nil
@@ -114,25 +123,39 @@ public struct SessionWatch: Sendable {
         }
     }
 
-    /// The file's lines; nil only when the file is confirmed absent.
-    private func read(repo: String, number: Int) throws -> [String]? {
+    /// The file's lines and when a writer last set it; nil only when the file is confirmed absent.
+    private func read(repo: String, number: Int) throws -> (lines: [String], written: Date)? {
+        let url = file(repo: repo, number: number)
         let data: Data
         do {
-            data = try Data(contentsOf: file(repo: repo, number: number))
+            data = try Data(contentsOf: url)
         } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
             return nil
         }
-        guard let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadCorruptFile) }
-        return text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard let text = String(data: data, encoding: .utf8),
+              let written = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return (lines, written)
     }
 
-    /// For a rewrite: an unreadable mark is replaced rather than kept.
-    private func lines(repo: String, number: Int) -> [String] {
-        (try? read(repo: repo, number: number)) ?? []
-    }
-
-    private func write(_ lines: [String], repo: String, number: Int) throws {
-        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file(repo: repo, number: number), options: .atomic)
+    /// `written` becomes the file's modification date, the writer's clock that `until` caps a hold from.
+    /// It is set on a temporary file renamed into place, so a reader never sees the new lines with
+    /// another date.
+    private func write(_ lines: [String], written: Date, repo: String, number: Int) throws {
+        let url = file(repo: repo, number: number)
+        let temporary = directory.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+        do {
+            try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: temporary)
+            try FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: temporary.path)
+            guard rename(temporary.path, url.path) == 0 else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
     }
 
     private static func holder(of line: String) -> String {

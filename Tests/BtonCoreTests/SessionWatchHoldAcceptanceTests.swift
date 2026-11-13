@@ -192,6 +192,81 @@ final class SessionWatchHoldAcceptanceTests: XCTestCase {
             XCTAssertTrue(recorded.isEmpty, file: file, line: line)
         }
     }
+
+    func testSupervisorRetryOfPressedFixWaitsForWatchingSessionUntilFreshPress() async throws {
+        let f = try await StartMovesFixture.make(startMoves: true)
+        defer { f.remove() }
+        let store = try JobStore(home: f.home)
+        let reference = Date.now
+        var flagged = Job(id: UUID(), key: f.key("fix"), agent: "synthetic",
+            startedAt: reference - 60, endedAt: reference - 30, status: .failed, cost: 0)
+        flagged.pressed = true
+        flagged.flags = [.agentFailed]
+        var verdict = Job(id: UUID(), key: f.key(Supervision.move), agent: "claude",
+            startedAt: reference - 20, endedAt: reference - 10, status: .succeeded, cost: 0,
+            supervises: flagged.id)
+        let note = "Recheck the transient failure, then repeat the original task."
+        verdict.verdict = SupervisorVerdict(action: .retry, note: note)
+        try store.save(flagged)
+        try store.save(verdict)
+        try SessionWatch(home: f.home).mark(repo: f.repo, number: 7, for: 3600,
+                                           holder: "author-session", now: reference)
+        let engine = try f.engine()
+        // A completed verdict reaches applyVerdicts and its real steered retry during the tick.
+        let held = await engine.tick()
+        for job in held.jobs where job.status == .running { await engine.stop(job.id) }
+        XCTAssertNil(held.problem)
+        XCTAssertEqual(Set(held.jobs.map(\.id)), Set([flagged.id, verdict.id]))
+        XCTAssertEqual(held.openPullRequests.first?.heldBySession, true)
+        let saved = try XCTUnwrap(store.all().first { $0.id == verdict.id }?.verdict)
+        XCTAssertEqual(saved.applied, true)
+        XCTAssertEqual(saved.outcome, "retried")
+        XCTAssertEqual(store.all().first { $0.id == flagged.id }?.steer, note)
+        XCTAssertEqual(store.all().first { $0.id == flagged.id }?.retry, true)
+
+        await engine.runNext(repo: f.repo, item: "pr-7", pressed: true)
+        let pressed = await engine.tick()
+        for job in pressed.jobs where job.status == .running { await engine.stop(job.id) }
+        XCTAssertNil(pressed.problem)
+        let started = pressed.jobs.filter { $0.id != flagged.id && $0.id != verdict.id }
+        XCTAssertEqual(started.map(\.key), [flagged.key])
+        XCTAssertEqual(started.first?.pressed, true)
+        XCTAssertEqual(pressed.openPullRequests.first?.heldBySession, false)
+        XCTAssertTrue(SessionWatch(home: f.home).isWatched(repo: f.repo, number: 7))
+    }
+
+    func testClearingOneHolderOfUnreadableMarkThrowsAndKeepsPRWatched() throws {
+        let watch = SessionWatch(home: home)
+        try watch.mark(repo: "o/r", number: 7, for: 60, holder: "first", now: now)
+        try watch.mark(repo: "o/r", number: 7, for: 120, holder: "second", now: now)
+        XCTAssertEqual(try holders(), ["first", "second"])
+        let file = try XCTUnwrap(markFiles().first)
+        let unreadable = Data([0xff, 0xfe])
+        try unreadable.write(to: file)
+
+        XCTAssertThrowsError(try watch.clear(repo: "o/r", number: 7, holder: "first"))
+        XCTAssertEqual(try markFiles(), [file])
+        XCTAssertEqual(try Data(contentsOf: file), unreadable)
+        XCTAssertTrue(watch.isWatched(repo: "o/r", number: 7, at: now))
+    }
+
+    func testSixHourMarkSurvivesBackwardClockAndRejectsExpiryBeyondFileWriteCap() throws {
+        let watch = SessionWatch(home: home)
+        let sixHours: TimeInterval = 6 * 3600
+        XCTAssertEqual(try watch.mark(repo: "o/r", number: 7, for: sixHours, holder: "session", now: now),
+                       now + sixHours)
+        XCTAssertTrue(watch.isWatched(repo: "o/r", number: 7, at: now - 60))
+        XCTAssertTrue(watch.isWatched(repo: "o/r", number: 7, at: now + sixHours - 1))
+        XCTAssertFalse(watch.isWatched(repo: "o/r", number: 7, at: now + sixHours))
+        XCTAssertFalse(watch.isWatched(repo: "o/r", number: 7, at: now + sixHours + 1))
+
+        let file = try XCTUnwrap(markFiles().first)
+        try Data(((now + sixHours + 60).formatted(.iso8601) + " session\n").utf8).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
+        XCTAssertFalse(watch.isWatched(repo: "o/r", number: 7, at: now - 60))
+        // The cap belongs to the file's write time even once the reader is within six hours.
+        XCTAssertFalse(watch.isWatched(repo: "o/r", number: 7, at: now + 120))
+    }
 }
 
 private final class MarkFailures: @unchecked Sendable {

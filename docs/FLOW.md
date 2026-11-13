@@ -362,7 +362,9 @@ the lease (`bton lease check <owner/name> pr-<n>`) before touching the branch al
 got there first, and Bton always sees the mark that did. The mark is a file under
 `~/.bton/watching/` on this Mac, which is where the author's moves run; a mark that cannot be read,
 or a directory that cannot be looked into, holds the PR (two writers on one branch cost more than a
-late fix), one past its time does not, so a session that died lets go within the time it set. The
+late fix), one past its time does not, so a session that died lets go within the time it set.
+`--stop` on an unreadable mark fails and leaves it, since it may hold another session's line; marking
+again replaces it. A supervisor's retry of a move a person pressed is not a new press and waits too. The
 PR's row says "your session is on it" while its move waits for the session, and the log says once
 per head which move was left to it. A renamed repo is matched under both names: the one in Bton's
 settings and the one in the PR's URL.

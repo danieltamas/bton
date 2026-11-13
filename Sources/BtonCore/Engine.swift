@@ -71,6 +71,9 @@ public actor Engine {
     private var taken: [String: Int] = [:]
     /// The picks in `next` a person pressed, until one of their moves starts.
     var pressedPicks: Set<String> = []
+    /// Pressed picks whose press a supervisor's retry carried over from the job it retries: they keep
+    /// `BTON_PRESSED`, but no person asked for them now, so a watching session's mark still holds them.
+    var inheritedPresses: Set<String> = []
     /// The owner's Merge and Fix conflicts picks, with the head each was asked on: the PR takes that
     /// move instead of its flow move, and a new head drops the pick, so nothing runs on a head the
     /// owner did not see.
@@ -179,12 +182,20 @@ public actor Engine {
 
     /// Puts a PR's move or a schedule first in line; a schedule runs whether or not it is due.
     /// `pressed`: a person asked for it, so its checks and command get `BTON_PRESSED=1` once; a
-    /// supervisor's retry is only put first.
-    public func runNext(repo: String, item: String, pressed: Bool = false) {
+    /// supervisor's retry is only put first. `inherited`: the press is the retried job's, carried over.
+    public func runNext(repo: String, item: String, pressed: Bool = false, inherited: Bool = false) {
         let pick = Self.pick(repo: repo, item: item)
         next.removeAll { $0 == pick }
         next.insert(pick, at: 0)
-        if pressed { pressedPicks.insert(pick) }
+        if pressed {
+            // A person's press still waiting in line stays theirs when a retry carries one over.
+            if !inherited {
+                inheritedPresses.remove(pick)
+            } else if !pressedPicks.contains(pick) {
+                inheritedPresses.insert(pick)
+            }
+            pressedPicks.insert(pick)
+        }
     }
 
     static func pick(repo: String, item: String) -> String { "\(repo.lowercased())#\(item)" }
@@ -571,6 +582,7 @@ public actor Engine {
                 }
                 var candidate = Supervision.steered(chosen, jobs: jobs.all())
                 candidate.pressed = pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+                candidate.pressInherited = inheritedPresses.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
                 let environment = config.repos.first { $0.slug.lowercased() == candidate.key.repo.lowercased() }?.environment ?? [:]
                 switch await dispatcher.dispatch(candidate, clone: entry.clone, flow: entry.flow, agents: config.agents,
                                                  environment: environment) {
@@ -609,6 +621,7 @@ public actor Engine {
         waiting = judgedOnly ? waiting.filter { !picksAtStart.contains($0.key) }.merging(judged) { _, new in new } : judged
         // A press starts one move: a later move of the same PR the sync starts is not pressed.
         pressedPicks = pressedPicks.subtracting(started).filter(next.contains)
+        inheritedPresses.formIntersection(pressedPicks)
         // A request whose lease history says it already ran elsewhere would hold the PR's flow move
         // back; one whose lease is only held now (a schedule's agent on the PR) waits for it.
         asked = asked.filter { next.contains($0.key) && !ran.contains($0.value) }
@@ -796,10 +809,10 @@ public actor Engine {
     /// (`bton watching`): that session answers the PR itself. A person's press (Run next, Fix
     /// conflicts, Retry) still starts it; a supervisor's retry is not a press and waits too.
     private func heldBySession(_ candidate: DispatchCandidate, me: String) -> Bool {
-        guard SessionWatch.holds(candidate, me: me),
-              !pressedPicks.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item)),
+        let pick = Self.pick(repo: candidate.key.repo, item: candidate.key.item)
+        guard SessionWatch.holds(candidate, me: me), !pressedPicks.contains(pick) || inheritedPresses.contains(pick),
               let pr = candidate.pr, SessionWatch(home: home).isWatched(pr, repo: candidate.key.repo) else { return false }
-        heldThisTick.insert(Self.pick(repo: candidate.key.repo, item: candidate.key.item))
+        heldThisTick.insert(pick)
         if heldNoted.insert(candidate.key).inserted {
             log("\(candidate.key.repo)#\(pr.number): \(candidate.move.name) left to the session watching it")
         }
