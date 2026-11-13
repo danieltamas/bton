@@ -151,6 +151,23 @@ struct OutageHoldAcceptanceTests {
         #expect(try f.calls().filter { $0.hasPrefix("comment ") }.isEmpty)
     }
 
+    @Test func anotherProcessHoldingTheBuildsNoticeLockLeavesItForTheNextTick() async throws {
+        let f = try OutageNoticeFixture()
+        defer { f.remove() }
+        let job = F.job(retry: true)
+        try f.store.save(job)
+        let candidate = try f.resume(jobs: [job])
+        let engine = try f.engine()
+        let locks = f.home.url.appendingPathComponent("locks", isDirectory: true)
+        try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
+        let other = try #require(LocalLock(locks.appendingPathComponent("held-\(job.id.uuidString).lock")))
+        await f.applyHold(engine, candidates: [candidate])
+        #expect(try f.calls().isEmpty)
+        other.release()
+        await f.applyHold(engine, candidates: [candidate])
+        #expect(try f.calls().filter { $0.hasPrefix("comment ") } == ["comment 7"])
+    }
+
     @Test func candidatesOtherThanClaimedImplementResumesPostNothing() async throws {
         let f = try OutageNoticeFixture()
         defer { f.remove() }
@@ -213,6 +230,14 @@ struct OutageHoldAcceptanceTests {
             .map(\.number) == [7])
         #expect(DispatchPlanner.candidates(held.openPullRequests, flow: flow, me: "owner", repo: f.base.repo)
             .contains { $0.key.item == "pr-8" && !$0.textOnly })
+        // A pressed Take it is refused the same way, before anything is written.
+        do {
+            _ = try await engine.take(repo: f.base.repo, number: 7, from: "teammate")
+            Issue.record("Expected TakeError.held")
+        } catch let error as TakeError {
+            #expect(error == .held(reason))
+        }
+        #expect(try f.assignments().isEmpty)
         let ask = try #require(held.issueAsks.first { $0.number == 9 })
         await engine.requestDraft(ask)
         let drafting = await engine.tick()

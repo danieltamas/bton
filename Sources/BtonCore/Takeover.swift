@@ -6,11 +6,14 @@ public enum TakeError: Error, Equatable, LocalizedError {
     case changed
     /// A Bton holds the PR's lease, or the lease could not be read.
     case busy
+    /// A service the repo's environment names does not answer on this Mac: the move would wait here.
+    case held(String)
 
     public var errorDescription: String? {
         switch self {
         case .changed: "The PR changed since the last sync; nothing was taken."
         case .busy: "A Bton is working on this PR; nothing was taken. Try again when it is done."
+        case let .held(hold): "This Mac cannot run the repo's jobs now, so nothing was taken. \(hold)"
         }
     }
 }
@@ -22,7 +25,11 @@ extension Engine {
     /// `pressed`: a person asked for it; the sync's own take leaves the checks' `BTON_PRESSED` unset.
     public func take(repo: String, number: Int, from owner: String?, pressed: Bool = true) async throws -> Move {
         let config = try BtonConfig.loadOrCreate(home: home)
-        let branch = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
+        let watched = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }
+        let branch = watched?.branch
+        // A move taken onto a Mac whose services are down waits there for as long as they are: the
+        // teammate keeps it, pressed or automatic.
+        if let watched, let hold = await environmentHold(of: watched) { throw TakeError.held(hold) }
         // Read before the claim, so a stale row writes nothing, and again under the lease: another
         // Mac may take or start the move while the claim is pushed.
         let me = try await takeable(repo: repo, number: number, from: owner, branch: branch).me

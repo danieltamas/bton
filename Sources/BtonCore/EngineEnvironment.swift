@@ -58,6 +58,13 @@ extension Engine {
                   let job = IssueIntake.latestJob(for: plan.issue, repo: candidate.key.repo, jobs: jobs.all()),
                   !heldNoticed.contains(job.id) else { continue }
             let marker = "\(IssueIntake.heldMarker) \(job.id.uuidString)"
+            // The app and a `bton watch` on the same home both tick: the read and the post run under
+            // one lock per build, and the one that finds it taken leaves it for the next tick, where
+            // the comment the other posted is read back.
+            let locks = home.url.appendingPathComponent("locks", isDirectory: true)
+            try? FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
+            guard let lock = LocalLock(locks.appendingPathComponent("held-\(job.id.uuidString).lock")) else { continue }
+            defer { lock.release() }
             do {
                 let said = try await github.issueComments(repo: candidate.key.repo, number: plan.issue).contains { comment in
                     comment.author?.caseInsensitiveCompare(me) == .orderedSame && BtonMarker.keys(in: comment.body).contains(marker)
