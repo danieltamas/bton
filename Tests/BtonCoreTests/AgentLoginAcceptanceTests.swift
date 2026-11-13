@@ -115,8 +115,34 @@ struct AgentLoginAcceptanceTests {
     @Test func failureDetailFormatsStatusReasonAndAbnormalExit() {
         #expect(AgentFailure.detail(status: 1, output: "something", log: "") == "agent exited 1: something")
         #expect(AgentFailure.detail(status: 2, output: "", log: "") == "agent exited 2")
-        #expect(AgentFailure.detail(status: nil, output: "diagnostic", log: "") == "agent exited abnormally: diagnostic")
-        #expect(AgentFailure.detail(status: nil, output: "", log: "") == "agent exited abnormally")
+        #expect(AgentFailure.detail(status: nil, output: "diagnostic", log: "") == "agent exited without a status (killed, or its exit was not recorded): diagnostic")
+        #expect(AgentFailure.detail(status: nil, output: "", log: "") == "agent exited without a status (killed, or its exit was not recorded)")
+    }
+
+    @Test func failureDetailSkipsCancelledHookButKeepsOrdinaryMention() {
+        let cancelled = "SessionEnd hook [/usr/local/bin/axon bus hook claude SessionEnd] failed: Hook cancelled"
+        let mention = "The agent reported Hook cancelled while saving its work"
+        let cases: [(String, String, String?)] = [
+            ("last real line\n" + cancelled, "", "last real line"),
+            ("", "last real line\n" + cancelled, "last real line"),
+            (cancelled, "last real line\n" + cancelled, "last real line"),
+            (cancelled, "", nil),
+            ("", cancelled, nil),
+            (cancelled, cancelled, nil),
+            (mention, "", mention),
+            ("", mention, mention)
+        ]
+        let statuses: [(Int32?, String)] = [
+            (nil, "agent exited without a status (killed, or its exit was not recorded)"),
+            (1, "agent exited 1")
+        ]
+        for (output, log, reason) in cases {
+            #expect(AgentFailure.reason(output: output, log: log) == reason)
+            for (status, prefix) in statuses {
+                #expect(AgentFailure.detail(status: status, output: output, log: log)
+                    == prefix + (reason.map { ": \($0)" } ?? ""))
+            }
+        }
     }
 
     @Test func watchdogDistinguishesLoggedOutFromOrdinaryAgentFailure() throws {

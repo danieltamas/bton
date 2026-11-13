@@ -35,7 +35,17 @@ public enum AgentFailure {
         let stderr = start.map { all[($0 + 1)...].joined(separator: "\n") } ?? log
         let recent = lines(output).suffix(1) + lines(stderr).suffix(loginLines)
         if recent.contains(where: isLoginFailure) { return "agent logged out: \(reason ?? "")" }
-        return "agent exited \(status.map(String.init) ?? "abnormally")" + (reason.map { ": \($0)" } ?? "")
+        // No status: most often the wrapper that writes it died with the agent (a kill from outside
+        // Bton, the Mac restarting), but a status file that could not be written or read looks the same.
+        return "agent exited \(status.map(String.init) ?? "without a status (killed, or its exit was not recorded)")"
+            + (reason.map { ": \($0)" } ?? "")
+    }
+
+    /// Claude's line for an exit hook cut off by the kill ("SessionEnd hook [cmd] failed: Hook
+    /// cancelled"): it names whichever hook ran last, never why the agent stopped (2026-11-11, a
+    /// killed job read as if the owner's closed axon had failed it).
+    private static func isCancelledHook(_ line: String) -> Bool {
+        line.hasSuffix("] failed: Hook cancelled") && line.split(separator: " ", maxSplits: 2).dropFirst().first == "hook"
     }
 
     /// The end of a job's file; empty when it is missing.
@@ -47,11 +57,11 @@ public enum AgentFailure {
         return String(decoding: (try? handle.readToEnd()) ?? Data(), as: UTF8.self)
     }
 
-    /// Non-empty trimmed lines, without Bton's own notes.
+    /// Non-empty trimmed lines, without Bton's own notes or an exit hook the kill cut off.
     private static func lines(_ text: String) -> [String] {
         text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && !isNote($0) }
+            .filter { !$0.isEmpty && !isNote($0) && !isCancelledHook($0) }
     }
 
     /// A line of Bton's own: "<ISO date> bton: ...".
