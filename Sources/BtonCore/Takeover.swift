@@ -27,9 +27,6 @@ extension Engine {
         let config = try BtonConfig.loadOrCreate(home: home)
         let watched = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }
         let branch = watched?.branch
-        // A move taken onto a Mac whose services are down waits there for as long as they are: the
-        // teammate keeps it, pressed or automatic.
-        if let watched, let hold = await environmentHold(of: watched) { throw TakeError.held(hold) }
         // Read before the claim, so a stale row writes nothing, and again under the lease: another
         // Mac may take or start the move while the claim is pushed.
         let me = try await takeable(repo: repo, number: number, from: owner, branch: branch).me
@@ -51,6 +48,9 @@ extension Engine {
         let wrote: String
         do {
             let fresh = try await takeable(repo: repo, number: number, from: owner, branch: branch)
+            // A move taken onto a Mac whose services are down waits there for as long as they are: the
+            // teammate keeps it, pressed or automatic. Probed last, right before the write.
+            if let watched, let hold = await environmentHold(of: watched) { throw TakeError.held(hold) }
             // A claim pushed, or reads made, while the Mac slept can leave the lease expired by now:
             // it must outlast the assign too.
             guard held.isLive(at: .now + 60) else { throw TakeError.busy }
