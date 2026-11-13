@@ -154,15 +154,22 @@ extension Engine {
     }
 
     /// Takes the teammates' moves a repo with `takeMoves` leaves waiting; a refusal (changed, busy)
-    /// is logged and not retried on this owner, move and head.
-    func autoTake(_ pullRequests: [PullRequest], flow: Flow, repo: String, me: String) async {
+    /// is logged and not retried on this owner, move and head. A service of the repo that stopped
+    /// answering since the sync's probe stops the takes and is returned, so the sync holds the
+    /// repo's jobs too; the PR is tried again once the service is back.
+    func autoTake(_ pullRequests: [PullRequest], flow: Flow, repo: String, me: String) async -> String? {
         for pr in Self.autoTakeable(pullRequests, flow: flow, me: me, repo: repo, tried: autoTaken).prefix(Self.autoTakeLimit) {
-            autoTaken.insert(Self.autoTakeKey(pr, repo: repo))
+            let key = Self.autoTakeKey(pr, repo: repo)
+            autoTaken.insert(key)
             do {
                 _ = try await take(repo: repo, number: pr.number, from: pr.move?.owner, pressed: false)
+            } catch let TakeError.held(hold) {
+                autoTaken.remove(key)
+                return hold
             } catch {
                 log("\(repo)#\(pr.number): automatic Take it stopped: \(error.localizedDescription)")
             }
         }
+        return nil
     }
 }

@@ -354,8 +354,7 @@ public actor Engine {
                     let first = pending.count
                     // Probed before anything is taken: a Mac whose services are down must not take a
                     // teammate's review it cannot run (it sat on six for two days, 2026-11-11).
-                    let hold = await environmentHold(of: read.repo)
-                    if let hold { heldNow[read.repo.slug.lowercased()] = hold }
+                    var hold = await environmentHold(of: read.repo)
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, config: config)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
@@ -363,7 +362,8 @@ public actor Engine {
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
                         if read.repo.takesMoves, hold == nil {
-                            await autoTake(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer)
+                            // A service that went down since the probe holds the rest of this sync too.
+                            hold = await autoTake(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer)
                         }
                         if let stale = flow.stale {
                             await postStaleNotices(read.pullRequests, stale: stale, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
@@ -458,6 +458,7 @@ public actor Engine {
                         pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
                     }
                     // Nothing of this repo but its text-only jobs starts while a service its environment names does not answer.
+                    if let hold { heldNow[read.repo.slug.lowercased()] = hold }
                     if first < pending.count, let hold {
                         await holdPending(read.repo, hold: hold, me: read.viewer, pending: &pending, from: first)
                     }

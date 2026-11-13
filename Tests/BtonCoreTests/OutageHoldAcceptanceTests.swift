@@ -151,6 +151,18 @@ struct OutageHoldAcceptanceTests {
         #expect(try f.calls().filter { $0.hasPrefix("comment ") }.isEmpty)
     }
 
+    @Test func aBuildAnotherProcessAlreadyStartedGetsNoNotice() async throws {
+        let f = try OutageNoticeFixture()
+        defer { f.remove() }
+        let waiting = F.job(retry: true, time: 100)
+        try f.store.save(waiting)
+        let candidate = try f.resume(jobs: [waiting])
+        try f.store.save(F.job(status: .running, retry: true, time: 200))
+        let engine = try f.engine()
+        await f.applyHold(engine, candidates: [candidate])
+        #expect(try f.calls().filter { $0.hasPrefix("comment ") }.isEmpty)
+    }
+
     @Test func anotherProcessHoldingTheBuildsNoticeLockLeavesItForTheNextTick() async throws {
         let f = try OutageNoticeFixture()
         defer { f.remove() }
@@ -238,6 +250,11 @@ struct OutageHoldAcceptanceTests {
             #expect(error == .held(reason))
         }
         #expect(try f.assignments().isEmpty)
+        // A service found down by the take itself (it fell after the sync's probe) is handed back as the
+        // sync's hold, and the PR stays untried, so it is taken once the service is back.
+        let taking = try #require(held.flows[f.base.repo]?.flow)
+        #expect(await engine.autoTake(held.openPullRequests, flow: taking, repo: f.base.repo, me: "owner") == reason)
+        #expect(await engine.autoTaken.isEmpty)
         let ask = try #require(held.issueAsks.first { $0.number == 9 })
         await engine.requestDraft(ask)
         let drafting = await engine.tick()

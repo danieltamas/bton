@@ -75,6 +75,10 @@ extension Engine {
                 guard now.state == "OPEN", now.assignees.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame }),
                       IssueTriage.label(withPrefix: IssueTriage.stagePrefix, in: now.labels) == IssueIntake.inProgressStage
                 else { continue }
+                // Still the build that waits: an app and a `bton watch` share the job store, and the other
+                // may have started the retry since this candidate was made.
+                guard let still = IssueIntake.latestJob(for: plan.issue, repo: candidate.key.repo, jobs: jobs.all()),
+                      still.id == job.id, still.status != .running, still.retry == true else { continue }
                 if !said {
                     try await github.commentOnIssue(repo: candidate.key.repo, number: plan.issue,
                                                     body: IssueIntake.heldComment(login: me, job: job.id))
