@@ -79,8 +79,20 @@ public enum IssueIntake {
     public static let inProgressLabel = IssueTriage.stagePrefix + inProgressStage
     /// The marker of the comment that says a build ended without a PR: a notice, never an ask.
     public static let failedMarker = "implement-failed"
+    /// The marker of the comment that says a claimed issue's build waits for a service on the
+    /// builder's Mac: a notice, never an ask, posted once per build that the hold keeps waiting.
+    public static let heldMarker = "implement-held"
     /// How much of the agent's report the comment quotes.
     static let reportQuote = 400
+
+    /// The comment on an issue I hold whose build cannot resume while a service its environment
+    /// names does not answer here. It names no host, port or variable: those are this Mac's, and
+    /// the team only needs to know the issue is not abandoned. `job` is the build that waits.
+    public static func heldComment(login: String, job: UUID) -> String {
+        "Bton: the build of this issue waits on \(login)'s Mac, where a service its tests need (a database, a Redis) "
+            + "does not answer. The issue stays claimed and the build resumes in its worktree, with what it already did, "
+            + "as soon as the service is back.\n\n" + BtonMarker.line("\(heldMarker) \(job.uuidString)")
+    }
 
     /// The comment on an issue whose build ended without a PR: the agent's last lines, so the
     /// team reads why on GitHub instead of finding the issue stale-pinged a day later. The

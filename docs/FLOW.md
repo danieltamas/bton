@@ -245,9 +245,16 @@ keeps the first assignee as before.
   the repo's environment (Settings > Repos: `DATABASE_URL`, a Redis) for a TCP connect, two seconds
   at most. One that does not answer (refused, timed out, a name that does not resolve) holds every
   job of the repo for that sync, pressed picks included, with the reason on their cards: "nothing
-  answers at 127.0.0.1:55439; start the service (Docker?) and Bton goes on". The owner gets one
-  notification per outage. The next sync where the service answers starts the jobs; nothing else
-  changes, and a job already running is not touched.
+  answers at 127.0.0.1:55439; start the service (Docker?) and Bton goes on". Text-only jobs
+  (decisions, drafts, New issue turns) still start. The owner gets one notification per outage, and
+  the panel shows the hold under its header for as long as it lasts; the log says when it starts and
+  when it lifts. A held repo takes no teammate's move (`takeMoves`): a review taken onto a Mac that
+  cannot run it waits for as long as the outage does. The build of an issue I already claimed that
+  the hold keeps from resuming says so on the issue, once per waiting build and with no host, port
+  or variable in it: the issue stays claimed and the build resumes in its worktree when the service
+  answers. That comment is a notice, like a stale ping: it starts no round, asks nobody and leaves
+  the stale clock alone. The next sync where the service answers starts the jobs; a job already
+  running is not touched.
 - **Feature context.** When the repo has a `.bton/features.json` that loads, every agent job gets
   `feature-context.md` in its scratch directory: what the registry knows about the PR or issue (the
   feature it links, or the features and areas whose paths the PR touches; area, paths, merged PRs

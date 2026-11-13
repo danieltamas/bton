@@ -51,8 +51,12 @@ struct RootView: View {
             if store.isPaused {
                 notice("Paused: Bton reads nothing from GitHub and runs no job on this Mac until you press play. The lists are from the last sync.",
                        symbol: "pause.fill", color: Theme.textTertiary)
-            } else if let problem = store.problem {
-                notice(problem)
+            } else {
+                if let problem = store.problem { notice(problem) }
+                // A hold can last days: it stays on screen for as long as it lasts, not only in one notification.
+                ForEach(store.outages.sorted { $0.key < $1.key }, id: \.key) { slug, hold in
+                    notice("\(slug) waits, only decisions, drafts and new issues start. \(hold)", symbol: "pause.circle")
+                }
             }
             ForEach(store.loggedOut, id: \.self) { LoginNotice(agent: $0) }
             bento.padding(.horizontal, 14).padding(.top, 4)
@@ -122,7 +126,7 @@ struct RootView: View {
 
     private var syncLine: some View {
         HStack(spacing: 5) {
-            PulseDot(color: store.isPaused ? Theme.textTertiary : store.problem == nil ? Theme.success : Theme.unassigned,
+            PulseDot(color: store.isPaused ? Theme.textTertiary : store.problem == nil && store.outages.isEmpty ? Theme.success : Theme.unassigned,
                      pulsing: store.isRefreshing && !store.isPaused)
             Group {
                 if store.isPaused {

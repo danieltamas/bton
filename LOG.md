@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A repo held for a service that is down says so, takes nothing, and tells the issue it holds.** On 2026-11-11 the test database and Redis of kazu stopped on the owner's Mac and stayed down for two days. Bton held every kazu job except decisions and drafts, as it should, but said so in a single notification that was missed. Meanwhile it went on taking teammates' reviews it could not run (six of them), and kept #935 claimed, assigned and at `stage:in-progress` with no word on the issue, so the team read it as an issue Bton took and dropped. A held repo now takes no teammate's move. The panel shows the hold under its header for as long as it lasts, the sync dot leaves green, and the log says when the hold starts and when it lifts. An issue whose build the hold keeps from resuming gets one comment saying the build waits for a service on that Mac and resumes in its worktree when the service is back. The comment names no host, port or variable, and like a stale ping it starts no round and asks nobody. The claim stays: the build's work is in its worktree.
+
 ## 0.37.0 (2026-11-13)
 
 **A PR its author's session watches is left to that session.** A developer whose own agent wrote a PR and waits on it saw Bton start a second agent on every review: a fix from a fresh worktree and a one-line prompt, without the issue, the decisions or the reasons the code is as it is, pushing to the branch the watching session was about to fix too. That session now marks the PR with `bton watching <owner/name> <pr> --for <seconds> --as <holder>`, and while any holder's mark lasts (6 hours at most) Bton starts no agent that works on that branch: no fix, no red-gate fix, no automatic resolve, no supervisor retry of one. The mark is read again under the PR's lease right before the agent starts, so a session that marks and then checks the lease never races a job. The PR's row says "your session is on it" while it waits. Reviews, decisions and the merge run as before, a person's press still starts the move, and a mark that cannot be read holds the PR.

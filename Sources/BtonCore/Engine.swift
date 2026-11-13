@@ -144,7 +144,9 @@ public actor Engine {
     var lastIssueReads: [String: (at: Date, pages: Int)] = [:]
     /// The environment holds the last sync found, by lowercased slug: a quick tick shows them
     /// again, since it probes only the repos it starts a turn in.
-    private var outages: [String: String] = [:]
+    var outages: [String: String] = [:]
+    /// The held builds whose issue already says it waits (`noticeHeldBuilds`), by job id.
+    var heldNoticed: Set<UUID> = []
 
     /// One repo as a sync read it, in the order the tick needs it.
     struct RepoRead {
@@ -345,13 +347,17 @@ public actor Engine {
                 let clone = URL(fileURLWithPath: path)
                 do {
                     let first = pending.count
+                    // Probed before anything is taken: a Mac whose services are down must not take a
+                    // teammate's review it cannot run (it sat on six for two days, 2026-11-11).
+                    let hold = await environmentHold(of: read.repo)
+                    if let hold { snapshot.outages[read.repo.slug.lowercased()] = hold }
                     await clearMerged(read.merged, clone: clone)
                     let dispatcher = try await dispatcher(me: read.viewer, config: config)
                     await clearWorkLabels(read.pullRequests, repo: read.repo, leases: dispatcher.leases)
                     await stopStaleReviews(read.pullRequests, dispatcher: dispatcher)
                     if let flow = read.flow {
                         await assignRotation(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer, dispatcher: dispatcher)
-                        if read.repo.takesMoves {
+                        if read.repo.takesMoves, hold == nil {
                             await autoTake(read.pullRequests, flow: flow, repo: read.repo.slug, me: read.viewer)
                         }
                         if let stale = flow.stale {
@@ -447,8 +453,8 @@ public actor Engine {
                         pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
                     }
                     // Nothing of this repo but its text-only jobs starts while a service its environment names does not answer.
-                    if first < pending.count, let hold = await environmentHold(read.repo, pending: &pending, from: first) {
-                        snapshot.outages[read.repo.slug.lowercased()] = hold
+                    if first < pending.count, let hold {
+                        await holdPending(read.repo, hold: hold, me: read.viewer, pending: &pending, from: first)
                     }
                 } catch {
                     failures.append("\(read.repo.slug): \(error.localizedDescription)")
@@ -456,7 +462,8 @@ public actor Engine {
                 }
             }
             snapshot.problem = failures.isEmpty ? nil : failures.joined(separator: "\n")
-            outages = snapshot.outages
+            snapshot.outages = settleOutages(snapshot.outages, judged: Set(reads.map { $0.repo.slug.lowercased() }).subtracting(unplanned),
+                                             known: Set(config.repos.map { $0.slug.lowercased() }))
             if let me = snapshot.me {
                 try await start(pending, me: me, config: config, picksAtStart: picksAtStart, unplanned: unplanned)
             }
@@ -514,6 +521,7 @@ public actor Engine {
             snapshot.listsAt = reads.map(\.at).min()
             guard let me = snapshot.me else { return nil }
             var pending: [(candidate: DispatchCandidate, clone: URL, flow: Flow?)] = []
+            var probed: Set<String> = []
             for read in reads where wanted.contains(read.repo.slug.lowercased()) {
                 guard let path = read.repo.path else { continue }
                 let clone = URL(fileURLWithPath: path)
@@ -528,15 +536,17 @@ public actor Engine {
                 }
                 guard first < pending.count else { continue }
                 let slug = read.repo.slug.lowercased()
-                if let hold = await environmentHold(read.repo, pending: &pending, from: first) {
+                probed.insert(slug)
+                if let hold = await environmentHold(of: read.repo) {
                     snapshot.outages[slug] = hold
+                    await holdPending(read.repo, hold: hold, me: read.viewer, pending: &pending, from: first)
                 } else if let lifted = snapshot.outages.removeValue(forKey: slug) {
                     // The service answers again: the repo's picks no longer wait on it.
                     let prefix = slug + "#"
                     deferred = deferred.filter { !($0.key.hasPrefix(prefix) && $0.value == lifted) }
                 }
             }
-            outages = snapshot.outages
+            snapshot.outages = settleOutages(snapshot.outages, judged: probed, known: Set(config.repos.map { $0.slug.lowercased() }))
             // Only the turns' own picks are judged: every other pick waits for the full sync, as before.
             let turns = Set(pending.map { Self.pick(repo: $0.candidate.key.repo, item: $0.candidate.key.item) })
             try await start(pending, me: me, config: config, picksAtStart: turns, unplanned: [], judgedOnly: true)

@@ -235,7 +235,7 @@ public enum IssueAsks {
     /// A notice Bton posts on its own (a stale ping or escalation, a failed check): it mentions a
     /// person to tell them, not to ask them, and a Bton reading it is not asked anything. A
     /// hand-off or a triager's line keeps its question.
-    static let noticeMarkers = ["stale-ping", "stale-escalate", "check-failed", IssueIntake.failedMarker]
+    static let noticeMarkers = ["stale-ping", "stale-escalate", "check-failed", IssueIntake.failedMarker, IssueIntake.heldMarker]
 
     public static func isNotice(_ body: String) -> Bool {
         BtonMarker.keys(in: body).contains { key in noticeMarkers.contains { key.hasPrefix($0) } }
