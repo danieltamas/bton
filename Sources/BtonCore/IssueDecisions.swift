@@ -131,11 +131,12 @@ public enum IssueDecisions {
     }
 
     /// An exit without error is not a decision: the agent is told to post nothing when only the
-    /// owner knows the answer. Posted means a comment of the owner's since the job started; one
+    /// owner knows the answer. Posted means a comment of the owner's since the job started, other
+    /// than a notice Bton posts under the same login meanwhile (a held build's, a stale ping); one
     /// over the word bound is reported, not edited (the agent posts the comment itself).
     public static func outcome(comments: [IssueComment], me: String, since: Date, report: String) -> (status: Job.Status, detail: String?) {
         let posted = comments.filter { comment in
-            comment.author?.caseInsensitiveCompare(me) == .orderedSame && comment.createdAt >= since
+            comment.author?.caseInsensitiveCompare(me) == .orderedSame && comment.createdAt >= since && !IssueAsks.isNotice(comment.body)
         }
         // The ruling is the agent's last post; an earlier comment of the owner's own in the meantime is not measured.
         if let ruling = posted.max(by: { $0.createdAt < $1.createdAt }) {

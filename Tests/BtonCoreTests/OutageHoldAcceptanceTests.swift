@@ -151,6 +151,18 @@ struct OutageHoldAcceptanceTests {
         #expect(try f.calls().filter { $0.hasPrefix("comment ") }.isEmpty)
     }
 
+    @Test func aHeldNoticePostedDuringADecisionIsNotItsRuling() {
+        let since = Date(timeIntervalSince1970: 1_000)
+        let notice = IssueComment(id: "n", author: "me", authorAssociation: nil, body: IssueIntake.heldComment(login: "me", job: UUID()),
+                                  createdAt: since.addingTimeInterval(30), url: nil)
+        // Only the notice: no ruling was posted, so the ask is left to the owner.
+        #expect(IssueDecisions.outcome(comments: [notice], me: "me", since: since, report: "")
+            .detail?.hasPrefix(IssueDecisions.leftToYou) == true)
+        let ruling = IssueComment(id: "r", author: "me", authorAssociation: nil, body: "Option A: it keeps the data.",
+                                  createdAt: since.addingTimeInterval(20), url: nil)
+        #expect(IssueDecisions.outcome(comments: [ruling, notice], me: "me", since: since, report: "") == (.succeeded, nil))
+    }
+
     @Test func aBuildAnotherProcessAlreadyStartedGetsNoNotice() async throws {
         let f = try OutageNoticeFixture()
         defer { f.remove() }

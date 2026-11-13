@@ -458,6 +458,9 @@ public actor Engine {
                         pending[index].candidate = Self.withFeatureContext(hatted, report: snapshot.features[read.repo.slug])
                     }
                     // Nothing of this repo but its text-only jobs starts while a service its environment names does not answer.
+                    // Probed again right before the start when the first probe passed: the cleanup and planning
+                    // since can take minutes, and a service that fell meanwhile would fail every job it holds.
+                    if hold == nil, first < pending.count { hold = await environmentHold(of: read.repo) }
                     if let hold { heldNow[read.repo.slug.lowercased()] = hold }
                     if first < pending.count, let hold {
                         await holdPending(read.repo, hold: hold, me: read.viewer, pending: &pending, from: first)
