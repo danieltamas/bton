@@ -41,14 +41,13 @@ extension AppStore {
         guard !postedAsks.contains(ask.notice), postingAsks.insert(ask.notice).inserted else { return }
         defer { postingAsks.remove(ask.notice) }
         let draft = IssueDrafts.split(text)
-        // The bound the prompt asks for, kept on the way out; the whole draft stays in the job's output.
-        let reply = IssueDrafts.bounded(draft.reply)
+        // Posted as confirmed: the word bound is the drafting agent's, and the page says when a
+        // draft is over it. A reply cut here was not the one I read and pressed Post on.
         let file = output.appendingPathExtension("reply")
-        try write(reply.text, to: file)
+        try write(draft.reply.trimmingCharacters(in: .whitespacesAndNewlines), to: file)
         try await github.commentOnIssue(repo: ask.repo, number: ask.number, bodyFile: file)
         postedAsks.insert(ask.notice)
         var incomplete: [String] = []
-        if reply.cut { incomplete.append("the reply was cut to \(IssueDrafts.maxWords) words") }
         // The issue as it is now, once, for the labels and the rows: a reply drafted on the sync's
         // read lands on an issue that may have moved since.
         var live: IssueDecisions.Live?
@@ -511,11 +510,14 @@ struct DraftView: View {
             let labels = IssueDrafts.split(text)
             let moves = (labels.add.map { "+" + $0 } + labels.remove.map { "-" + $0 }).joined(separator: " ")
             let stale = IssueDrafts.leavesToDo(text)
+            let words = IssueDrafts.wordCount(labels.reply)
+            let long = words > IssueDrafts.maxWords
+                ? " It is \(words) words, over the \(IssueDrafts.maxWords) a ruling keeps to, and posts whole: Edit shortens it." : ""
             Text(posted ? (ask.rows.isEmpty ? "Posted as your comment. The ask clears when the next sync reads it."
                            : "Posted as your comment. The Decisions row stays an ask until it is decided in the issue's body.")
                  : stale ? "This draft leaves you a to do: it is from before Bton set labels on Post. Draft again ends it with the labels instead."
-                 : moves.isEmpty ? "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own."
-                 : "Post reply comments on the issue as \(store.me ?? "you") and sets its labels \(moves); the last line stays here.")
+                 : (moves.isEmpty ? "Post reply comments on the issue as \(store.me ?? "you"); Bton posts nothing on its own."
+                    : "Post reply comments on the issue as \(store.me ?? "you") and sets its labels \(moves); the last line stays here.") + long)
                 .font(.meta).foregroundStyle(posted ? Theme.success : stale ? Theme.danger : Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)

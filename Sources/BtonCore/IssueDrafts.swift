@@ -47,38 +47,6 @@ public enum IssueDrafts {
         text.split(whereSeparator: \.isWhitespace).count
     }
 
-    /// The text within `words`: cut after the last sentence end that keeps it within the bound,
-    /// or at the last word when no sentence ends in time, with " ..." when cut. The caller
-    /// splits the label line off first.
-    public static func bounded(_ text: String, words: Int = maxWords) -> (text: String, cut: Bool) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard wordCount(trimmed) > words else { return (trimmed, false) }
-        var count = 0
-        var end = trimmed.startIndex
-        var sentenceEnd: String.Index?
-        var inWord = false
-        for index in trimmed.indices {
-            let character = trimmed[index]
-            if character.isWhitespace {
-                // A line end is a sentence end whatever precedes it (Markdown's two-space break included).
-                if character.isNewline, count > 0 { sentenceEnd = index }
-                if inWord {
-                    inWord = false
-                    if ".?!".contains(trimmed[trimmed.index(before: index)]) { sentenceEnd = index }
-                }
-            } else if !inWord {
-                inWord = true
-                count += 1
-                if count > words { break }
-                end = index
-            }
-        }
-        // `end` is the start of the last word within the bound; the word runs to the next whitespace.
-        let lastWordEnd = trimmed[end...].firstIndex(where: \.isWhitespace) ?? trimmed.endIndex
-        let kept = trimmed[..<(sentenceEnd ?? lastWordEnd)].trimmingCharacters(in: .whitespacesAndNewlines)
-        return (kept + " ...", true)
-    }
-
     /// Why a reply's label line is not applied to the issue as it is now, or nil when it is: an
     /// issue assigned to someone else is theirs to move (their Bton holds it at stage:in-progress;
     /// a reply putting stage:ready back on it made the issue carry both and started it twice).
