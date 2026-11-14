@@ -2,7 +2,7 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
-## Unreleased
+## 0.37.2 (2026-11-14)
 
 **A reply posts as you read it.** A drafted reply over 150 words was cut on Post, after the owner had read the whole draft and confirmed it, and the page said so only once the shorter comment was up: on kazu #498 the comment lost its last lines. Post reply now posts the text on the page, whole. The 150 words stay what the drafting agent is asked for, and a draft over them says so under the reply before Post, with its word count, so the owner shortens it in Edit or posts it as it is.
 
