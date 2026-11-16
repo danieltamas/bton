@@ -231,6 +231,14 @@ keeps the first assignee as before.
   tried in order, so a `checks_red` move (a CI fix by the author) placed after `review`, `fix`
   or `decide` waits until none of those hold: put it right after `resolve` to have a red head
   fixed before anyone reviews it.
+- **A `checks_red` move runs once per head, after one re-run of the red check.** A move whose
+  every rule waits on `checks_red` and on no review predicate reads the check on the head, not
+  a review: its key carries no round, so a review or a decision on the same commit does not
+  start it again. Before its first run on a head, Bton asks GitHub to run the head's failed
+  workflows again, once per head (`~/.bton/reruns.json`), and the move waits for that run: green
+  ends it there and is recorded as a flake, red again starts the agent, which then reads a
+  failure that reproduced. A check GitHub will not re-run (one from outside Actions) goes to the
+  agent at once. A person's Start skips the re-run. The agent itself can never re-run a check.
 - **A review of a head that moved is dropped, not posted.** A push while a review agent runs
   makes its review nobody's: a sync that reads the new head stops this Mac's review of the old
   one, and a review that finishes before that is posted only after one more read of the PR's head

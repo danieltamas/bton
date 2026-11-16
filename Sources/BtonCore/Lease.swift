@@ -47,7 +47,15 @@ public struct LeaseRecord: Codable, Hashable, Sendable {
     }
 
     /// Whether a job already ran `key` on this item, on any Mac.
-    public func hasRun(_ key: String) -> Bool { self.key == key || done?.contains(key) == true }
+    /// A key without a round also matches its move on its head under any round: rounds only
+    /// grow, so such a record is from before the move lost its round (`FlowEngine.answersChecks`),
+    /// written by any Mac.
+    public func hasRun(_ key: String) -> Bool {
+        let ran = [self.key].compactMap { $0 } + (done ?? [])
+        if ran.contains(key) { return true }
+        let roundless = key.split(separator: "@").last?.contains("/") == false
+        return roundless && ran.contains { $0.hasPrefix(key + "/") }
+    }
 
     /// What the next record carries forward: this one's key joins `done`.
     var history: [String]? {

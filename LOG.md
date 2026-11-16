@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**A red check is re-run once before any agent is paid for it, and its fix job runs once per commit.** On 2026-11-16 the `gate` of kazu #1083 went red on a flaky test the PR could not reach. The CI fix job read the log, said so, and stopped for a person to re-run the gate, as its prompt tells it to. Seven hours later a teammate approved the same commit, and Bton started the same job on the same red check for the same answer, because a new review on a commit ran every move again; a third run was started by hand: three jobs, $2.45, and the PR went green on the first re-run. A move that only answers red checks (each of its rules waits on `checks_red` and on no review) now runs once per commit, whatever is reviewed meanwhile. Before its first run Bton asks GitHub to run the failed workflows again, once per commit: green ends it there with no agent and is recorded as a flake, red again starts the agent on a failure that reproduced. Start on the row still runs the agent at once.
+
 ## 0.37.2 (2026-11-14)
 
 **A reply posts as you read it.** A drafted reply over 150 words was cut on Post, after the owner had read the whole draft and confirmed it, and the page said so only once the shorter comment was up: on kazu #498 the comment lost its last lines. Post reply now posts the text on the page, whole. The 150 words stay what the drafting agent is asked for, and a draft over them says so under the reply before Post, with its word count, so the owner shortens it in Edit or posts it as it is.

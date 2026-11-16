@@ -140,6 +140,27 @@ public enum FlowEngine {
             .map { String(Int($0.createdAt.timeIntervalSince1970)) } ?? ""
     }
 
+    static let redPredicate = "checks_red"
+    /// The predicates a review or a decision changes on an unchanged head.
+    static let reviewPredicates: Set<String> = ["no_review_or_response_newer", "approved_current_head",
+                                                "latest_review_changes_or_blocked", "changes_rounds_at_least"]
+
+    private static func name(of predicate: String) -> String {
+        String(predicate.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)[0])
+    }
+
+    /// The move answers the head's red checks and no review: each of its rules waits on
+    /// `checks_red` and on nothing a review changes. Its input is the check on the head, so it
+    /// runs once per head, whatever is reviewed meanwhile: kazu #1083 (2026-11-16) paid for the
+    /// same CI diagnosis again when a teammate approved the unchanged commit.
+    public static func answersChecks(_ move: String, flow: Flow) -> Bool {
+        let rules = flow.moves.filter { $0.move == move }
+        return !rules.isEmpty && rules.allSatisfy { rule in
+            let names = Set(rule.when.map(name))
+            return names.contains(redPredicate) && names.isDisjoint(with: reviewPredicates)
+        }
+    }
+
     /// The first rule whose conditions all hold for the PR.
     static func rule(for pr: PullRequest, flow: Flow) -> MoveRule? {
         let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))

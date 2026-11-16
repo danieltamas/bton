@@ -391,6 +391,8 @@ public actor Engine {
                             candidates.removeAll { !next.contains(Self.pick(repo: $0.key.repo, item: $0.key.item)) }
                         }
                         candidates.removeAll { heldBySession($0, me: read.viewer) }
+                        // A held repo starts nothing: its red heads are asked once it can run their move.
+                        if hold == nil { candidates = await rerunningRedChecks(candidates, flow: flow, agents: config.agents, readAt: read.at) }
                         pending += candidates.map { ($0, clone, flow) }
                         // The Mac that works the repo's issues also takes the next ready one, once its PRs have
                         // their turn; any other Mac only resumes what it holds or what the owner pressed.
@@ -884,6 +886,60 @@ public actor Engine {
             }
         }
         return flips
+    }
+
+    /// A move that answers its head's red checks waits for one re-run of them first: a flaky test
+    /// then costs a CI run, not an agent that can only say "run it again" (kazu #1083, three such
+    /// jobs on one commit). The ask is recorded before it is sent, so a head is asked once whatever
+    /// comes of it; a head red again after it, or one GitHub would not re-run, goes to the agent.
+    private func rerunningRedChecks(_ candidates: [DispatchCandidate], flow: Flow, agents: [String: AgentTemplate],
+                                    readAt: Date) async -> [DispatchCandidate] {
+        var kept: [DispatchCandidate] = []
+        for candidate in candidates {
+            // A move this Mac could not start anyway spends no head's one ask.
+            guard let pr = candidate.pr, FlowEngine.answersChecks(candidate.move.name, flow: flow),
+                  candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil) else {
+                kept.append(candidate)
+                continue
+            }
+            let repo = candidate.key.repo
+            let store = CheckRerunStore.load(home: home)
+            let pressed = pressedPicks.contains(Self.pick(repo: repo, item: candidate.key.item))
+            switch CheckReruns.step(for: candidate.key, failedChecks: FlowEngine.failedChecks(of: pr), pressed: pressed,
+                                    jobs: jobs.all(), store: store, now: readAt) {
+            case .start:
+                kept.append(candidate)
+            case .wait:
+                break
+            case .ask:
+                var asked = false
+                var outcome = "not sent"
+                do {
+                    // Recorded as not taken first: a crash between the two never asks again.
+                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: false))
+                    let workflows = try await github.rerunFailedRuns(repo: repo, sha: pr.headSha)
+                    asked = true
+                    outcome = "asked GitHub to run \(workflows.joined(separator: ", ")) again"
+                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: true))
+                } catch {
+                    outcome = asked ? outcome : "no re-run: \(error.localizedDescription)"
+                }
+                log("\(repo)#\(pr.number): red check on \(pr.headSha.prefix(7)) before \(candidate.move.name): \(outcome)"
+                    + (asked ? "; \(candidate.move.name) starts only if it is red again" : ""))
+                if !asked { kept.append(candidate) }
+            }
+        }
+        return kept
+    }
+
+    /// The head's one record, replaced: the ask as sent, then as taken. Read again at each write,
+    /// so a record written during the ask is kept, and one that says taken is never taken back.
+    private func record(_ rerun: CheckRerun) throws {
+        guard var store = CheckRerunStore.load(home: home) else { throw CocoaError(.fileReadCorruptFile) }
+        if !rerun.asked, store.rerun(repo: rerun.repo, head: rerun.head)?.asked == true { return }
+        store.reruns.removeAll { $0.head == rerun.head && $0.repo.caseInsensitiveCompare(rerun.repo) == .orderedSame }
+        store.reruns.insert(rerun, at: 0)
+        try store.pruned().save(home: home)
     }
 
     private func clearWorkLabels(_ prs: [PullRequest], repo: WatchedRepo, leases: LeaseStore) async {

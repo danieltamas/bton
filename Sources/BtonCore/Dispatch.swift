@@ -136,9 +136,11 @@ public enum DispatchOutcome: Sendable {
 public enum DispatchPlanner {
     /// The key of a PR move: its head and its review round, so the same move runs once per round
     /// on a head, on every Mac. Without the flow (a repo not read yet) the round is unknown.
+    /// A move that answers the head's red checks (`FlowEngine.answersChecks`) has no round: a
+    /// review changes nothing it reads, so it runs once per head.
     public static func key(for pr: PullRequest, move: String, flow: Flow?, me: String, repo: String) -> JobKey {
-        JobKey(repo: repo, item: "pr-\(pr.number)", move: move, head: pr.headSha,
-               round: flow.map { FlowEngine.round(of: pr, flow: $0, me: me) } ?? "")
+        let round = flow.map { FlowEngine.answersChecks(move, flow: $0) ? "" : FlowEngine.round(of: pr, flow: $0, me: me) } ?? ""
+        return JobKey(repo: repo, item: "pr-\(pr.number)", move: move, head: pr.headSha, round: round)
     }
 
     public static func candidates(_ pullRequests: [PullRequest], flow: Flow, me: String, repo: String) -> [DispatchCandidate] {
@@ -454,6 +456,9 @@ public enum DispatchPlanner {
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
         // A head whose checks failed stays failed: a new round on it would run them again and post again.
         let checkFailed = Set(jobs.filter(isCheckFailure).map { headKey($0.key) })
+        // A key without a round whose move ran on its head under one: a record from before the
+        // move lost its round. Rounds only grow, so nothing else leaves such a pair.
+        let ranUnderRound = Set(jobs.filter { $0.retry != true && !$0.key.round.isEmpty }.map { headKey($0.key) })
         // An issue's worktree is its own and its PR is not one yet: it does not hold the repo's schedules.
         var activeRepos = Set(running.filter { $0.key.move != IssueIntake.move }.map { $0.key.repo.lowercased() })
         var picked: [DispatchCandidate] = []
@@ -462,7 +467,9 @@ public enum DispatchPlanner {
         let startable = candidates.filter { candidate in
             let repo = candidate.key.repo.lowercased()
             let pressed = first.contains("\(repo)#\(candidate.key.item)")
-            return !seen.contains(candidate.key) && (pressed || (!waiting.contains(candidate.key) && !checkFailed.contains(headKey(candidate.key))))
+            let ranBefore = candidate.pr != nil && candidate.key.round.isEmpty && ranUnderRound.contains(headKey(candidate.key))
+            return !seen.contains(candidate.key)
+                && (pressed || (!waiting.contains(candidate.key) && !checkFailed.contains(headKey(candidate.key)) && !ranBefore))
                 && !busyItems.contains("\(repo)#\(candidate.key.item)")
                 && !(candidate.key.move == scheduleMove && activeRepos.contains(repo))
                 && candidate.agent.map({ agents[$0] != nil }) ?? (candidate.command != nil)
