@@ -302,7 +302,8 @@ public struct GitHubClient: Sendable {
                 _ = try await gh(["run", "rerun", String(run.id), "--repo", repo, "--failed"])
                 asked.append(run.workflow)
             } catch {
-                if run.id == failed.last?.id, asked.isEmpty { throw error }
+                if asked.isEmpty { throw error }
+                break
             }
         }
         return asked
