@@ -627,16 +627,22 @@ final class AppStore {
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
     /// The move's run on this head that failed and may run again, if one did.
     func failedOnHead(_ pr: PullRequest, move: String) -> Job? {
+        run(of: move, on: pr).flatMap { $0.canRetry(among: jobs) ? $0 : nil }
+    }
+
+    /// The newest job that ran this move of the PR under its key now; for a move that answers
+    /// red checks also its job on the head from before such a key lost its round.
+    private func run(of move: String, on pr: PullRequest) -> Job? {
         let key = key(for: pr, move: move)
-        return jobs.first { $0.key == key }.flatMap { $0.canRetry(among: jobs) ? $0 : nil }
+        let anyRound = flows[pr.repo]?.flow.map { FlowEngine.answersChecks(move, flow: $0) } ?? false
+        return jobs.first { DispatchPlanner.isSameRun($0.key, as: key, anyRound: anyRound) }
     }
 
     /// The newest job of this move on this head and round that succeeded while the move is still
     /// the PR's: its agent pushed or posted nothing, and its report says why.
     func succeededOnHead(_ pr: PullRequest, move: String) -> Job? {
         guard pr.move?.name == move else { return nil }
-        let key = key(for: pr, move: move)
-        return jobs.first { $0.key == key }.flatMap { $0.status == .succeeded ? $0 : nil }
+        return run(of: move, on: pr).flatMap { $0.status == .succeeded ? $0 : nil }
     }
 
     /// The key a move of this PR runs under now: `DispatchPlanner.key`, with the round the flow reads.
@@ -646,10 +652,11 @@ final class AppStore {
 
     func runNow(_ pr: PullRequest, move: String) async {
         markStarting(repo: pr.repo, item: "pr-\(pr.number)")
-        if succeededOnHead(pr, move: move) != nil {
-            try? await engine?.runAgain(key(for: pr, move: move))
+        // The job's own key: the engine marks that job, also one from before its move lost its round.
+        if let done = succeededOnHead(pr, move: move) {
+            try? await engine?.runAgain(done.key)
         } else {
-            try? await engine?.runNow(key(for: pr, move: move))
+            try? await engine?.runNow(failedOnHead(pr, move: move)?.key ?? key(for: pr, move: move))
         }
         await refresh()
     }

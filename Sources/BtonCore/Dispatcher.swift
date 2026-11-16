@@ -121,7 +121,7 @@ actor Dispatcher {
         guard let item = LeaseItem(candidate.key.item) else { return .busy }
         var candidate = candidate
         let id = UUID()
-        let rerun = DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())
+        let rerun = DispatchPlanner.isRetry(candidate.key, jobs: jobs.all(), anyRound: candidate.answersChecks)
         // A check move's key has no round: its run under one, on any Mac, is the same run. A
         // person's press starts it all the same, like a retry.
         let anyRound = candidate.answersChecks && !candidate.pressed

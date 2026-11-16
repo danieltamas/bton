@@ -879,24 +879,30 @@ public actor Engine {
         checkStates[slug] = Flakes.states(pullRequests)
         var store = FlakeStore.load(home: home)
         // A check Bton's own re-run turned green passed through pending, so no tick saw it flip.
-        if let reruns = CheckRerunStore.load(home: home), !reruns.reruns.isEmpty {
-            // Every asked check now green comes off its ask, one a tick already recorded too: left
-            // on, it would be found again once the flake store drops its record.
-            let settled = Flakes.afterRerun(reruns, store: FlakeStore(), pullRequests: pullRequests, repo: repo, now: .now)
-            if !settled.isEmpty {
-                // Off the ask first: a flake that could not be marked found is not recorded at every sync.
-                do {
-                    try reruns.settling(settled).save(home: home)
-                    flips += Flakes.afterRerun(reruns, store: store, pullRequests: pullRequests, repo: repo, now: .now)
-                        .filter { flake in !flips.contains { $0.head == flake.head && $0.check == flake.check } }
-                } catch {
-                    log("\(repo): could not save reruns.json: \(error.localizedDescription)")
-                }
+        let reruns = CheckRerunStore.load(home: home) ?? CheckRerunStore()
+        // Every asked check now green comes off its ask, one a tick already recorded too: left
+        // on, it would be found again once the flake store drops its record.
+        var settled = Flakes.afterRerun(reruns, store: FlakeStore(), pullRequests: pullRequests, repo: repo, now: .now)
+        let afterRerun = Flakes.afterRerun(reruns, store: store, pullRequests: pullRequests, repo: repo, now: .now)
+            .filter { flake in !flips.contains { $0.head == flake.head && $0.check == flake.check } }
+        if !(flips + afterRerun).isEmpty {
+            let onDisk = store.flakes
+            store.flakes = flips + afterRerun + onDisk
+            do {
+                try store.pruned().save(home: home)
+                flips += afterRerun
+            } catch {
+                log("\(repo): could not save flakes.json: \(error.localizedDescription)")
+                // Not on disk, so still on its ask: the next sync finds it again, and names it then.
+                let unsaved = settled.filter { flake in !onDisk.contains { $0.head == flake.head && $0.check == flake.check } }
+                settled.removeAll { unsaved.contains($0) }
+                flips.removeAll { flake in unsaved.contains { $0.head == flake.head && $0.check == flake.check } }
             }
         }
+        if !settled.isEmpty {
+            do { try reruns.settling(settled).save(home: home) } catch { log("\(repo): could not save reruns.json: \(error.localizedDescription)") }
+        }
         guard !flips.isEmpty else { return [] }
-        store.flakes = flips + store.flakes
-        do { try store.pruned().save(home: home) } catch { log("\(repo): could not save flakes.json: \(error.localizedDescription)") }
         for flake in flips {
             log("\(repo)#\(flake.number): check \(flake.check) turned red then green on \(flake.head.prefix(7))")
             do {

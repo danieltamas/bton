@@ -399,9 +399,16 @@ public enum DispatchPlanner {
     }
 
     /// Every job on the key was retried by the owner, so the lease may run it again too.
-    public static func isRetry(_ key: JobKey, jobs: [Job]) -> Bool {
-        let onKey = jobs.filter { $0.key == key }
+    /// `anyRound` counts a check move's jobs on the head under a round too (`isSameRun`).
+    public static func isRetry(_ key: JobKey, jobs: [Job], anyRound: Bool = false) -> Bool {
+        let onKey = jobs.filter { isSameRun($0.key, as: key, anyRound: anyRound) }
         return !onKey.isEmpty && onKey.allSatisfy { $0.retry == true }
+    }
+
+    /// Whether `job` is a run of `key`. A check move's key has no round (`FlowEngine.answersChecks`),
+    /// so with `anyRound` its job on the head under one, from before it lost it, is the same run.
+    public static func isSameRun(_ job: JobKey, as key: JobKey, anyRound: Bool) -> Bool {
+        job == key || (anyRound && headKey(job) == headKey(key))
     }
 
     /// A process's environment in a repo: the repo's variables from this Mac's config, under
