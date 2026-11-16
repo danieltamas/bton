@@ -47,14 +47,12 @@ public struct LeaseRecord: Codable, Hashable, Sendable {
     }
 
     /// Whether a job already ran `key` on this item, on any Mac.
-    /// A key without a round also matches its move on its head under any round: rounds only
-    /// grow, so such a record is from before the move lost its round (`FlowEngine.answersChecks`),
-    /// written by any Mac.
-    public func hasRun(_ key: String) -> Bool {
-        let ran = [self.key].compactMap { $0 } + (done ?? [])
-        if ran.contains(key) { return true }
-        let roundless = key.split(separator: "@").last?.contains("/") == false
-        return roundless && ran.contains { $0.hasPrefix(key + "/") }
+    public func hasRun(_ key: String) -> Bool { self.key == key || done?.contains(key) == true }
+
+    /// Whether a job ran `key`'s move on its head under a review round, on any Mac: for a key
+    /// that has none because its move lost it (`FlowEngine.answersChecks`), the records from before.
+    public func hasRunUnderRound(_ key: String) -> Bool {
+        ([self.key].compactMap { $0 } + (done ?? [])).contains { $0.hasPrefix(key + "/") }
     }
 
     /// What the next record carries forward: this one's key joins `done`.
@@ -177,8 +175,9 @@ public struct LeaseStore: Sendable {
     }
 
     /// `rerun` claims a free lease even though its key already ran: the owner retried it.
+    /// `anyRound` also refuses a key whose move ran on its head under a round (`hasRunUnderRound`).
     public func claim(_ item: LeaseItem, in repo: String, job: UUID = UUID(), key: String? = nil,
-                      rerun: Bool = false) async throws -> ClaimResult {
+                      rerun: Bool = false, anyRound: Bool = false) async throws -> ClaimResult {
         try await failingClosed {
             // A second local claim of the same item loses here, without a push.
             guard let lock = LocalLock(home.url.appendingPathComponent("locks/\(repo.replacingOccurrences(of: "/", with: "__"))__\(item).lock"))
@@ -188,7 +187,8 @@ public struct LeaseStore: Sendable {
                 return .claimed(lease)
             }
             guard let (observed, current) = try await read(item, in: repo) else { return .notClaimed(holder: nil) }
-            guard current.isFree(at: .now), rerun || key.map(current.hasRun) != true else { return .notClaimed(holder: current) }
+            let ran = key.map { current.hasRun($0) || (anyRound && current.hasRunUnderRound($0)) } ?? false
+            guard current.isFree(at: .now), rerun || !ran else { return .notClaimed(holder: current) }
             guard let lease = try await writeFresh(job: job, key: key, done: current.history, item: item, repo: repo,
                                                    expecting: observed) else { return .notClaimed(holder: nil) }
             return .claimed(lease)

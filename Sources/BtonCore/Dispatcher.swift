@@ -122,15 +122,20 @@ actor Dispatcher {
         var candidate = candidate
         let id = UUID()
         let rerun = DispatchPlanner.isRetry(candidate.key, jobs: jobs.all())
+        // A check move's key has no round: its run under one, on any Mac, is the same run. A
+        // person's press starts it all the same, like a retry.
+        let anyRound = candidate.answersChecks && !candidate.pressed
+        let key = candidate.key.description
         let lease: Lease
         do {
-            var claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun)
+            var claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: key, rerun: rerun, anyRound: anyRound)
             if case let .notClaimed(holder?) = claim, await freeOrphan(holder, item: item, repo: candidate.key.repo) {
-                claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: candidate.key.description, rerun: rerun)
+                claim = try await leases.claim(item, in: candidate.key.repo, job: id, key: key, rerun: rerun, anyRound: anyRound)
             }
             switch claim {
             case let .claimed(claimed) where claimed.isLive(): lease = claimed
-            case let .notClaimed(holder) where !rerun && holder?.hasRun(candidate.key.description) == true: return .ran
+            case let .notClaimed(holder) where !rerun && (holder?.hasRun(key) == true || (anyRound && holder?.hasRunUnderRound(key) == true)):
+                return .ran
             default: return .busy
             }
         } catch {

@@ -9,13 +9,17 @@ public struct CheckRerun: Codable, Hashable, Sendable {
     public let at: Date
     /// GitHub took the ask: the head's checks run again, and its move waits for them.
     public let asked: Bool
+    /// The checks that had failed on the head when it was asked: one of them green later, on
+    /// the same head, is a flake (`Flakes.afterRerun`).
+    public let checks: [String]
 
-    public init(repo: String, number: Int, head: String, at: Date, asked: Bool) {
+    public init(repo: String, number: Int, head: String, at: Date, asked: Bool, checks: [String] = []) {
         self.repo = repo
         self.number = number
         self.head = head
         self.at = at
         self.asked = asked
+        self.checks = checks
     }
 }
 
@@ -50,6 +54,16 @@ public struct CheckRerunStore: Equatable, Sendable {
 
     public func pruned(now: Date = .now) -> CheckRerunStore {
         CheckRerunStore(reruns: Array(reruns.sorted { $0.at > $1.at }.prefix(Self.limit)))
+    }
+
+    /// The store with these flakes' checks taken off their asks: a check recorded as a flake is
+    /// not waited on again, whatever the flake store later drops. The ask itself stays.
+    public func settling(_ flakes: [Flake]) -> CheckRerunStore {
+        CheckRerunStore(reruns: reruns.map { rerun in
+            let settled = Set(flakes.filter { $0.head == rerun.head && $0.repo.caseInsensitiveCompare(rerun.repo) == .orderedSame }.map(\.check))
+            return settled.isEmpty ? rerun : CheckRerun(repo: rerun.repo, number: rerun.number, head: rerun.head, at: rerun.at,
+                                                       asked: rerun.asked, checks: rerun.checks.filter { !settled.contains($0) })
+        })
     }
 
     public func rerun(repo: String, head: String) -> CheckRerun? {

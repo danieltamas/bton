@@ -81,6 +81,9 @@ public struct DispatchCandidate: Sendable {
     /// Started by the owner's press (Merge, the move's pill, Retry, Run Next, Take it), not by the
     /// sync on its own: the flow's checks and the merge command see `BTON_PRESSED=1`.
     public var pressed = false
+    /// The move answers the head's red checks (`FlowEngine.answersChecks`): its key has no round,
+    /// and a run of it on the head under one, from before that, counts as its run.
+    public var answersChecks = false
     /// The press is a supervisor's retry carrying the retried job's press over: no person asked for
     /// it now, so a watching session's mark still holds it.
     public var pressInherited = false
@@ -291,6 +294,7 @@ public enum DispatchPlanner {
                                           command: rule.agent?.value(for: move.tier) == nil ? rule.command?.map(filling) : nil,
                                           postComment: rule.post == "comment", timeout: rule.timeout)
         candidate.helpers = rule.helpers ?? []
+        candidate.answersChecks = FlowEngine.answersChecks(move.name, flow: flow)
         // The fix answers a review on the branch: its push is the PR's response. Any other agent
         // move may finish through a comment or a gh call that leaves the head where it was.
         candidate.pushes = move.name == "fix" && candidate.agent != nil
@@ -456,8 +460,8 @@ public enum DispatchPlanner {
         var busyItems = Set(running.map { "\($0.key.repo.lowercased())#\($0.key.item)" })
         // A head whose checks failed stays failed: a new round on it would run them again and post again.
         let checkFailed = Set(jobs.filter(isCheckFailure).map { headKey($0.key) })
-        // A key without a round whose move ran on its head under one: a record from before the
-        // move lost its round. Rounds only grow, so nothing else leaves such a pair.
+        // A check move's key has no round: its job on the head under one is a record from before
+        // the move lost it, and the same run.
         let ranUnderRound = Set(jobs.filter { $0.retry != true && !$0.key.round.isEmpty }.map { headKey($0.key) })
         // An issue's worktree is its own and its PR is not one yet: it does not hold the repo's schedules.
         var activeRepos = Set(running.filter { $0.key.move != IssueIntake.move }.map { $0.key.repo.lowercased() })
@@ -467,7 +471,7 @@ public enum DispatchPlanner {
         let startable = candidates.filter { candidate in
             let repo = candidate.key.repo.lowercased()
             let pressed = first.contains("\(repo)#\(candidate.key.item)")
-            let ranBefore = candidate.pr != nil && candidate.key.round.isEmpty && ranUnderRound.contains(headKey(candidate.key))
+            let ranBefore = candidate.answersChecks && ranUnderRound.contains(headKey(candidate.key))
             return !seen.contains(candidate.key)
                 && (pressed || (!waiting.contains(candidate.key) && !checkFailed.contains(headKey(candidate.key)) && !ranBefore))
                 && !busyItems.contains("\(repo)#\(candidate.key.item)")

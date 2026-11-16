@@ -79,6 +79,21 @@ public enum Flakes {
         }
     }
 
+    /// Every check Bton's own re-run turned green: failed when the head was asked
+    /// (`CheckRerun.checks`), `success` now on that head, and not in `store` yet. `flips` misses
+    /// these: between the red read and the green one the check reads pending for a tick or more.
+    /// The caller takes each one off its ask (`CheckRerunStore.settling`), so it is found once.
+    public static func afterRerun(_ reruns: CheckRerunStore, store: FlakeStore, pullRequests: [PullRequest],
+                                  repo: String, now: Date) -> [Flake] {
+        pullRequests.flatMap { pr -> [Flake] in
+            guard let rerun = reruns.rerun(repo: repo, head: pr.headSha), rerun.asked else { return [] }
+            return pr.checks.filter { check in
+                check.state == .success && rerun.checks.contains(check.name)
+                    && !store.flakes.contains { $0.head == pr.headSha && $0.check == check.name && $0.repo.caseInsensitiveCompare(repo) == .orderedSame }
+            }.map { Flake(repo: repo, check: $0.name, number: pr.number, head: pr.headSha, at: now) }
+        }
+    }
+
     /// Check name to the distinct heads it flipped on within `window`.
     public static func known(_ store: FlakeStore, repo: String, now: Date = .now) -> [String: Int] {
         let since = now.addingTimeInterval(-window)

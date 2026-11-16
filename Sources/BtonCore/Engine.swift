@@ -157,6 +157,8 @@ public actor Engine {
         let pullRequests: [PullRequest]
         let merged: [MergedPullRequest]
         let at: Date
+        /// No later than the moment the PRs' checks were read: what a wait on a check is timed from.
+        let checksAsOf: Date
         var flow: Flow? { status.flow }
     }
 
@@ -295,6 +297,8 @@ public actor Engine {
                 do {
                     let status = Flow.load(try await github.flowFile(repo: repo.slug, branch: repo.branch))
                     snapshot.flows[repo.slug] = status
+                    // Taken before the read: a check read is never dated later than it was made.
+                    let checksAsOf = Date.now
                     let read = try await github.openPullRequests(repo: repo.slug)
                     snapshot.me = read.viewer
                     let pullRequests = read.pullRequests.map { pr in
@@ -308,7 +312,7 @@ public actor Engine {
                     snapshot.merged += merged
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     let kept = RepoRead(repo: repo, status: status, viewer: read.viewer, defaultBranch: read.defaultBranch,
-                                        pullRequests: pullRequests, merged: merged, at: .now)
+                                        pullRequests: pullRequests, merged: merged, at: .now, checksAsOf: checksAsOf)
                     reads.append(kept)
                     lastReads[repo.slug.lowercased()] = kept
                     snapshot.flakes += await recordFlakes(pullRequests, repo: repo.slug)
@@ -392,7 +396,7 @@ public actor Engine {
                         }
                         candidates.removeAll { heldBySession($0, me: read.viewer) }
                         // A held repo starts nothing: its red heads are asked once it can run their move.
-                        if hold == nil { candidates = await rerunningRedChecks(candidates, flow: flow, agents: config.agents, readAt: read.at) }
+                        if hold == nil { candidates = await rerunningRedChecks(candidates, flow: flow, agents: config.agents, readAt: read.checksAsOf) }
                         pending += candidates.map { ($0, clone, flow) }
                         // The Mac that works the repo's issues also takes the next ready one, once its PRs have
                         // their turn; any other Mac only resumes what it holds or what the owner pressed.
@@ -871,10 +875,26 @@ public actor Engine {
     /// to rerun before it changes code. Nothing here softens a check.
     private func recordFlakes(_ pullRequests: [PullRequest], repo: String) async -> [Flake] {
         let slug = repo.lowercased()
-        let flips = Flakes.flips(previous: checkStates[slug] ?? [:], pullRequests: pullRequests, repo: repo, now: .now)
+        var flips = Flakes.flips(previous: checkStates[slug] ?? [:], pullRequests: pullRequests, repo: repo, now: .now)
         checkStates[slug] = Flakes.states(pullRequests)
-        guard !flips.isEmpty else { return [] }
         var store = FlakeStore.load(home: home)
+        // A check Bton's own re-run turned green passed through pending, so no tick saw it flip.
+        if let reruns = CheckRerunStore.load(home: home), !reruns.reruns.isEmpty {
+            // Every asked check now green comes off its ask, one a tick already recorded too: left
+            // on, it would be found again once the flake store drops its record.
+            let settled = Flakes.afterRerun(reruns, store: FlakeStore(), pullRequests: pullRequests, repo: repo, now: .now)
+            if !settled.isEmpty {
+                // Off the ask first: a flake that could not be marked found is not recorded at every sync.
+                do {
+                    try reruns.settling(settled).save(home: home)
+                    flips += Flakes.afterRerun(reruns, store: store, pullRequests: pullRequests, repo: repo, now: .now)
+                        .filter { flake in !flips.contains { $0.head == flake.head && $0.check == flake.check } }
+                } catch {
+                    log("\(repo): could not save reruns.json: \(error.localizedDescription)")
+                }
+            }
+        }
+        guard !flips.isEmpty else { return [] }
         store.flakes = flips + store.flakes
         do { try store.pruned().save(home: home) } catch { log("\(repo): could not save flakes.json: \(error.localizedDescription)") }
         for flake in flips {
@@ -905,7 +925,8 @@ public actor Engine {
             let repo = candidate.key.repo
             let store = CheckRerunStore.load(home: home)
             let pressed = pressedPicks.contains(Self.pick(repo: repo, item: candidate.key.item))
-            switch CheckReruns.step(for: candidate.key, failedChecks: FlowEngine.failedChecks(of: pr), pressed: pressed,
+            let failed = FlowEngine.failedChecks(of: pr)
+            switch CheckReruns.step(for: candidate.key, failedChecks: failed, pressed: pressed,
                                     jobs: jobs.all(), store: store, now: readAt) {
             case .start:
                 kept.append(candidate)
@@ -916,11 +937,11 @@ public actor Engine {
                 var outcome = "not sent"
                 do {
                     // Recorded as not taken first: a crash between the two never asks again.
-                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: false))
+                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: false, checks: failed))
                     let workflows = try await github.rerunFailedRuns(repo: repo, sha: pr.headSha)
                     asked = true
                     outcome = "asked GitHub to run \(workflows.joined(separator: ", ")) again"
-                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: true))
+                    try record(CheckRerun(repo: repo, number: pr.number, head: pr.headSha, at: .now, asked: true, checks: failed))
                 } catch {
                     outcome = asked ? outcome : "no re-run: \(error.localizedDescription)"
                 }

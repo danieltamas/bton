@@ -294,10 +294,18 @@ public struct GitHubClient: Sendable {
         guard !failed.isEmpty else {
             throw Failure.noFailedRun(sha: sha)
         }
+        // A run GitHub refuses after it took another is not a press that did nothing: the ones it
+        // took run again, and are what is named.
+        var asked: [String] = []
         for run in failed {
-            _ = try await gh(["run", "rerun", String(run.id), "--repo", repo, "--failed"])
+            do {
+                _ = try await gh(["run", "rerun", String(run.id), "--repo", repo, "--failed"])
+                asked.append(run.workflow)
+            } catch {
+                if run.id == failed.last?.id, asked.isEmpty { throw error }
+            }
         }
-        return failed.map(\.workflow)
+        return asked
     }
 
     /// The workflow runs that ended in failure (or were cancelled or timed out), from `gh run list` JSON.
