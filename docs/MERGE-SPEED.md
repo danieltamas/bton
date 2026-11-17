@@ -116,7 +116,8 @@ Acceptance tests for items 2-5: `Tests/BtonCoreTests/MergeFixesAcceptanceTests.s
    `checks_green:<name,...>` (docs/FLOW.md "Predicates") reads the head commit's check runs from the
    same GraphQL read as the PR, so the merge move is not due until they are green, and the command
    re-reads them on the exact head right before it runs. Fail closed on pending, missing, failed,
-   truncated, a PR that edits a workflow, or an API error. Lexito's merge rule becomes
+   truncated, or an API error (until 2026-11-18 also on a PR that edits a workflow; LOG.md says
+   why that went). Lexito's merge rule becomes
    `["approved_current_head", "checks_green:gate"]` and its `beforeMerge` drops `check.sh --fast`.
    Acceptance tests: `Tests/BtonCoreTests/ChecksGreenAcceptanceTests.swift`.
 2. **Done: no blind retry of a timed-out command move.** This is what cost #406 its extra 10 minutes:

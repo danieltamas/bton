@@ -400,12 +400,11 @@ public enum FlowEngine {
 
         var latest: Review? { reviews.max { $0.createdAt < $1.createdAt } }
 
-        /// A `pull_request` workflow runs the PR's copy of the workflow file, so a PR that edits
-        /// one is not vouched for by its own check; more checks than were read, or more files, is
-        /// a guess, and a gate never passes on a guess.
-        var checksReadable: Bool {
-            !pr.checksTruncated && !pr.changedFilesTruncated && !pr.changedFiles.contains { $0.hasPrefix(".github/workflows/") }
-        }
+        /// More checks on the head than were read is a guess, and a gate never passes on a guess.
+        /// A PR that edits a workflow is not one: its check ran the PR's copy of the workflow as
+        /// it ran the PR's copy of every script the workflow calls, and the review vouches for
+        /// both. A flow that wants another reader on CI changes raises their tier (`tier.paths`).
+        var checksReadable: Bool { !pr.checksTruncated }
 
         /// The reviews since the latest decision; a decision itself is never a round.
         var rounds: [Review] {

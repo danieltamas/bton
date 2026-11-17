@@ -132,10 +132,10 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 | `draft` | the PR is a draft |
 | `conflicting` | GitHub reports the PR conflicts with its base. `UNKNOWN` (GitHub still working it out after a push) does not count |
 | `no_review_or_response_newer` | no review counts yet, or the current head does not match the latest review's, or a `fixed` comment is newer than the latest review |
-| `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head, or a commit the current head reaches through merge commits alone (a conflict fix merging the base in), so a fixed conflict goes straight to the merge and not back to review |
+| `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head, or a commit the current head reaches through merge commits alone (a conflict fix merging the base in), so a fixed conflict goes straight to the merge and not back to review. No review reads what such a merge commit changes, and its other parent is not checked to be the base: on that path the checks are all that test what merges |
 | `latest_review_changes_or_blocked` | the latest review's verdict is `changes` or `blocked` |
 | `changes_rounds_at_least:<n>` | the latest review's verdict is `changes` or `blocked`, and at least `n` of the PR's counting reviews since the latest decision have a `changes` or `blocked` verdict |
-| `checks_green:<name>[,<name>...]` | every named GitHub check (a check run's name, or a commit status's context) is green on the head commit: completed with the conclusion SUCCESS, or the status SUCCESS. Pending, failed, cancelled, skipped, neutral or absent is not green, nor is a head with more checks than Bton read (50), nor a PR that changes a file under `.github/workflows/` or more files than were read: a `pull_request` workflow runs the PR's own copy of the workflow, so such a PR is not vouched for by its check. A re-run replaces the older run of the same name. Names are trimmed; an empty name makes the flow invalid. A command move whose rule has this predicate reads the checks again on the exact head right before the command and refuses (`checks not green: gate pending`) when any is not green or the read fails |
+| `checks_green:<name>[,<name>...]` | every named GitHub check (a check run's name, or a commit status's context) is green on the head commit: completed with the conclusion SUCCESS, or the status SUCCESS. Pending, failed, cancelled, skipped, neutral or absent is not green, nor is a head with more checks than Bton read (50). A PR that changes a file under `.github/workflows/` is gated like any other. Its checks ran the PR's own copy of the workflows (a check is matched by name, and a PR can change what a name runs or add a workflow with that name), as they ran the PR's own copy of every script a workflow calls, so the review is what vouches for a CI change, where one read that head: an approval carried over a merge commit (`approved_current_head`) did not, and a merge asked on one's own PR (Dispatch, below) needs none. To make the flow's merge move wait for a reader other than the author on CI changes, put `.github/**` under a `tier.paths` tier whose reviews are `notByAuthor` (Tier floored by paths, above). That holds for a counting review only: a decision counts from the PR's author too, and the two paths just named ask no reader. A re-run replaces the older run of the same name. Names are trimmed; an empty name makes the flow invalid. A command move whose rule has this predicate reads the checks again on the exact head right before the command and refuses (`checks not green: gate pending`) when any is not green or the read fails |
 
 "Latest" is by comment creation time.
 
@@ -357,8 +357,13 @@ reports mergeable shows **Merge** only when `merge` is its move (the flow has a 
 dispatch, the PR is not a draft, targets `base` and its author is trusted): it runs that
 dispatch (the repo's merge command and its checks decide), and a push before it starts cancels
 it. GitHub's mergeable says nothing about the review a PR still waits on, so a `review` or
-`fix` move never offers Merge. **Fix conflicts** is the one button beside the pill, since a
-conflict holds every move. A move that ran here on this head and succeeded while it is still
+`fix` move never offers Merge. A merge already asked for on a PR of mine is not taken back,
+though: the row's Merge, a Retry on its failed merge, or the supervisor's retry of one runs on
+green checks whatever the PR's move is by then, and asks for no review. The supervisor's retry
+does so also for a merge the flow started and nobody pressed, and a restart puts a retry that
+has not run yet back in line for two hours after the supervisor asked for it. **Fix conflicts**
+is the one button beside the pill, since a conflict holds every move.
+A move that ran here on this head and succeeded while it is still
 the PR's move changed nothing (the fix agent found nothing it could fix, and said why): the row
 says so with the job's report a click away, and the pill offers the move again.
 

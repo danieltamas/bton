@@ -397,7 +397,7 @@ actor Dispatcher {
                 if let pr = candidate.pr {
                     var refusal = try await headRefusal(repo: candidate.key.repo, pr: pr.number, expected: candidate.key.head, job: job.id)
                     if refusal == nil {
-                        refusal = try await checksRefusal(candidate.requiredChecks, pr: pr, head: candidate.key.head, job: job.id)
+                        refusal = try await checksRefusal(candidate.requiredChecks, repo: candidate.key.repo, head: candidate.key.head, job: job.id)
                     }
                     if refusal == nil, candidate.move.name == "merge", let labels = flow?.keepOpen?.labels {
                         refusal = try await keepOpenRefusal(labels, repo: candidate.key.repo, pr: pr.number, job: job.id)

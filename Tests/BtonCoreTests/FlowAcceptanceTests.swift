@@ -146,17 +146,24 @@ struct FlowAcceptanceTests {
         #expect(FlowEngine.move(for: pr, flow: flow)?.name == (["gate", "lint"].contains(scenario) ? "fix" : nil))
     }
 
-    @Test(arguments: ["checks_red", "checks_red:gate"], ["checks truncated", "files truncated", "workflow"])
-    func checksRedNeverUsesAnUnreadableRollup(predicate: String, unreadable: String) throws {
+    @Test(arguments: ["checks_red", "checks_red:gate"], ["ordinary", "files truncated", "workflow"])
+    func checksRedRequiresCompleteRollupRegardlessOfChangedFiles(predicate: String, files: String) throws {
         let flow = try #require(Flow.load(FlowFixture.data(overrides: [
             "moves": [["move": "fix", "when": [predicate], "who": "author"]]
         ])).flow)
         var pr = try FlowFixture.pr()
         pr.checks = [CheckResult(name: "gate", state: .failure)]
-        pr.checksTruncated = unreadable == "checks truncated"
-        pr.changedFilesTruncated = unreadable == "files truncated"
-        pr.changedFiles = unreadable == "workflow" ? [".github/workflows/gate.yml"] : []
-        #expect(FlowEngine.move(for: pr, flow: flow) == nil)
+        pr.changedFilesTruncated = files == "files truncated"
+        pr.changedFiles = files == "workflow" ? [".github/workflows/gate.yml"] : []
+        for truncated in [false, true] {
+            pr.checksTruncated = truncated
+            let move = FlowEngine.move(for: pr, flow: flow)
+            if truncated {
+                #expect(move == nil)
+            } else {
+                #expect(move?.name == "fix")
+            }
+        }
     }
 
     @Test(arguments: [false, true])

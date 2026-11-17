@@ -171,8 +171,6 @@ public enum Supervision {
             known = (.none, "the PR closed while the move ran: nothing to retry")
         } else if detail.hasPrefix("checks not green: ") {
             known = (.none, "CI is not green on this head: the move is due again when it is")
-        } else if detail.hasPrefix("checks not trusted: ") {
-            known = (.escalate, "the PR's checks cannot vouch for it (too many files, or it edits a workflow): a person merges or reviews it")
         } else if detail.hasSuffix(" minutes and was stopped") {
             known = (.escalate, "a check or command ran past the move's timeoutMinutes: raise it or speed the command up, then press Retry")
         } else if detail.hasPrefix("environment: ") {

@@ -51,20 +51,27 @@ struct ChecksGreenAcceptanceTests {
         #expect(!decoded.truncated)
     }
 
-    @Test(arguments: ["success", "pending", "missing", "truncated", "workflow", "files truncated"])
-    func mergeRequiresTrustedCompleteGreenChecks(scenario: String) throws {
-        var pr = ChecksGreenFixture.pr()
-        pr.checks = [CheckResult(name: "gate", state: .success)]
+    @Test(arguments: ["success", "pending", "missing", "truncated", "failed"], ["ordinary", "workflow", "files truncated"])
+    func mergeRequiresCompleteGreenChecks(scenario: String, files: String) throws {
+        var pr = try ChecksGreenFixture.decoded(rollup: ChecksGreenFixture.object(ChecksGreenFixture.success), approved: true)
+        if files == "workflow" { pr.changedFiles = [".github/workflows/gate.yml"] }
+        if files == "files truncated" { pr.changedFilesTruncated = true }
         switch scenario {
         case "pending": pr.checks = [CheckResult(name: "gate", state: .pending)]
         case "missing": pr.checks = []
         case "truncated": pr.checksTruncated = true
-        case "workflow": pr.changedFiles = [".github/workflows/gate.yml"]
-        case "files truncated": pr.changedFilesTruncated = true
+        case "failed": pr.checks = [CheckResult(name: "gate", state: .failure)]
         default: break
         }
-        let move = FlowEngine.move(for: pr, flow: try ChecksGreenFixture.flow())
-        #expect(move?.name == (scenario == "success" ? "merge" : nil))
+        let move = FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow())
+        if scenario == "success" || scenario == "failed" {
+            let merge = try #require(move)
+            #expect(merge.name == "merge")
+            #expect(merge.hasDispatch == (scenario == "success"))
+            #expect(merge.redChecks == (scenario == "failed" ? ["gate"] : []))
+        } else {
+            #expect(move == nil)
+        }
     }
 
     @Test func redGateShowsBlockedMergeWithRuleOwner() throws {
@@ -101,13 +108,21 @@ struct ChecksGreenAcceptanceTests {
         let flow = try ChecksGreenFixture.flow(["approved_current_head", "checks_green:gate,lint"])
         #expect(FlowEngine.move(for: pr, flow: flow)?.redChecks == ["gate", "lint"])
     }
-    @Test(arguments: ["checks truncated", "files truncated", "workflow"])
-    func untrustedRedChecksDoNotShowBlockedMerge(scenario: String) throws {
+    @Test(arguments: ["ordinary", "files truncated", "workflow"], [false, true])
+    func completeRedChecksShowBlockedMerge(scenario: String, checksTruncated: Bool) throws {
         var pr = try ChecksGreenFixture.redPR()
-        if scenario == "checks truncated" { pr.checksTruncated = true }
+        pr.checksTruncated = checksTruncated
         if scenario == "files truncated" { pr.changedFilesTruncated = true }
         if scenario == "workflow" { pr.changedFiles = [".github/workflows/gate.yml"] }
-        #expect(FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow()) == nil)
+        let move = FlowEngine.move(for: pr, flow: try ChecksGreenFixture.mergeFlow())
+        if checksTruncated {
+            #expect(move == nil)
+        } else {
+            let merge = try #require(move)
+            #expect(merge.name == "merge")
+            #expect(!merge.hasDispatch)
+            #expect(merge.redChecks == ["gate"])
+        }
     }
     @Test func realMatchWinsOverEarlierBlockedRule() throws {
         let data = try ChecksGreenFixture.flowData(["approved_current_head", "checks_green:gate"])
@@ -229,17 +244,55 @@ struct ChecksGreenAcceptanceTests {
         #expect(!f.text(f.root.appendingPathComponent("all-argv")).contains("pr comment"))
     }
 
-    @Test(arguments: ["workflow", "files truncated"])
-    func dispatcherRefusesUntrustedChecksDespiteGreenAnswer(scenario: String) async throws {
+    @Test(arguments: ["ordinary", "workflow", "files truncated"])
+    func dispatcherRefusesTruncatedFreshChecksRegardlessOfChangedFiles(files: String) async throws {
         let f = try await ChecksGreenDispatchFixture.make()
         defer { f.remove() }
-        try ChecksGreenFixture.checksAnswer(ChecksGreenFixture.object(ChecksGreenFixture.success))
-            .write(to: f.root.appendingPathComponent("checks-answer"))
-        let id = try await f.start(required: ["gate"], untrusted: scenario)
+        let rollup = ChecksGreenFixture.rollup([ChecksGreenFixture.run()], total: 2)
+        try ChecksGreenFixture.checksAnswer(rollup).write(to: f.root.appendingPathComponent("checks-answer"))
+        let id = try await f.start(required: ["gate"], files: files)
         let job = try await f.finished(id)
         #expect(job.status == .failed)
-        #expect((job.detail ?? "").hasPrefix("checks not trusted"))
         #expect(!FileManager.default.fileExists(atPath: f.started.path))
+        let detail = job.detail ?? ""
+        #expect(detail.hasPrefix("checks not green:"))
+        #expect(detail.contains("more checks than were read"))
+        let calls = f.text(f.root.appendingPathComponent("checks-argv"))
+        #expect(calls.contains("api\ngraphql\n"))
+        #expect(calls.contains("oid=\(f.head)\n"))
+    }
+
+    @Test(arguments: ["workflow", "files truncated"], ["success", "pending", "missing", "failed", "read failure"])
+    func dispatcherUsesFreshChecksRegardlessOfChangedFiles(files: String, scenario: String) async throws {
+        let f = try await ChecksGreenDispatchFixture.make()
+        defer { f.remove() }
+        let rollup: [String: Any]
+        switch scenario {
+        case "pending": rollup = ChecksGreenFixture.rollup([ChecksGreenFixture.run(status: "IN_PROGRESS", conclusion: nil)])
+        case "missing": rollup = ChecksGreenFixture.rollup([ChecksGreenFixture.run(name: "lint")])
+        case "failed": rollup = try ChecksGreenFixture.object(ChecksGreenFixture.failure)
+        default: rollup = try ChecksGreenFixture.object(ChecksGreenFixture.success)
+        }
+        try ChecksGreenFixture.checksAnswer(rollup).write(to: f.root.appendingPathComponent("checks-answer"))
+        if scenario == "read failure" { try Data().write(to: f.root.appendingPathComponent("fail-checks")) }
+        let id = try await f.start(required: ["gate"], files: files)
+        let job = try await f.finished(id)
+        let succeeds = scenario == "success"
+        #expect(job.status == (succeeds ? .succeeded : .failed))
+        #expect(FileManager.default.fileExists(atPath: f.started.path) == succeeds)
+        let calls = f.text(f.root.appendingPathComponent("checks-argv"))
+        #expect(calls.contains("api\ngraphql\n"))
+        #expect(calls.contains("oid=\(f.head)\n"))
+        #expect(calls.contains("owner=synthetic\n"))
+        #expect(calls.contains("name=project\n"))
+        let detail = job.detail ?? ""
+        #expect(!detail.hasPrefix("checks not trusted"))
+        switch scenario {
+        case "success": #expect(f.text(f.store.logURL(id)).contains("checks gate green"))
+        case "read failure": #expect(detail.hasPrefix("could not read checks"))
+        default: #expect(detail.hasPrefix("checks not green:"))
+        }
+        #expect(!f.text(f.root.appendingPathComponent("all-argv")).contains("pr comment"))
     }
 }
 
@@ -298,7 +351,7 @@ private enum ChecksGreenFixture {
             "body": "Tier: feature", "updatedAt": "2026-10-28T11:00:00Z",
             "authorAssociation": "MEMBER", "author": ["login": "owner"],
             "labels": ["nodes": []], "assignees": ["nodes": []], "comments": ["nodes": comments],
-            // The real query always carries `files`; without it the decoder reads "too many files", which gates close.
+            // Match the real query's complete changed-file list.
             "files": ["totalCount": 0, "nodes": []]
         ]
         if includeHead { node["headCommit"] = ["nodes": [["commit": ["statusCheckRollup": rollup]]]] }
@@ -358,11 +411,11 @@ private struct ChecksGreenDispatchFixture {
         } catch { try? FileManager.default.removeItem(at: root); throw error }
     }
 
-    func start(required: [String], untrusted: String? = nil) async throws -> UUID {
+    func start(required: [String], files: String? = nil) async throws -> UUID {
         // Deliberately bypass the planner: only the fresh remote read can authorize this command.
         var pr = ChecksGreenFixture.pr(head: head)
-        if untrusted == "workflow" { pr.changedFiles = [".github/workflows/gate.yml"] }
-        if untrusted == "files truncated" { pr.changedFilesTruncated = true }
+        if files == "workflow" { pr.changedFiles = [".github/workflows/gate.yml"] }
+        if files == "files truncated" { pr.changedFilesTruncated = true }
         #expect(pr.checks.isEmpty)
         var candidate = DispatchCandidate(target: .pullRequest(pr),
             move: Move(name: "merge", owner: "owner", ownerFromRotation: false, tier: "feature", hasDispatch: true),

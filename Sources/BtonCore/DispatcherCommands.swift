@@ -176,15 +176,8 @@ extension Dispatcher {
     /// GitHub for `head` now. The tick's snapshot is minutes old by the time the checks above
     /// have run; a re-run that failed since, or a check that was still pending, must not merge.
     /// A failed read refuses too; a Stop during it is thrown.
-    func checksRefusal(_ required: [String], pr: PullRequest, head: String, job id: UUID) async throws -> String? {
+    func checksRefusal(_ required: [String], repo: String, head: String, job id: UUID) async throws -> String? {
         guard !required.isEmpty else { return nil }
-        let repo = pr.repo
-        // The same guard as the predicate's, for the owner's Merge press too: a PR that edits a
-        // workflow ran its own check, and a file list cut short may hide such an edit.
-        if pr.changedFilesTruncated { return "checks not trusted: the PR changes more files than were read; nothing was run" }
-        if let workflow = pr.changedFiles.first(where: { $0.hasPrefix(".github/workflows/") }) {
-            return "checks not trusted: the PR edits \(workflow), which ran them; nothing was run"
-        }
         let now: (checks: [CheckResult], truncated: Bool)
         do {
             now = try await github.checks(repo: repo, sha: head)

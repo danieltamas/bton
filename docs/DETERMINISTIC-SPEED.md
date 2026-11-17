@@ -98,7 +98,7 @@ no blind retry of a timed-out command.
 
 8. **Done (0.15.0): `Supervision.knownAnswer` reads the structured details Bton itself writes
    (`waiting:`, a program not on PATH, a logged-out agent, a moved head, a closed PR, checks not
-   green or not trusted, a check past its limit, an invalid environment, a failed check) and
+   green, a check past its limit, an invalid environment, a failed check) and
    records the known verdict on the job at finish; such a job is never supervised. Agent text
    (`agent exited`, `timed out`, no verdict, a lost lease) stays with the model. The original
    item: route known operational failures past the supervisor.** `Supervision.swift` spent a

@@ -29,8 +29,6 @@ struct KnownFailuresAcceptanceTests {
              "the PR closed while the move ran: nothing to retry"),
             ("checks not green: gate pending; nothing was run", .none,
              "CI is not green on this head: the move is due again when it is"),
-            ("checks not trusted: the PR edits a workflow", .escalate,
-             "the PR's checks cannot vouch for it (too many files, or it edits a workflow): a person merges or reviews it"),
             ("check `bash scripts/check.sh` ran 40 minutes and was stopped", .escalate,
              "a check or command ran past the move's timeoutMinutes: raise it or speed the command up, then press Retry"),
             ("environment: invalid variable name BAD-NAME", .escalate,
@@ -46,7 +44,8 @@ struct KnownFailuresAcceptanceTests {
             #expect(verdict.outcome == nil, "\(detail)")
         }
         let unmatched: [String?] = [nil, "agent exited 1", "timed out", "lease lost: expired",
-            "final message names no review heading", "posting the review failed: x", "checksum mismatch"]
+            "final message names no review heading", "posting the review failed: x", "checksum mismatch",
+            "checks not trusted: the PR edits a workflow"]
         for detail in unmatched {
             #expect(Supervision.knownAnswer(for: job(detail: detail)) == nil)
         }
