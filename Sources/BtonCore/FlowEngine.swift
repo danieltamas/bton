@@ -161,6 +161,17 @@ public enum FlowEngine {
         }
     }
 
+    /// Why the PR's approval does not count for its head, when the approved commit sits under a
+    /// merge commit no review is carried over; nil for any other PR. The flow asks for a review of
+    /// such a head without a word, so the log and `bton moves` say this.
+    public static func uncarriedApproval(of pr: PullRequest, flow: Flow) -> String? {
+        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
+        guard let latest = facts.latest, latest.verdict == .approve, !facts.matchesHead(latest),
+              pr.mergeOnlyAncestors.contains(where: { $0.lowercased().hasPrefix(latest.head) }) else { return nil }
+        return "the approval of \(latest.head.prefix(7)) does not carry to \(pr.headSha.prefix(7)): "
+            + (pr.carryRefusal ?? "no clean merge of the base leads to it")
+    }
+
     /// The first rule whose conditions all hold for the PR.
     static func rule(for pr: PullRequest, flow: Flow) -> MoveRule? {
         let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
@@ -435,9 +446,11 @@ public enum FlowEngine {
             pr.comments.filter { isTrusted($0) && firstLine(of: $0.body).hasPrefix(flow.fixed) }.map(\.createdAt).max()
         }
 
+        /// The review names the head, or a commit the head only adds git's own merges of the base
+        /// to (`PullRequest.carriedHeads`). GitHub's list of merge parents is never enough.
         func matchesHead(_ review: Review) -> Bool {
             pr.headSha.lowercased().hasPrefix(review.head)
-                || pr.mergeOnlyAncestors.contains { $0.lowercased().hasPrefix(review.head) }
+                || pr.carriedHeads.contains { $0.lowercased().hasPrefix(review.head) }
         }
 
         func holds(_ predicate: String) -> Bool {

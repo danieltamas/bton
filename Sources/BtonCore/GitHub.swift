@@ -23,6 +23,9 @@ public struct GitHubClient: Sendable {
 
     let ghPath: String
     let runner = ProcessRunner()
+    /// Shared by the copies of this client, so a merge commit checked on one read is not checked
+    /// again on the next.
+    let mergeCarry = MergeCarry()
 
     public init() throws {
         guard let path = Self.locateGh(resolve: Executables.resolve, candidates: Self.ghCandidates) else {
@@ -45,7 +48,12 @@ public struct GitHubClient: Sendable {
     /// One GraphQL query per repo per tick (one per 100 open PRs): everything the flow needs for
     /// every open PR. The last 100 comments, not the first, so a long PR's latest review is never
     /// paged off.
-    public func openPullRequests(repo: String) async throws -> OpenPullRequests {
+    ///
+    /// `clone` is the repo's clone on this Mac: where a head that merges the base in is checked,
+    /// so a review of the commit under it still counts (`MergeCarry`). It has no default: every
+    /// caller judges a move from this read, and without the clone no review is carried over a
+    /// merge commit.
+    public func openPullRequests(repo: String, clone: URL?) async throws -> OpenPullRequests {
         let parts = repo.split(separator: "/").map(String.init)
         var pullRequests: [PullRequest] = [], after: String?
         while true {
@@ -58,6 +66,11 @@ public struct GitHubClient: Sendable {
             guard let next = page.nextPage else {
                 for index in pullRequests.indices where pullRequests[index].changedFilesTruncated {
                     await readAllFiles(of: &pullRequests[index])
+                }
+                let verdicts = await mergeCarry.verdicts(for: pullRequests, clone: clone, ghPath: ghPath)
+                for (index, verdict) in verdicts.enumerated() {
+                    pullRequests[index].carriedHeads = verdict.carried
+                    pullRequests[index].carryRefusal = verdict.refusal
                 }
                 return OpenPullRequests(viewer: page.viewer, defaultBranch: page.defaultBranch,
                                         pullRequests: pullRequests)
@@ -343,6 +356,7 @@ public struct GitHubClient: Sendable {
           pageInfo { hasNextPage endCursor }
           nodes {
             number title url isDraft headRefOid headRefName baseRefName body createdAt updatedAt authorAssociation mergeable isCrossRepository
+            baseRef { target { oid } }
             author { login }
             labels(first: 100) { nodes { name } }
             assignees(first: 10) { nodes { login } }
@@ -450,6 +464,8 @@ public struct GitHubClient: Sendable {
             let number: Int, title: String, url: URL, isDraft: Bool, headRefOid: String, headRefName: String
             let baseRefName: String, body: String, createdAt: Date?, updatedAt: Date, authorAssociation: String, mergeable: String?
             let isCrossRepository: Bool?
+            /// Null once the base branch is gone.
+            let baseRef: BaseRef?
             let author: Author?, labels: Nodes<Name>, assignees: Nodes<Author>, comments: Nodes<Comment>
             let reviewRequests: Nodes<ReviewRequest>?
             let commits: Nodes<CommitNode>?
@@ -460,6 +476,7 @@ public struct GitHubClient: Sendable {
             struct Commit: Decodable { let statusCheckRollup: Rollup? }
             let commit: Commit
         }
+        struct BaseRef: Decodable { let target: CommitNode.Oid? }
         struct Files: Decodable { let totalCount: Int; let nodes: [Path] }
         /// A team's request decodes as a reviewer without a login.
         struct ReviewRequest: Decodable { let requestedReviewer: TeamOrUser? }
@@ -485,9 +502,9 @@ public struct GitHubClient: Sendable {
         return decoder
     }
 
-    /// The commits the head reaches through merge commits alone: what a conflict fix (the base merged
-    /// in) leaves under it. A review of one of them still stands for the head, as a reviewer would
-    /// carry it over; any other commit above a reviewed one makes the head new.
+    /// The commits the head reaches through merge commits alone, as GitHub lists them: what merging
+    /// the base in leaves under it. Only a hint that there is a merge to look at: whether a review
+    /// of one of them still counts for the head is decided in the clone (`MergeCarry`).
     private static func mergeOnlyAncestors(of head: String, in commits: [OpenResponse.CommitNode.Commit]) -> [String] {
         let byOid = Dictionary(commits.compactMap { commit in commit.oid.map { ($0, commit) } }, uniquingKeysWith: { first, _ in first })
         var found: [String] = []
@@ -520,6 +537,7 @@ public struct GitHubClient: Sendable {
             pr.requestedReviewers = row.reviewRequests?.nodes.compactMap(\.requestedReviewer?.login) ?? []
             pr.headCommittedAt = row.commits?.nodes.last?.commit.committedDate
             pr.mergeOnlyAncestors = Self.mergeOnlyAncestors(of: row.headRefOid, in: row.commits?.nodes.map(\.commit) ?? [])
+            pr.baseSha = row.baseRef?.target?.oid
             pr.changedFiles = row.files?.nodes.map(\.path) ?? []
             // No file list at all (a partial answer) counts as too many to read: it never hides a sensitive path.
             pr.changedFilesTruncated = row.files.map { $0.totalCount > $0.nodes.count } ?? true

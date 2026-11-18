@@ -192,7 +192,8 @@ actor Dispatcher {
         }
         // Under the lease, the review as it is now: still the same teammate's, still waiting.
         // Then GitHub names me, and the PR says so, before the review runs.
-        if let plan = candidate.handover, let flow, let reason = await takeOver(plan, candidate: candidate, flow: flow, lease: lease) {
+        if let plan = candidate.handover, let flow,
+           let reason = await takeOver(plan, candidate: candidate, clone: clone, flow: flow, lease: lease) {
             log("\(candidate.key): not taken over, \(reason)")
             try? await leases.release(lease, ran: false)
             return .busy

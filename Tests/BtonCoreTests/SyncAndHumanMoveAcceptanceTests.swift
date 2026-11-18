@@ -125,7 +125,7 @@ struct SyncAndHumanMoveAcceptanceTests {
         let fixture = try SyncHumanFixture(failBMerged: true, failingRepoFirst: failingRepoFirst)
         defer { fixture.remove() }
         // Prove the open query succeeds and has data before exercising the merged-query failure.
-        let open = try await GitHubClient(ghPath: fixture.gh.path).openPullRequests(repo: "owner/b")
+        let open = try await GitHubClient(ghPath: fixture.gh.path).openPullRequests(repo: "owner/b", clone: nil)
         #expect(open.pullRequests.map(\.id) == ["owner/b#1"])
         let reads = SyncHumanReads()
         let engine = try fixture.engine()

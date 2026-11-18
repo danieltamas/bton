@@ -85,6 +85,8 @@ public actor Engine {
     private var heldNoted: Set<JobKey> = []
     /// The heads whose wait the log already has (`<repo>#<number>@<head>`).
     private var waitsNoted: Set<String> = []
+    /// The approvals the log already has as not carried to a head, each with its reason.
+    private var uncarriedNoted: Set<String> = []
     /// The PRs (picks) whose due move this tick left to a watching session, for their rows.
     private var heldThisTick: Set<String> = []
     /// Steered retries are put back in line once, at the first tick after a start.
@@ -307,7 +309,7 @@ public actor Engine {
                     snapshot.flows[repo.slug] = status
                     // Taken before the read: a check read is never dated later than it was made.
                     let checksAsOf = Date.now
-                    let read = try await github.openPullRequests(repo: repo.slug)
+                    let read = try await github.openPullRequests(repo: repo.slug, clone: repo.clone)
                     snapshot.me = read.viewer
                     let pullRequests = read.pullRequests.map { FlowEngine.judged($0, flow: status.flow) }
                     let merged = try await github.mergedPullRequests(repo: repo.slug)
@@ -315,6 +317,7 @@ public actor Engine {
                     snapshot.openPullRequests += pullRequests
                     snapshot.merged += merged
                     noteWaits(pullRequests)
+                    if let flow = status.flow { noteUncarriedApprovals(pullRequests, flow: flow) }
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     let kept = RepoRead(repo: repo, status: status, viewer: read.viewer, defaultBranch: read.defaultBranch,
                                         pullRequests: pullRequests, merged: merged, at: .now, checksAsOf: checksAsOf)
@@ -864,6 +867,16 @@ public actor Engine {
         for pr in pullRequests {
             guard let wait = pr.waiting, waitsNoted.insert("\(pr.id)@\(pr.headSha)").inserted else { continue }
             log("\(pr.id): \(wait.summary)")
+        }
+    }
+
+    /// An approval that does not count for a head above it says why in the log, once per head and
+    /// reason: the row only shows the review the flow asks for again.
+    private func noteUncarriedApprovals(_ pullRequests: [PullRequest], flow: Flow) {
+        for pr in pullRequests {
+            guard let note = FlowEngine.uncarriedApproval(of: pr, flow: flow),
+                  uncarriedNoted.insert("\(pr.id)@\(pr.headSha) \(note)").inserted else { continue }
+            log("\(pr.id): \(note)")
         }
     }
 

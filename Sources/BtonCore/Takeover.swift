@@ -26,10 +26,9 @@ extension Engine {
     public func take(repo: String, number: Int, from owner: String?, pressed: Bool = true) async throws -> Move {
         let config = try BtonConfig.loadOrCreate(home: home)
         let watched = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }
-        let branch = watched?.branch
         // Read before the claim, so a stale row writes nothing, and again under the lease: another
         // Mac may take or start the move while the claim is pushed.
-        let me = try await takeable(repo: repo, number: number, from: owner, branch: branch).me
+        let me = try await takeable(repo: repo, number: number, from: owner, watched: watched).me
         let item = "pr-\(number)"
         let leases = try await dispatcher(me: me, config: config).leases
         guard let lease = LeaseItem(item), case let .claimed(held)? = try? await leases.claim(lease, in: repo)
@@ -47,7 +46,7 @@ extension Engine {
         let taken: Move
         let wrote: String
         do {
-            let fresh = try await takeable(repo: repo, number: number, from: owner, branch: branch)
+            let fresh = try await takeable(repo: repo, number: number, from: owner, watched: watched)
             // A move taken onto a Mac whose services are down waits there for as long as they are: the
             // teammate keeps it, pressed or automatic. Probed last, right before the write.
             if let watched, let hold = await environmentHold(of: watched) { throw TakeError.held(hold) }
@@ -74,9 +73,9 @@ extension Engine {
     /// The open PR, its move once taken, the field that owns it and my login, while the PR's move
     /// still has the owner the row showed and is one I can take.
     private func takeable(repo: String, number: Int, from owner: String?,
-                          branch: String?) async throws -> (me: String, pr: PullRequest, move: Move, kind: String) {
-        let flow = Flow.load(try await github.flowFile(repo: repo, branch: branch)).flow
-        let read = try await github.openPullRequests(repo: repo)
+                          watched: WatchedRepo?) async throws -> (me: String, pr: PullRequest, move: Move, kind: String) {
+        let flow = Flow.load(try await github.flowFile(repo: repo, branch: watched?.branch)).flow
+        let read = try await github.openPullRequests(repo: repo, clone: watched?.clone)
         guard let flow, let pr = read.pullRequests.first(where: { $0.number == number }),
               let current = FlowEngine.move(for: pr, flow: flow),
               current.owner?.lowercased() == owner?.lowercased(),
@@ -93,8 +92,8 @@ extension Engine {
     /// under its lease. No comment: the assignment is the message. Checked against a fresh read.
     public func give(repo: String, number: Int, to login: String) async throws {
         let config = try BtonConfig.loadOrCreate(home: home)
-        let branch = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
-        let me = try await givable(repo: repo, number: number, to: login, branch: branch).me
+        let watched = config.repos.first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }
+        let me = try await givable(repo: repo, number: number, to: login, watched: watched).me
         let leases = try await dispatcher(me: me, config: config).leases
         guard let lease = LeaseItem("pr-\(number)"), case let .claimed(held)? = try? await leases.claim(lease, in: repo)
         else { throw TakeError.busy }
@@ -108,7 +107,7 @@ extension Engine {
             }
         }
         do {
-            let fresh = try await givable(repo: repo, number: number, to: login, branch: branch)
+            let fresh = try await givable(repo: repo, number: number, to: login, watched: watched)
             guard held.isLive(at: .now + 60) else { throw TakeError.busy }
             if fresh.kind == "reviewer" {
                 try await github.requestReview(login, replacing: fresh.pr.requestedReviewers, repo: repo, number: number)
@@ -125,9 +124,9 @@ extension Engine {
 
     /// The open PR, the field that owns its move and my login, while `login` is still one it can go to.
     private func givable(repo: String, number: Int, to login: String,
-                         branch: String?) async throws -> (me: String, pr: PullRequest, kind: String) {
-        let flow = Flow.load(try await github.flowFile(repo: repo, branch: branch)).flow
-        let read = try await github.openPullRequests(repo: repo)
+                         watched: WatchedRepo?) async throws -> (me: String, pr: PullRequest, kind: String) {
+        let flow = Flow.load(try await github.flowFile(repo: repo, branch: watched?.branch)).flow
+        let read = try await github.openPullRequests(repo: repo, clone: watched?.clone)
         guard let flow, let pr = read.pullRequests.first(where: { $0.number == number }),
               FlowEngine.giveTargets(for: pr, flow: flow, me: read.viewer).contains(where: { $0.caseInsensitiveCompare(login) == .orderedSame }),
               let kind = FlowEngine.ownerKind(for: pr, flow: flow)

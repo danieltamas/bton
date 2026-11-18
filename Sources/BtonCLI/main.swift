@@ -72,28 +72,30 @@ do {
         guard arguments.count >= 2, BtonConfig.isRepoSlug(arguments[1]) else { fail(usage) }
         let repo = arguments[1]
         let github = try GitHubClient()
-        // The branch the app reads for a watched repo; the default branch otherwise. A read: no
-        // config is no config, and nothing is created, so it runs from a sandbox that cannot
-        // write the home folder.
-        let branch = (try? JSONDecoder().decode(BtonConfig.self, from: Data(contentsOf: BtonHome().configURL)))?.repos
-            .first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }?.branch
+        // The branch the app reads for a watched repo, and its clone; the default branch and no
+        // clone otherwise. A read: no config is no config, and nothing is created, so it runs from
+        // a sandbox that cannot write the home folder.
+        let watched = (try? JSONDecoder().decode(BtonConfig.self, from: Data(contentsOf: BtonHome().configURL)))?.repos
+            .first { $0.slug.caseInsensitiveCompare(repo) == .orderedSame }
         // --flow reads a local file instead of the watched branch's, to try a flow before it lands.
         let flowData: Data? = if let index = arguments.firstIndex(of: "--flow"), index + 1 < arguments.count {
             try Data(contentsOf: URL(fileURLWithPath: arguments[index + 1]))
         } else {
-            try await github.flowFile(repo: repo, branch: branch)
+            try await github.flowFile(repo: repo, branch: watched?.branch)
         }
         guard let flow = Flow.load(flowData).flow else { fail("\(repo): no supported flow", status: 1) }
-        let read = try await github.openPullRequests(repo: repo)
+        let read = try await github.openPullRequests(repo: repo, clone: watched?.clone)
         for pr in read.pullRequests.sorted(by: { $0.number < $1.number }) {
+            // An approval that does not count for the head, with the reason, as the app's log has it.
+            let uncarried = FlowEngine.uncarriedApproval(of: pr, flow: flow).map { "\t(\($0))" } ?? ""
             guard let move = FlowEngine.move(for: pr, flow: flow) else {
-                print("#\(pr.number)\t-\(FlowEngine.wait(for: pr, flow: flow).map { "\t(\($0.summary))" } ?? "")")
+                print("#\(pr.number)\t-\(FlowEngine.wait(for: pr, flow: flow).map { "\t(\($0.summary))" } ?? "")\(uncarried)")
                 continue
             }
             let owner = move.owner.map { move.ownerFromRotation ? "\($0) (rotation)" : move.ownerWroteIt ? "\($0) (author: needs another reviewer)" : $0 } ?? "unassigned"
             let held = move.pendingChecks.isEmpty ? "" : " (waiting for \(move.pendingChecks.joined(separator: ", ")))"
             let dispatch = FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: read.viewer) ? "\tdispatch" : ""
-            print("#\(pr.number)\t\(move.tier)\(move.tierReason.map { " (\($0))" } ?? "")\t\(move.name)\(held)\t\(owner)\(dispatch)")
+            print("#\(pr.number)\t\(move.tier)\(move.tierReason.map { " (\($0))" } ?? "")\t\(move.name)\(held)\t\(owner)\(dispatch)\(uncarried)")
         }
         // A move's proof: red before its agent, green after the push.
         for (name, rule) in flow.dispatch.sorted(by: { $0.key < $1.key }) {

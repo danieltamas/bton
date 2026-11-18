@@ -251,7 +251,7 @@ struct ChangedFilesPagingAcceptanceTests {
         """
         try script.write(to: gh, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
-        let result = try await GitHubClient(ghPath: gh.path).openPullRequests(repo: "o/r")
+        let result = try await GitHubClient(ghPath: gh.path).openPullRequests(repo: "o/r", clone: nil)
         let pr = try #require(result.pullRequests.first)
         #expect(pr.changedFiles == ["a.ts", "b.ts", "migrations/1.sql"])
         #expect(!pr.changedFilesTruncated)
@@ -266,7 +266,7 @@ struct ChangedFilesPagingAcceptanceTests {
         try "#!/bin/sh\ncase \"$*\" in *graphql*) printf '%s' '\(page)' ;; *) exit 1 ;; esac\n"
             .write(to: gh, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
-        let pr = try #require(try await GitHubClient(ghPath: gh.path).openPullRequests(repo: "o/r").pullRequests.first)
+        let pr = try #require(try await GitHubClient(ghPath: gh.path).openPullRequests(repo: "o/r", clone: nil).pullRequests.first)
         #expect(pr.changedFilesTruncated)
     }
 }

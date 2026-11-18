@@ -20,11 +20,11 @@ extension Dispatcher {
     /// Makes a teammate's waiting review mine on GitHub and says so on the PR, or answers why not:
     /// the PR moved on since the read (owner, head, or a handover already on it), the lease ran
     /// out, or GitHub refused. Under the lease, from a fresh read.
-    func takeOver(_ plan: HandoverPlan, candidate: DispatchCandidate, flow: Flow, lease: Lease) async -> String? {
+    func takeOver(_ plan: HandoverPlan, candidate: DispatchCandidate, clone: URL, flow: Flow, lease: Lease) async -> String? {
         guard let me = candidate.move.owner, let pr = candidate.pr else { return "no PR" }
         let repo = candidate.key.repo, number = pr.number
         do {
-            let read = try await github.openPullRequests(repo: repo)
+            let read = try await github.openPullRequests(repo: repo, clone: clone)
             guard let fresh = read.pullRequests.first(where: { $0.number == number }), fresh.headSha == pr.headSha,
                   FlowEngine.handover(of: fresh, flow: flow, me: me) != nil,
                   FlowEngine.move(for: fresh, flow: flow)?.owner?.caseInsensitiveCompare(plan.from) == .orderedSame

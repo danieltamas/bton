@@ -38,7 +38,7 @@ extension Engine {
             if (try? BtonConfig.loadOrCreate(home: home))?.isPaused == true { return nil }
             do {
                 let status = Flow.load(try await github.flowFile(repo: repo.slug, branch: repo.branch))
-                let open = try await github.openPullRequests(repo: repo.slug)
+                let open = try await github.openPullRequests(repo: repo.slug, clone: repo.clone)
                 let merged = try await github.mergedPullRequests(repo: repo.slug)
                 // A repo's lists land together or not at all, as in the sync.
                 snapshot.flows[repo.slug] = status

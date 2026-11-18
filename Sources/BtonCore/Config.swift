@@ -163,6 +163,8 @@ public struct WatchedRepo: Codable, Hashable, Sendable {
     /// searching. Nil is off.
     public var codeGraph: Bool?
 
+    /// The clone as a URL; nil until the user chooses one.
+    public var clone: URL? { path.map { URL(fileURLWithPath: $0) } }
     public var resolvesConflicts: Bool { resolveConflicts != false }
     public var startsMoves: Bool { startMoves == true }
     public var takesMoves: Bool { startsMoves && takeMoves == true }

@@ -673,9 +673,9 @@ final class AppStore {
     /// clears a later round's label.
     func removeLabel(_ label: String, from pr: PullRequest, move: Move) async throws {
         guard let github else { throw GitHubClient.Failure.ghNotFound }
-        let branch = config.repos.first { $0.slug.caseInsensitiveCompare(pr.repo) == .orderedSame }?.branch
-        let flow = Flow.load(try await github.flowFile(repo: pr.repo, branch: branch)).flow
-        let read = try await github.openPullRequests(repo: pr.repo)
+        let watched = config.repos.first { $0.slug.caseInsensitiveCompare(pr.repo) == .orderedSame }
+        let flow = Flow.load(try await github.flowFile(repo: pr.repo, branch: watched?.branch)).flow
+        let read = try await github.openPullRequests(repo: pr.repo, clone: watched?.clone)
         guard let flow, let fresh = read.pullRequests.first(where: { $0.number == pr.number }),
               let now = FlowEngine.move(for: fresh, flow: flow), now.name == move.name,
               now.isMine(read.viewer), now.labels.contains(label)

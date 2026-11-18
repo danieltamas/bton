@@ -35,9 +35,18 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// GitHub says the PR conflicts with its base. False while GitHub is still working it out
     /// after a push, so nothing starts on a guess.
     public var conflicting = false
-    /// Commits under the head that only merge commits separate from it (a conflict fix leaves them): a
-    /// review of one still stands for the head.
+    /// The commits GitHub lists under the head's merge commits. It says there is a merge to look
+    /// at and nothing more: which of them a review still counts for is `carriedHeads`.
     public var mergeOnlyAncestors: [String] = []
+    /// The tip of the base branch at this read; nil when GitHub did not report it.
+    public var baseSha: String?
+    /// The commits whose review also counts for the head, nearest first: each merge commit
+    /// between one and the head is git's own merge of the base, checked in this Mac's clone
+    /// (`MergeCarry`). Empty wherever that check did not run.
+    public var carriedHeads: [String] = []
+    /// Why that check stopped at a merge commit: what the commit is, or that it could not be
+    /// checked. Nil when it stopped at an ordinary commit or did not run.
+    public var carryRefusal: String?
     /// GitHub says the PR can merge into its base as it stands: what the panel's Merge needs
     /// beside a merge that is the flow's move.
     public var mergeable = false
