@@ -201,6 +201,14 @@ private struct PullRequestRow: View {
                         withAnimation(Motion.spring) { store.watchingJob = unchanged.id }
                     }
                 }
+                // The flow asks for a review of an approved head without a word; this says why. Not a
+                // ReportLine: it opens nothing, so it has no fill and no chevron. Five lines: the
+                // cause ends the sentence, and a base branch's name can make it long.
+                if let flow = store.flows[pr.repo]?.flow, let reason = FlowEngine.uncountedApproval(of: pr, flow: flow) {
+                    Label(reason.prefix(1).uppercased() + reason.dropFirst(), systemImage: "info.circle").font(.meta)
+                        .foregroundStyle(Theme.textSecondary).lineLimit(5).fixedSize(horizontal: false, vertical: true)
+                        .help("No approval counts for this head until it is reviewed again: an approval counts for the commit it names by its whole id, and carries to a merge commit only when that commit is git's own merge of the base")
+                }
                 if let problem = store.takeProblems[pr.id] {
                     Label(problem, systemImage: "exclamationmark.triangle").font(.meta).foregroundStyle(Theme.danger)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)

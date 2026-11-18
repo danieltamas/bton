@@ -1,8 +1,8 @@
 import Foundation
 
 /// An approval that does not count for the PR's head. The flow asks for a review of such a head
-/// without a word, so the log and `bton moves` say why, and a review that already ran there runs
-/// once more.
+/// without a word, so the PR's row, the log and `bton moves` say why, and a review that already
+/// ran there runs once more.
 extension FlowEngine {
     /// Why the PR's latest approval does not count for its head; nil when it counts, and when the
     /// head is only a commit pushed after it. An approval that gives the start of a commit's id

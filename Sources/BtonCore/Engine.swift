@@ -872,7 +872,7 @@ public actor Engine {
 
     /// An approval that does not count for the head (it names the start of a commit's id, or a
     /// commit under a merge no review is carried over) says why in the log, once per head and
-    /// reason: the row only shows the review the flow asks for again.
+    /// reason: the row says it too, and the log keeps when it began.
     private func noteUncountedApprovals(_ pullRequests: [PullRequest], flow: Flow) {
         for pr in pullRequests {
             guard let note = FlowEngine.uncountedApproval(of: pr, flow: flow),
