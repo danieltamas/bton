@@ -682,7 +682,8 @@ final class AppStore {
         else { throw SettingsError.invalid("#\(pr.number) changed since the last sync; nothing was removed.") }
         try await github.removeLabel(label, repo: pr.repo, number: pr.number)
         // The row shows its next move now: the sync may wait behind a check that runs for minutes.
-        // The shown row keeps its cost and working agent; only its labels and move change.
+        // The shown row keeps its cost and working agent; only its labels and what the flow judges
+        // of it change.
         if let index = openPullRequests.firstIndex(where: { $0.repo == pr.repo && $0.number == pr.number }) {
             var moved = fresh
             moved.labels.removeAll { $0 == label }
@@ -690,6 +691,7 @@ final class AppStore {
             openPullRequests[index].labels = moved.labels
             openPullRequests[index].move = judged.move
             openPullRequests[index].waiting = judged.waiting
+            openPullRequests[index].uncountedApproval = judged.uncountedApproval
         }
         Task { await refresh() }
     }

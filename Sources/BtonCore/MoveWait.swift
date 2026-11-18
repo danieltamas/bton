@@ -47,12 +47,14 @@ extension FlowEngine {
                         redChecks: names.filter { state($0) == .failure })
     }
 
-    /// The PR as the flow judges it: its move, or else what it waits for. Every read of a repo
-    /// sets both here, so a row never carries a wait from an older read beside a move.
+    /// The PR as the flow judges it: its move, or else what it waits for, and why its latest
+    /// approval does not count. Every read of a repo sets all three here, so a row never carries
+    /// a wait or a reason from another read, or from another flow, beside a move.
     public static func judged(_ pr: PullRequest, flow: Flow?, now: Date = .now) -> PullRequest {
         var pr = pr
         pr.move = flow.flatMap { move(for: pr, flow: $0, now: now) }
         pr.waiting = pr.move == nil ? flow.flatMap { wait(for: pr, flow: $0, now: now) } : nil
+        pr.uncountedApproval = flow.flatMap { uncountedApproval(of: pr, flow: $0) }
         return pr
     }
 }

@@ -55,6 +55,10 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// What a PR without a move waits for, set with `move` (`FlowEngine.judged`); nil when it has
     /// a move or no rule is one green check away.
     public var waiting: MoveWait?
+    /// Why the latest approval does not count for the head (`FlowEngine.uncountedApproval`), set
+    /// with `move` so a row says it for the read that gave its move; nil when the approval
+    /// counts, there is none, or the repo has no flow. Shown, never decided on.
+    public var uncountedApproval: String?
     /// What this Mac's jobs on the PR cost so far; nil without jobs or while a model has no price.
     public var cost: Decimal?
     /// One of this Mac's jobs is working on it now.
