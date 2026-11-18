@@ -23,9 +23,6 @@ public struct GitHubClient: Sendable {
 
     let ghPath: String
     let runner = ProcessRunner()
-    /// Shared by the copies of this client, so a merge commit checked on one read is not checked
-    /// again on the next.
-    let mergeCarry = MergeCarry()
 
     public init() throws {
         guard let path = Self.locateGh(resolve: Executables.resolve, candidates: Self.ghCandidates) else {
@@ -50,9 +47,9 @@ public struct GitHubClient: Sendable {
     /// paged off.
     ///
     /// `clone` is the repo's clone on this Mac: where a head that merges the base in is checked,
-    /// so a review of the commit under it still counts (`MergeCarry`). It has no default: every
-    /// caller judges a move from this read, and without the clone no review is carried over a
-    /// merge commit.
+    /// anew at every read, so a review of the commit under it still counts (`MergeCarry`). It has
+    /// no default: every caller judges a move from this read, and without the clone no review is
+    /// carried over a merge commit.
     public func openPullRequests(repo: String, clone: URL?) async throws -> OpenPullRequests {
         let parts = repo.split(separator: "/").map(String.init)
         var pullRequests: [PullRequest] = [], after: String?
@@ -67,7 +64,7 @@ public struct GitHubClient: Sendable {
                 for index in pullRequests.indices where pullRequests[index].changedFilesTruncated {
                     await readAllFiles(of: &pullRequests[index])
                 }
-                let verdicts = await mergeCarry.verdicts(for: pullRequests, clone: clone, ghPath: ghPath)
+                let verdicts = await MergeCarry.verdicts(for: pullRequests, clone: clone, ghPath: ghPath, runner: runner)
                 for (index, verdict) in verdicts.enumerated() {
                     pullRequests[index].carriedHeads = verdict.carried
                     pullRequests[index].carryRefusal = verdict.refusal

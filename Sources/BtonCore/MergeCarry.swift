@@ -7,12 +7,17 @@ import Foundation
 /// `git merge-tree` writes for them, and a second parent that is in the PR's base. Whoever made
 /// such a commit chose no line of it, only which commit of the base to merge in. Anything else (a
 /// conflict resolved by hand, an edited merge, another branch merged in, a check that could not
-/// be made) carries nothing, and the flow asks for a review of the new head.
+/// be made) carries nothing: the new head is then one with no review.
 ///
 /// GitHub's list of the head's parents only says there is a merge to look at: the parents and the
 /// tree are read from the clone's own objects. A commit the clone lacks is fetched by its id,
 /// which writes objects and nothing else: no ref, no `FETCH_HEAD`, no working tree, no index.
-actor MergeCarry {
+///
+/// Nothing is kept from one read to the next. What git makes of two parents is not a function of
+/// their ids: it reads the merge attributes from the clone's working tree and the merge settings
+/// from this Mac's git config, and the clone at a path can be another one by the next read. A
+/// verdict holds for the read that made it, in the clone as it was then.
+enum MergeCarry {
     struct Verdict: Sendable, Equatable {
         /// The commits whose review also counts for the head, nearest first.
         var carried: [String] = []
@@ -20,7 +25,7 @@ actor MergeCarry {
         var refusal: String?
     }
 
-    /// What a commit's own object and `git merge-tree` say about it, which never changes for an id.
+    /// What a commit's own object and `git merge-tree` say about it in the clone, at this read.
     private enum Shape: Sendable {
         /// Fewer than two parents: the walk ends here.
         case ordinary
@@ -30,7 +35,7 @@ actor MergeCarry {
         case refused(String)
     }
 
-    /// The check could not be made. Never remembered, so the next read tries again.
+    /// The check could not be made at this read, so nothing is carried; the next read tries again.
     private struct Unchecked: Error { let reason: String }
 
     /// Git in the clone for one read: every call ends by the read's deadline.
@@ -59,15 +64,10 @@ actor MergeCarry {
     static let maxSteps = 10
     /// One read's whole check, fetch included: a sync never waits longer than this for it.
     private static let budget: Duration = .seconds(60)
-    private static let memoLimit = 2000
-
-    private let runner = ProcessRunner()
-    private var shapes: [String: Shape] = [:]
-    private var ancestries: [String: Bool] = [:]
 
     /// One verdict per PR, in the PRs' order. A PR whose head GitHub does not list as a merge
     /// commit is not looked at: nothing is carried for it and no git runs.
-    func verdicts(for pullRequests: [PullRequest], clone: URL?, ghPath: String) async -> [Verdict] {
+    static func verdicts(for pullRequests: [PullRequest], clone: URL?, ghPath: String, runner: ProcessRunner) async -> [Verdict] {
         var verdicts = [Verdict](repeating: Verdict(), count: pullRequests.count)
         let merges = pullRequests.indices.filter { !pullRequests[$0].mergeOnlyAncestors.isEmpty }
         guard !merges.isEmpty else { return verdicts }
@@ -85,7 +85,7 @@ actor MergeCarry {
         return verdicts
     }
 
-    private func verdict(for pr: PullRequest, git: Git?) async -> Verdict {
+    private static func verdict(for pr: PullRequest, git: Git?) async -> Verdict {
         var verdict = Verdict()
         var commit = pr.headSha
         do throws(Unchecked) {
@@ -116,16 +116,7 @@ actor MergeCarry {
         return verdict
     }
 
-    private func shape(of commit: String, git: Git) async throws(Unchecked) -> Shape {
-        let key = "\(git.clone.path) \(commit)"
-        if let known = shapes[key] { return known }
-        let read = try await Self.readShape(of: commit, git: git)
-        if shapes.count >= Self.memoLimit { shapes.removeAll() }
-        shapes[key] = read
-        return read
-    }
-
-    private static func readShape(of commit: String, git: Git) async throws(Unchecked) -> Shape {
+    private static func shape(of commit: String, git: Git) async throws(Unchecked) -> Shape {
         guard isCommitID(commit) else { throw Unchecked(reason: "it is not a commit id") }
         let object = try await git.run(["cat-file", "commit", commit])
         guard object.status == 0 else { throw Unchecked(reason: "it is not in the clone and could not be fetched") }
@@ -149,20 +140,17 @@ actor MergeCarry {
         }
     }
 
-    private func isAncestor(_ commit: String, of base: String, git: Git) async throws(Unchecked) -> Bool {
+    /// `commit` has just been merged by git in this clone, so the base tip itself needs no call.
+    private static func isAncestor(_ commit: String, of base: String, git: Git) async throws(Unchecked) -> Bool {
         if commit == base { return true }
-        let key = "\(git.clone.path) \(commit) \(base)"
-        if let known = ancestries[key] { return known }
         let answer = try await git.run(["merge-base", "--is-ancestor", commit, base])
         guard answer.status == 0 || answer.status == 1 else { throw Unchecked(reason: "git merge-base exited with \(answer.status)") }
-        if ancestries.count >= Self.memoLimit { ancestries.removeAll() }
-        ancestries[key] = answer.status == 0
         return answer.status == 0
     }
 
     /// Brings the commits the clone lacks from `origin`, by id. A failure is not reported here:
     /// the walk says which commit it could not read.
-    private func fetchMissing(_ commits: [String], git: Git) async {
+    private static func fetchMissing(_ commits: [String], git: Git) async {
         let wanted = Set(commits.filter(Self.isCommitID)).sorted()
         guard !wanted.isEmpty,
               let listed = try? await git.run(["cat-file", "--batch-check"], input: Data((wanted.joined(separator: "\n") + "\n").utf8)),

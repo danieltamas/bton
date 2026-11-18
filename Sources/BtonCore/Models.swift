@@ -41,8 +41,8 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// The tip of the base branch at this read; nil when GitHub did not report it.
     public var baseSha: String?
     /// The commits whose review also counts for the head, nearest first: each merge commit
-    /// between one and the head is git's own merge of the base, checked in this Mac's clone
-    /// (`MergeCarry`). Empty wherever that check did not run.
+    /// between one and the head is git's own merge of the base, checked in this Mac's clone at
+    /// the read that made this value (`MergeCarry`). Empty wherever that check did not run.
     public var carriedHeads: [String] = []
     /// Why that check stopped at a merge commit: what the commit is, or that it could not be
     /// checked. Nil when it stopped at an ordinary commit or did not run.
