@@ -2,6 +2,10 @@
 
 What changed in each release, newest first. Each entry is also that release's notes on GitHub.
 
+## Unreleased
+
+**Homebrew stops warning about the cask on every command.** Homebrew 7 deprecated a cask's `postflight do` block, so on a Mac with the tap every `brew` command, `brew doctor` included, printed a warning naming `Casks/bton.rb:22` and asking for a report to the tap. The cask now clears the quarantine flag with a `postflight_steps` `run` step, which Homebrew runs in its sandbox with write access to Bton.app only. The template in `scripts/tap.sh` writes the same step for a new tap; an existing cask needs the same edit, since the script only changes its version and sha256.
+
 ## 0.38.0 (2026-11-17)
 
 **A red check is re-run once before any agent is paid for it, and its fix job runs once per commit.** On 2026-11-16 the `gate` of kazu #1083 went red on a flaky test the PR could not reach. The CI fix job read the log, said so, and stopped for a person to re-run the gate, as its prompt tells it to. Seven hours later a teammate approved the same commit, and Bton started the same job on the same red check for the same answer, because a new review on a commit ran every move again; a third run was started by hand: three jobs, $2.45, and the PR went green on the first re-run. A move that only answers red checks (each of its rules waits on `checks_red` and on no review) now runs once per commit, whatever is reviewed meanwhile. Before its first run Bton asks GitHub to run the failed workflows again, once per commit: green ends it there with no agent and is recorded as a flake, red again starts the agent on a failure that reproduced. Start on the row still runs the agent at once, and Retry or Again reach a job that ran under the old rule. A check that went green on the re-run puts the `flaky:<check>` label on the PR.
