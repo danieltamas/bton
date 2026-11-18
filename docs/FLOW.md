@@ -143,8 +143,9 @@ fails saying which. A `decision.heading` that overlaps a review heading makes th
 Limit: a decision move runs once per head, so a second round cap on the same head (fixes and
 reviews without a push) waits for the next push. The same limit meets a decision of your own
 that approved by the start of an id: it counts for no commit, the review runs once more
-("Dispatch"), and when that review rejects, the decision does not run again on that head. The
-PR waits for a push, or for a decision typed with the whole id.
+("Dispatch"), and when that review is also your own and rejects, the decision does not run again
+on that head: the PR waits for a push, or for a decision typed with the whole id. A teammate's
+review opens a round, and the decision runs in it.
 
 ## Predicates
 
