@@ -64,10 +64,12 @@ cask "bton" do
 
   # The app is signed ad hoc, not notarized. The curl installer leaves no quarantine flag, so the
   # app opens at once; the cask matches it instead of sending the user to System Settings.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Bton.app"],
-                   must_succeed: false
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/Bton.app"],
+        must_succeed:   false,
+        writable_paths: ["Bton.app"],
+        writable_base:  :appdir
   end
 
   uninstall quit: "ro.danieltamas.bton"
