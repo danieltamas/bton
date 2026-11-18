@@ -379,8 +379,10 @@ dispatch drops it, and the log says
 merge that is due and that it goes first, on a PR of mine also one the flow gives to the
 reviewer; it never decides that one is due. An ask that is dropped takes its press with it: the
 PR's next move (the fix that follows that rejection) starts as the flow's own, without
-`BTON_PRESSED`, and a session watching the PR holds it. A newer request for the same PR (Run
-next, Take) replaces an older ask, so it is never dropped in its place. **Fix conflicts** is the one button beside the
+`BTON_PRESSED`, and a session watching the PR holds it. A newer request a person makes for the
+same PR (Run next, Take) replaces an older ask, so it is never dropped in its place; a retry
+nobody pressed now (the supervisor's, the sync's own take) leaves the ask and its press
+together. **Fix conflicts** is the one button beside the
 pill, since a conflict holds every move, and it runs at any move.
 A move that ran here on this head and succeeded while it is still
 the PR's move changed nothing (the fix agent found nothing it could fix, and said why): the row

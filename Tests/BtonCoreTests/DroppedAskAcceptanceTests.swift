@@ -172,6 +172,64 @@ struct DroppedAskAcceptanceTests {
         try expectMarkers(f, checksAndCommand: "1")
     }
 
+    // P8: a carried-over request leaves the Merge ask and its press to be dropped together.
+    @Test(arguments: ["unpressed", "inherited"], [false, true])
+    func laterAutomaticRunNextKeepsTheMergeAskUntilDropped(later: String, watched: Bool) async throws {
+        let f = try await StartMovesFixture.make(startMoves: true)
+        defer { f.remove() }
+        let key = try await prepareObservedFix(f, agentFix: watched)
+        let other = try f.leases.store("other")
+        let held = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo, key: "busy"))
+        let log = MoveLog()
+        let engine = try f.engine(log: { log.append($0) })
+        try await engine.runNow(key)
+        let queued = await engine.tick()
+        #expect(queued.problem == nil)
+        #expect(queued.jobs.isEmpty)
+        #expect(queued.next == [Engine.pick(repo: f.repo, item: "pr-7")])
+        #expect(queued.openPullRequests.first?.move?.name == "merge")
+        if later == "inherited" {
+            await engine.runNext(repo: f.repo, item: "pr-7", pressed: true, inherited: true)
+        } else {
+            await engine.runNext(repo: f.repo, item: "pr-7")
+        }
+        try f.reviews(["approve", "changes"])
+        if watched { try mark(f) }
+        try await other.release(held)
+
+        let rejected = await engine.tick()
+        #expect(rejected.problem == nil)
+        #expect(rejected.openPullRequests.first?.headSha == key.head)
+        #expect(rejected.openPullRequests.first?.move?.name == "fix")
+        #expect(log.all.contains(dropped))
+        #expect(rejected.next.isEmpty)
+        #expect(!rejected.jobs.contains { $0.key.move == "merge" })
+        #expect(rejected.openPullRequests.first?.heldBySession == watched)
+        if watched {
+            #expect(rejected.jobs.isEmpty)
+            let heldAgain = await engine.tick()
+            #expect(heldAgain.problem == nil)
+            #expect(heldAgain.jobs.isEmpty)
+            #expect(heldAgain.openPullRequests.first?.heldBySession == true)
+            try SessionWatch(home: f.home).clear(repo: f.repo, number: 7, holder: "author-session")
+            let resumed = await engine.tick()
+            #expect(resumed.problem == nil)
+            #expect(resumed.jobs.count == 1)
+            let fix = try #require(resumed.jobs.first)
+            #expect(fix.key.move == "fix")
+            #expect(fix.key.head == key.head)
+            #expect(fix.pressed != true)
+        } else {
+            #expect(rejected.jobs.count == 1)
+            let fix = try #require(rejected.jobs.first)
+            #expect(fix.key.move == "fix")
+            #expect(fix.key.head == key.head)
+            #expect(fix.pressed != true)
+        }
+        try await f.waitForJobs()
+        try expectMarkers(f, checksAndCommand: "absent", agentFix: watched)
+    }
+
     private func mark(_ f: StartMovesFixture) throws {
         try SessionWatch(home: f.home).mark(repo: f.repo, number: 7, for: 3600,
             holder: "author-session", now: .now)

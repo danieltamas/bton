@@ -191,15 +191,17 @@ public actor Engine {
     /// supervisor's retry is only put first. `inherited`: the press is the retried job's, carried over.
     public func runNext(repo: String, item: String, pressed: Bool = false, inherited: Bool = false) {
         let pick = Self.pick(repo: repo, item: item)
-        // The newest request for a PR is the one that stands: a Merge asked earlier is forgotten
-        // here, so its end at a later sync cannot take this request's press with it. `runNow` and
-        // the retries record their own ask right after.
-        asked[pick] = nil
         next.removeAll { $0 == pick }
         next.insert(pick, at: 0)
         if pressed {
             // A person's press still waiting in line stays theirs when a retry carries one over.
             if !inherited {
+                // A person's newer request is the one that stands: a Merge asked earlier is forgotten
+                // here, so its end at a later sync cannot take this press with it (`runNow` and `retry`
+                // record their own ask right after). A request nobody pressed now (the supervisor's
+                // retry, the sync's own take) leaves the ask with the press it came with, or that
+                // press would outlive the ask and start the PR's next move as a person's.
+                asked[pick] = nil
                 inheritedPresses.remove(pick)
             } else if !pressedPicks.contains(pick) {
                 inheritedPresses.insert(pick)
@@ -799,8 +801,8 @@ public actor Engine {
         runNext(repo: key.repo, item: key.item, pressed: true)
     }
 
-    /// A Merge or Fix conflicts is remembered with its head until a sync answers it or a newer
-    /// request for the PR replaces it (`runNext`), also when retried from Jobs or by the
+    /// A Merge or Fix conflicts is remembered with its head until a sync answers it or a person's
+    /// newer request for the PR replaces it (`runNext`), also when retried from Jobs or by the
     /// supervisor. It gives no authority of its own: `override`
     /// builds the merge only while the flow still asks for one, so an ask that outlived its
     /// approval (a rejection landed while it waited) is dropped, not run.
