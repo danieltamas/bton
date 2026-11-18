@@ -7,7 +7,8 @@ import Foundation
 /// `git merge-tree` writes for them, and a second parent that is in the PR's base. Whoever made
 /// such a commit chose no line of it, only which commit of the base to merge in. Anything else (a
 /// conflict resolved by hand, an edited merge, another branch merged in, a check that could not
-/// be made) carries nothing: the new head is then one with no review.
+/// be made) carries nothing over that commit. The walk goes down from the head and stops there: a
+/// review of a commit it reached still counts for the head, a review of one further down does not.
 ///
 /// GitHub's list of the head's parents only says there is a merge to look at: the parents and the
 /// tree are read from the clone's own objects. A commit the clone lacks is fetched by its id,
@@ -35,7 +36,7 @@ enum MergeCarry {
         case refused(String)
     }
 
-    /// The check could not be made at this read, so nothing is carried; the next read tries again.
+    /// A commit could not be checked at this read: nothing is carried over it, and the next read tries again.
     private struct Unchecked: Error { let reason: String }
 
     /// Git in the clone for one read: every call ends by the read's deadline.
