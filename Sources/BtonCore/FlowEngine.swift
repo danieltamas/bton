@@ -282,6 +282,13 @@ public enum FlowEngine {
         return names.isEmpty || names.contains("") ? nil : names
     }
 
+    /// Whether each `checks_green:` predicate of the rule names its checks. One that does not
+    /// (`checks_green:`, `checks_green:a,`) never holds, whatever the head's checks say.
+    static func namesItsChecks(_ rule: MoveRule) -> Bool {
+        rule.when.filter { $0.hasPrefix(checksPredicate + ":") }
+            .allSatisfy { checkNames(String($0.dropFirst(checksPredicate.count + 1))) != nil }
+    }
+
     /// The checks a rule's `checks_green:` predicates name, in order of first appearance.
     static func requiredChecks(of rule: MoveRule) -> [String] {
         var names: [String] = []

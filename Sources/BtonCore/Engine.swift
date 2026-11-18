@@ -191,6 +191,10 @@ public actor Engine {
     /// supervisor's retry is only put first. `inherited`: the press is the retried job's, carried over.
     public func runNext(repo: String, item: String, pressed: Bool = false, inherited: Bool = false) {
         let pick = Self.pick(repo: repo, item: item)
+        // The newest request for a PR is the one that stands: a Merge asked earlier is forgotten
+        // here, so its end at a later sync cannot take this request's press with it. `runNow` and
+        // the retries record their own ask right after.
+        asked[pick] = nil
         next.removeAll { $0 == pick }
         next.insert(pick, at: 0)
         if pressed {
@@ -634,8 +638,10 @@ public actor Engine {
         composeRequests.removeAll { drafted.contains($0.key) }
         next.removeAll { ranPicks.contains($0) }
         let kept = Set(Self.keptPicks(next, started: started, runnable: runnable, unread: unplanned))
-        // A press that no candidate answers is not dropped in silence: the log says so.
-        for pick in next where picksAtStart.contains(pick) && !kept.contains(pick) && !ranPicks.contains(pick) && pressedPicks.contains(pick) {
+        // A press that no candidate answers is not dropped in silence: the log says so. One that
+        // started leaves the line too, and its start is already in the log.
+        for pick in next where picksAtStart.contains(pick) && !kept.contains(pick) && !started.contains(pick)
+            && !ranPicks.contains(pick) && pressedPicks.contains(pick) {
             log("\(pick): not started: no move of it Bton can start now")
         }
         next.removeAll { picksAtStart.contains($0) && !kept.contains($0) }
@@ -793,8 +799,9 @@ public actor Engine {
         runNext(repo: key.repo, item: key.item, pressed: true)
     }
 
-    /// A Merge or Fix conflicts is remembered with its head until a sync answers it, also when
-    /// retried from Jobs or by the supervisor. It gives no authority of its own: `override`
+    /// A Merge or Fix conflicts is remembered with its head until a sync answers it or a newer
+    /// request for the PR replaces it (`runNext`), also when retried from Jobs or by the
+    /// supervisor. It gives no authority of its own: `override`
     /// builds the merge only while the flow still asks for one, so an ask that outlived its
     /// approval (a rejection landed while it waited) is dropped, not run.
     func ask(_ key: JobKey) {
@@ -839,6 +846,10 @@ public actor Engine {
             log("\(repo.slug)#\(pr.number): \(request.move) not started: \(why)")
             asked[pick] = nil
             next.removeAll { $0 == pick }
+            // The press was for that move. Left in place it would pass this sync's session hold
+            // and start the PR's next move (a fix after a rejection) as a person's press.
+            pressedPicks.remove(pick)
+            inheritedPresses.remove(pick)
         }
         guard repo.startsMoves, repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
               fresh(resolve), declined[resolve.key] == nil else { return nil }

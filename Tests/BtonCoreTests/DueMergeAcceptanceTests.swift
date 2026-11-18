@@ -159,6 +159,8 @@ struct MergeAskAcceptanceTests {
             status: .failed, detail: "command exited 1", cost: 0)
         failed.flags = [.failed]
         try store.save(failed)
+        let mergesBefore = store.all().filter { $0.key.move == "merge" && $0.key.head == failed.key.head }.count
+        #expect(mergesBefore == 1)
         let log = MoveLog()
         var engine = try f.engine(log: { log.append($0) })
         if entrance == "jobs" {
@@ -191,14 +193,21 @@ struct MergeAskAcceptanceTests {
         #expect(first.openPullRequests.first?.headSha == failed.key.head)
         #expect(first.openPullRequests.first?.move?.name == (entrance == "still due" ? "merge" : "fix"))
         let runs = first.jobs.filter { $0.key == failed.key && $0.id != failed.id }
-        #expect(runs.count == (entrance == "still due" ? 1 : 0))
+        if entrance == "still due" { #expect(runs.count == 1) }
+        else {
+            #expect(first.jobs.filter { $0.key.move == "merge" && $0.key.head == failed.key.head }.count == mergesBefore)
+        }
         #expect(first.next.isEmpty)
         if entrance != "still due" { #expect(log.all.contains(dropped)) }
         try await f.waitForJobs()
         for _ in 0..<2 {
             let later = await engine.tick()
             #expect(later.problem == nil)
-            #expect(later.jobs.filter { $0.key == failed.key && $0.id != failed.id }.map(\.id) == runs.map(\.id))
+            if entrance == "still due" {
+                #expect(later.jobs.filter { $0.key == failed.key && $0.id != failed.id }.map(\.id) == runs.map(\.id))
+            } else {
+                #expect(later.jobs.filter { $0.key.move == "merge" && $0.key.head == failed.key.head }.count == mergesBefore)
+            }
             #expect(later.next.isEmpty)
             try await f.waitForJobs()
         }

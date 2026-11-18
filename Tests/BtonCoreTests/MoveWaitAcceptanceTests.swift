@@ -47,6 +47,33 @@ struct MoveWaitAcceptanceTests {
             == MoveWait(move: "merge", checks: ["gate"]))
     }
 
+    @Test(arguments: ["green", "pending", "absent", "unread"],
+          ["checks_green:", "checks_green:a,", "checks_green:,a"])
+    func mixedMalformedCheckPredicateCannotHold(state: String, predicate: String) throws {
+        var pr = MoveWaitFixture.pr()
+        pr.checks = state == "absent" ? [] : [.init(name: "gate", state: state == "pending" ? .pending : .success)]
+        pr.checks.append(.init(name: "a", state: .success))
+        pr.checksTruncated = state == "unread"
+        let flow = try MoveWaitFixture.flow(rules: [MoveWaitFixture.rule("merge",
+            ["approved_current_head", "checks_green:gate", predicate])])
+        #expect(FlowEngine.move(for: pr, flow: flow) == nil)
+        #expect(FlowEngine.wait(for: pr, flow: flow) == nil)
+    }
+
+    @Test(arguments: [false, true], ["checks_green:", "checks_green:a,", "checks_green:,a"])
+    func mixedMalformedRuleDoesNotHideLaterWait(unread: Bool, predicate: String) throws {
+        var pr = MoveWaitFixture.pr()
+        pr.checks = [.init(name: "gate", state: .success), .init(name: "a", state: .success),
+                     .init(name: "e2e", state: .pending)]
+        pr.checksTruncated = unread
+        let flow = try MoveWaitFixture.flow(rules: [
+            MoveWaitFixture.rule("merge", ["approved_current_head", "checks_green:gate", predicate]),
+            MoveWaitFixture.rule("ship", ["approved_current_head", "checks_green:e2e"])])
+        #expect(FlowEngine.move(for: pr, flow: flow) == nil)
+        #expect(FlowEngine.wait(for: pr, flow: flow) == (unread
+            ? MoveWait(move: "ship", checksUnread: true) : MoveWait(move: "ship", checks: ["e2e"])))
+    }
+
     @Test func summariesNamePendingRedAndUnreadChecks() {
         #expect(MoveWait(move: "merge", checks: ["gate"]).summary == "merge waits for gate")
         #expect(MoveWait(move: "merge", checks: ["e2e"], redChecks: ["gate"]).summary == "merge waits for e2e (gate red)")

@@ -39,7 +39,8 @@ extension FlowEngine {
     public static func wait(for pr: PullRequest, flow: Flow, now: Date = .now) -> MoveWait? {
         guard !Release.isRelease(pr, flow: flow), move(for: pr, flow: flow, now: now) == nil else { return nil }
         let held = rulesHeldByChecks(for: pr, flow: flow)
-        guard let (rule, names) = held.rules.first else { return nil }
+        // A rule with a `checks_green:` that names nothing never holds: no check ends its wait.
+        guard let (rule, names) = held.rules.first(where: { namesItsChecks($0.rule) }) else { return nil }
         guard held.readable else { return MoveWait(move: rule.move, checksUnread: true) }
         let state = { (name: String) in pr.checks.first { $0.name == name }?.state }
         return MoveWait(move: rule.move, checks: names.filter { state($0) != .success && state($0) != .failure },
