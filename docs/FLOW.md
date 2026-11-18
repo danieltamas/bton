@@ -135,7 +135,7 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 | `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head, or a commit the current head reaches through merge commits alone (a conflict fix merging the base in), so a fixed conflict goes straight to the merge and not back to review. No review reads what such a merge commit changes, and its other parent is not checked to be the base: on that path the checks are all that test what merges |
 | `latest_review_changes_or_blocked` | the latest review's verdict is `changes` or `blocked` |
 | `changes_rounds_at_least:<n>` | the latest review's verdict is `changes` or `blocked`, and at least `n` of the PR's counting reviews since the latest decision have a `changes` or `blocked` verdict |
-| `checks_green:<name>[,<name>...]` | every named GitHub check (a check run's name, or a commit status's context) is green on the head commit: completed with the conclusion SUCCESS, or the status SUCCESS. Pending, failed, cancelled, skipped, neutral or absent is not green, nor is a head with more checks than Bton read (50). A PR that changes a file under `.github/workflows/` is gated like any other. Its checks ran the PR's own copy of the workflows (a check is matched by name, and a PR can change what a name runs or add a workflow with that name), as they ran the PR's own copy of every script a workflow calls, so the review is what vouches for a CI change, where one read that head: an approval carried over a merge commit (`approved_current_head`) did not, and a merge asked on one's own PR (Dispatch, below) needs none. To make the flow's merge move wait for a reader other than the author on CI changes, put `.github/**` under a `tier.paths` tier whose reviews are `notByAuthor` (Tier floored by paths, above). That holds for a counting review only: a decision counts from the PR's author too, and the two paths just named ask no reader. A re-run replaces the older run of the same name. Names are trimmed; an empty name makes the flow invalid. A command move whose rule has this predicate reads the checks again on the exact head right before the command and refuses (`checks not green: gate pending`) when any is not green or the read fails |
+| `checks_green:<name>[,<name>...]` | every named GitHub check (a check run's name, or a commit status's context) is green on the head commit: completed with the conclusion SUCCESS, or the status SUCCESS. Pending, failed, cancelled, skipped, neutral or absent is not green, nor is a head with more checks than Bton read (50). A PR that changes a file under `.github/workflows/` is gated like any other. Its checks ran the PR's own copy of the workflows (a check is matched by name, and a PR can change what a name runs or add a workflow with that name), as they ran the PR's own copy of every script a workflow calls, so the review is what vouches for a CI change, where one read that head: an approval carried over a merge commit (`approved_current_head`) did not. To make the flow's merge move wait for a reader other than the author on CI changes, put `.github/**` under a `tier.paths` tier whose reviews are `notByAuthor` (Tier floored by paths, above). That holds for a counting review only: a decision counts from the PR's author too, and the carried approval asks no reader. A re-run replaces the older run of the same name. Names are trimmed; an empty name makes the flow invalid. A command move whose rule has this predicate reads the checks again on the exact head right before the command and refuses (`checks not green: gate pending`) when any is not green or the read fails |
 
 "Latest" is by comment creation time.
 
@@ -226,6 +226,16 @@ keeps the first assignee as before.
   as it already held its merge, for good. A review without a dispatch entry (a person's) is
   never held, and no other move is. A review run by a schedule's agent is held by its playbook:
   a PR whose checks are still running is not eligible work.
+- **A rule held only by its checks says what it waits for.** Where no rule gives a PR a move and
+  one holds but for its `checks_green:` checks (an approved PR whose gate is still running, or
+  is not on the head), the PR has no move: nobody is assigned, nothing starts, and nothing is
+  posted or pinged. Its row says so in a dashed pill, `merge · waiting for gate`, with a named
+  check that is already red beside it; the log has one line for each head that waits
+  (`owner/repo#12: merge waits for gate`), and `bton moves` prints the same after the `-`. The
+  move is due at the sync that reads every named check green. A named check that never appears
+  on the head (a path-filtered workflow) is waited for without end, and now the row names it.
+  A head with more checks than Bton reads (50) says `merge · too many checks to read`: no wait
+  ends that one, and the move is a person's on GitHub.
 - **A red check shows on its row, whatever the move.** Any PR whose head has a check that ran
   and failed (not one skipped or neutral) carries it beside the time, and a click re-runs the failed workflow on that commit. Moves are
   tried in order, so a `checks_red` move (a CI fix by the author) placed after `review`, `fix`
@@ -348,7 +358,9 @@ the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
 
 A move runs once per head on any Mac, whether it succeeds or fails. When a failure's cause is
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
-runs it again on the same head, first in line, if it is still the PR's move.
+runs it again on the same head, first in line, if it is still the PR's move. A PR move put
+first in line here that another Mac already ran on that head leaves the line, and the log says
+`<move> not started: it already ran on this head`.
 
 A PR row carries one pill, the PR's move and who has it ("review · lee", "fix · unassigned"),
 and when the move is mine and this Mac's agent would run it, the pill is the button and reads
@@ -357,12 +369,16 @@ reports mergeable shows **Merge** only when `merge` is its move (the flow has a 
 dispatch, the PR is not a draft, targets `base` and its author is trusted): it runs that
 dispatch (the repo's merge command and its checks decide), and a push before it starts cancels
 it. GitHub's mergeable says nothing about the review a PR still waits on, so a `review` or
-`fix` move never offers Merge. A merge already asked for on a PR of mine is not taken back,
-though: the row's Merge, a Retry on its failed merge, or the supervisor's retry of one runs on
-green checks whatever the PR's move is by then, and asks for no review. The supervisor's retry
-does so also for a merge the flow started and nobody pressed, and a restart puts a retry that
-has not run yet back in line for two hours after the supervisor asked for it. **Fix conflicts**
-is the one button beside the pill, since a conflict holds every move.
+`fix` move never offers Merge. A merge already asked for (the row's Merge, a Retry on its failed
+merge, the supervisor's retry of one, and that retry put back in line after a restart, for two
+hours) runs only while `merge` is still the PR's move at the sync that would start it, judged
+on what that sync read. A rejection that landed while the ask waited behind a busy agent, a
+check that is no longer green, any earlier rule that holds, or a flow that lost its `merge`
+dispatch drops it, and the log says
+`merge not started: the flow does not ask for a merge on it now`. The ask decides who starts a
+merge that is due and that it goes first, on a PR of mine also one the flow gives to the
+reviewer; it never decides that one is due. **Fix conflicts** is the one button beside the
+pill, since a conflict holds every move, and it runs at any move.
 A move that ran here on this head and succeeded while it is still
 the PR's move changed nothing (the fix agent found nothing it could fix, and said why): the row
 says so with the job's report a click away, and the pill offers the move again.

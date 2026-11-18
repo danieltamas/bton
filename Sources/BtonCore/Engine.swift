@@ -83,6 +83,8 @@ public actor Engine {
     private var declined: [JobKey: Date] = [:]
     /// Moves already logged as left to a watching session, so the log says it once per head.
     private var heldNoted: Set<JobKey> = []
+    /// The heads whose wait the log already has (`<repo>#<number>@<head>`).
+    private var waitsNoted: Set<String> = []
     /// The PRs (picks) whose due move this tick left to a watching session, for their rows.
     private var heldThisTick: Set<String> = []
     /// Steered retries are put back in line once, at the first tick after a start.
@@ -301,15 +303,12 @@ public actor Engine {
                     let checksAsOf = Date.now
                     let read = try await github.openPullRequests(repo: repo.slug)
                     snapshot.me = read.viewer
-                    let pullRequests = read.pullRequests.map { pr in
-                        var pr = pr
-                        pr.move = status.flow.flatMap { FlowEngine.move(for: pr, flow: $0) }
-                        return pr
-                    }
+                    let pullRequests = read.pullRequests.map { FlowEngine.judged($0, flow: status.flow) }
                     let merged = try await github.mergedPullRequests(repo: repo.slug)
                     // A repo's lists land together or not at all: a half-read repo counts as unread.
                     snapshot.openPullRequests += pullRequests
                     snapshot.merged += merged
+                    noteWaits(pullRequests)
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     let kept = RepoRead(repo: repo, status: status, viewer: read.viewer, defaultBranch: read.defaultBranch,
                                         pullRequests: pullRequests, merged: merged, at: .now, checksAsOf: checksAsOf)
@@ -619,6 +618,10 @@ public actor Engine {
                     refused.insert(candidate.key)
                     ran.insert(candidate.key)
                     if candidate.issueMove != nil { issueMovesRanElsewhere.insert(candidate.key) }
+                    // A pick leaves the line below: it says why, like every other pick that is dropped.
+                    if let pr = candidate.pr, next.contains(Self.pick(repo: candidate.key.repo, item: candidate.key.item)) {
+                        log("\(pr.id): \(candidate.key.move) not started: it already ran on this head")
+                    }
                 }
             }
         }
@@ -771,7 +774,8 @@ public actor Engine {
     }
 
     /// Starts a PR's move now (the panel's Merge and Fix conflicts): first in line, and again
-    /// when it failed or was stopped on this head. A `merge` key merges whatever the flow's move.
+    /// when it failed or was stopped on this head. A `merge` key runs only while the merge is
+    /// still the flow's move at the sync that would start it; a `resolve` key runs at any move.
     public func runNow(_ key: JobKey) throws {
         let all = jobs.all()
         if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
@@ -789,7 +793,10 @@ public actor Engine {
         runNext(repo: key.repo, item: key.item, pressed: true)
     }
 
-    /// A Merge or Fix conflicts runs instead of the PR's flow move, also when retried from Jobs.
+    /// A Merge or Fix conflicts is remembered with its head until a sync answers it, also when
+    /// retried from Jobs or by the supervisor. It gives no authority of its own: `override`
+    /// builds the merge only while the flow still asks for one, so an ask that outlived its
+    /// approval (a rejection landed while it waited) is dropped, not run.
     func ask(_ key: JobKey) {
         if key.move == "merge" || key.move == "resolve" { asked[Self.pick(repo: key.repo, item: key.item)] = key }
     }
@@ -802,25 +809,33 @@ public actor Engine {
         !(request.head == pr.headSha && request.move == pr.move?.name && pr.move?.isMine(me) == true)
     }
 
-    /// What runs on a PR instead of its flow move: the owner's Merge or Fix conflicts on the head they
-    /// saw, or else, where the sync starts moves, Bton's own resolve on a PR of mine that conflicts, once per head.
+    /// What runs on a PR instead of its flow candidate: the owner's Merge (a due merge the flow gives
+    /// to someone else) or Fix conflicts on the head they saw, or else, where the sync starts moves,
+    /// Bton's own resolve on a PR of mine that conflicts, once per head.
     private func override(_ pr: PullRequest, flow: Flow, repo: WatchedRepo, me: String) -> DispatchCandidate? {
         let pick = Self.pick(repo: repo.slug, item: "pr-\(pr.number)")
         let all = jobs.all()
         let fresh = { (c: DispatchCandidate) in !all.contains { $0.key == c.key } || DispatchPlanner.isRetry(c.key, jobs: all) }
         if let request = asked[pick] {
+            let sameHead = request.head == pr.headSha
+            // A merge the flow does not ask for now ends here with its reason, whoever it would be
+            // given to: mine and held by a red check it needs no override, and would else leave the
+            // line when the sync ends with only "no move of it Bton can start now".
+            let mergeNotDue = sameHead && request.move == "merge" && DispatchPlanner.dueMerge(pr, flow: flow) == nil
             // The flow's own move of mine needs no override (a reviewer's merge on a teammate's PR):
             // its candidate runs, first in line. The request stays, pinning the head, until it starts.
             // A merge the flow gives to someone else (the reviewer's, on a PR of mine) is the owner's
             // Merge: the override runs it, or the press would wait on a move no Bton here starts.
-            if !Self.pressNeedsOverride(request, pr: pr, me: me) { return nil }
-            let made = request.head != pr.headSha ? nil : request.move == "merge"
+            if !mergeNotDue, !Self.pressNeedsOverride(request, pr: pr, me: me) { return nil }
+            let made = !sameHead ? nil : request.move == "merge"
                 ? DispatchPlanner.mergeCandidate(pr, flow: flow, me: me, repo: repo.slug)
                 : DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug)
-            // A new head, a PR that can't take the move any more, or a move already run on this head
-            // ends it, and its place in line: the owner asked for that move, not whatever comes next.
+            // A new head, a merge the flow no longer asks for, a PR that can't take the move any more,
+            // or a move already run on this head ends it, and its place in line: the owner asked for
+            // that move, not whatever comes next.
             if let made, fresh(made) { return made }
-            let why = request.head != pr.headSha ? "the head moved" : made == nil ? "the PR cannot take it now" : "it already ran on this head"
+            let why = !sameHead ? "the head moved" : made != nil ? "it already ran on this head"
+                : mergeNotDue ? "the flow does not ask for a merge on it now" : "the PR cannot take it now"
             log("\(repo.slug)#\(pr.number): \(request.move) not started: \(why)")
             asked[pick] = nil
             next.removeAll { $0 == pick }
@@ -828,6 +843,15 @@ public actor Engine {
         guard repo.startsMoves, repo.resolvesConflicts, let resolve = DispatchPlanner.resolveCandidate(pr, flow: flow, me: me, repo: repo.slug),
               fresh(resolve), declined[resolve.key] == nil else { return nil }
         return resolve
+    }
+
+    /// A PR that waits says so in the log once per head, at the sync that first reads it: the row
+    /// shows what it waits for, the log keeps since when (kazu #1095 sat six hours with neither).
+    private func noteWaits(_ pullRequests: [PullRequest]) {
+        for pr in pullRequests {
+            guard let wait = pr.waiting, waitsNoted.insert("\(pr.id)@\(pr.headSha)").inserted else { continue }
+            log("\(pr.id): \(wait.summary)")
+        }
     }
 
     /// An agent that would work on the branch of a PR of mine that a session here marked

@@ -686,8 +686,10 @@ final class AppStore {
         if let index = openPullRequests.firstIndex(where: { $0.repo == pr.repo && $0.number == pr.number }) {
             var moved = fresh
             moved.labels.removeAll { $0 == label }
+            let judged = FlowEngine.judged(moved, flow: flow)
             openPullRequests[index].labels = moved.labels
-            openPullRequests[index].move = FlowEngine.move(for: moved, flow: flow)
+            openPullRequests[index].move = judged.move
+            openPullRequests[index].waiting = judged.waiting
         }
         Task { await refresh() }
     }

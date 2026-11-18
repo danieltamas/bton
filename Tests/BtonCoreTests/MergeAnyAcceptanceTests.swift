@@ -41,9 +41,11 @@ struct MergeAnyAcceptanceTests {
         let candidate = try #require(DispatchPlanner.mergeCandidate(pr,
             flow: MergeAnyFixture.flow(), me: "owner", repo: MergeAnyFixture.repo))
         #expect(candidate.key == JobKey(repo: MergeAnyFixture.repo, item: "pr-42",
-                                        move: "merge", head: MergeAnyFixture.head))
+                                        move: "merge", head: MergeAnyFixture.head, round: "1800000000"))
         #expect(candidate.move.name == "merge")
         #expect(candidate.move.owner == "owner")
+        #expect(candidate.move.hasDispatch)
+        #expect(candidate.move.tier == "small")
         #expect(candidate.command == ["bash", "scripts/wt", "merge", "42"])
         #expect(candidate.agent == nil)
         #expect(candidate.timeout == .seconds(420))
@@ -57,22 +59,21 @@ struct MergeAnyAcceptanceTests {
         #expect(candidate.move.owner == "OWNER")
     }
 
-    @Test func humanDecideMoveDoesNotPreventMergeCandidate() throws {
+    @Test func humanDecideMovePreventsMergeCandidate() throws {
         let flow = try MergeAnyFixture.flow()
+        try positiveTwin()
         var pr = MergeAnyFixture.pr(labels: ["turn:lead"])
         pr.mergeable = true
         let current = try #require(FlowEngine.move(for: pr, flow: flow))
         #expect(current.name == "decide")
         #expect(current.owner == "lead")
         #expect(!current.hasDispatch)
-        let candidate = try #require(DispatchPlanner.mergeCandidate(pr,
-            flow: flow, me: "owner", repo: MergeAnyFixture.repo))
-        #expect(candidate.move.name == "merge")
-        #expect(candidate.move.owner == "owner")
-        #expect(candidate.command == ["bash", "scripts/wt", "merge", "42"])
+        #expect(DispatchPlanner.mergeCandidate(pr,
+            flow: flow, me: "owner", repo: MergeAnyFixture.repo) == nil)
     }
 
     @Test func anotherAuthorsPullRequestCannotBeMerged() throws {
+        try positiveTwin()
         var pr = MergeAnyFixture.pr(author: "other")
         pr.mergeable = true
         #expect(DispatchPlanner.mergeCandidate(pr, flow: try MergeAnyFixture.flow(),
@@ -80,12 +81,14 @@ struct MergeAnyAcceptanceTests {
     }
 
     @Test func pullRequestThatIsNotMergeableCannotBeMerged() throws {
+        try positiveTwin()
         let pr = MergeAnyFixture.pr()
         #expect(DispatchPlanner.mergeCandidate(pr, flow: try MergeAnyFixture.flow(),
             me: "owner", repo: MergeAnyFixture.repo) == nil)
     }
 
     @Test func draftPullRequestCannotBeMerged() throws {
+        try positiveTwin()
         var pr = MergeAnyFixture.pr(draft: true)
         pr.mergeable = true
         #expect(DispatchPlanner.mergeCandidate(pr, flow: try MergeAnyFixture.flow(),
@@ -93,6 +96,7 @@ struct MergeAnyAcceptanceTests {
     }
 
     @Test func pullRequestTargetingAnotherBaseCannotBeMerged() throws {
+        try positiveTwin()
         var pr = MergeAnyFixture.pr(base: "develop")
         pr.mergeable = true
         #expect(DispatchPlanner.mergeCandidate(pr, flow: try MergeAnyFixture.flow(),
@@ -100,6 +104,7 @@ struct MergeAnyAcceptanceTests {
     }
 
     @Test func contributorAssociationCannotMergeEvenTheirOwnPullRequest() throws {
+        try positiveTwin()
         var pr = MergeAnyFixture.pr(association: "CONTRIBUTOR")
         pr.mergeable = true
         #expect(DispatchPlanner.mergeCandidate(pr, flow: try MergeAnyFixture.flow(),
@@ -107,11 +112,20 @@ struct MergeAnyAcceptanceTests {
     }
 
     @Test func flowWithoutMergeDispatchCannotProduceMergeCandidate() throws {
+        try positiveTwin()
         var pr = MergeAnyFixture.pr()
         pr.mergeable = true
         #expect(DispatchPlanner.mergeCandidate(pr,
             flow: try MergeAnyFixture.flow(withMergeDispatch: false),
             me: "owner", repo: MergeAnyFixture.repo) == nil)
+    }
+
+    private func positiveTwin() throws {
+        var pr = MergeAnyFixture.pr()
+        pr.mergeable = true
+        let flow = try MergeAnyFixture.flow()
+        #expect(FlowEngine.move(for: pr, flow: flow)?.name == "merge")
+        #expect(DispatchPlanner.mergeCandidate(pr, flow: flow, me: "owner", repo: pr.repo) != nil)
     }
 }
 
@@ -124,7 +138,9 @@ private enum MergeAnyFixture {
         PullRequest(repo: repo, number: 42, title: "Synthetic PR", author: author,
             authorAssociation: association, url: URL(string: "https://example.invalid/pr/42")!,
             headSha: head, headRef: "feature", baseRef: base, body: "", isDraft: draft,
-            labels: labels, assignees: ["reviewer"], comments: [],
+            labels: labels, assignees: ["reviewer"], comments: [
+                PullRequestComment(author: "reviewer", authorAssociation: "MEMBER",
+                    body: "## Review: approve (head \(head))", createdAt: Date(timeIntervalSince1970: 1_800_000_000))],
             updatedAt: Date(timeIntervalSince1970: 1_800_000_000))
     }
 

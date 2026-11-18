@@ -140,11 +140,12 @@ struct StartMovesAcceptanceTests {
     func busyMergeWaitsWithoutFallingBackToFlow(startMoves: Bool?) async throws {
         let f = try await StartMovesFixture.make(startMoves: startMoves)
         defer { f.remove() }
+        try f.prepareMerge()
         let other = try f.leases.store("other")
         let held = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo, key: "schedule-agent"))
-        #expect(!held.record.hasRun(f.key("merge").description))
+        #expect(!held.record.hasRun(f.mergeKey.description))
         let engine = try f.engine()
-        try await engine.runNow(f.key("merge"))
+        try await engine.runNow(f.mergeKey)
         for _ in 0..<2 {
             let busy = await engine.tick()
             #expect(busy.problem == nil)
@@ -154,7 +155,7 @@ struct StartMovesAcceptanceTests {
         try await other.release(held)
         let free = await engine.tick()
         #expect(free.problem == nil)
-        #expect(free.jobs.map(\.key) == [f.key("merge")])
+        #expect(free.jobs.map(\.key) == [f.mergeKey])
         #expect(free.next.isEmpty)
         try await f.waitForJobs()
     }
@@ -162,23 +163,28 @@ struct StartMovesAcceptanceTests {
     @Test func mergeInRemoteHistoryIsDropped() async throws {
         let f = try await StartMovesFixture.make(startMoves: true)
         defer { f.remove() }
+        try f.prepareMerge()
         let other = try f.leases.store("other")
         let merge = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo,
-            key: f.key("merge").description))
+            key: f.mergeKey.description))
         try await other.release(merge)
         let later = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo, key: "later-move"))
         try await other.release(later)
-        #expect(later.record.done?.contains(f.key("merge").description) == true)
-        let engine = try f.engine()
-        try await engine.runNow(f.key("merge"))
+        #expect(later.record.done?.contains(f.mergeKey.description) == true)
+        let log = MoveLog()
+        let engine = try f.engine(log: { log.append($0) })
+        try await engine.runNow(f.mergeKey)
         let ran = await engine.tick()
         #expect(ran.problem == nil)
         #expect(ran.jobs.isEmpty)
         #expect(ran.next.isEmpty)
+        #expect(log.all.contains("synthetic/project#7: merge not started: it already ran on this head"))
         // The next sync must resume the flow, proving the Merge override was discarded.
+        try f.reviews(["approve", "changes"])
         let resumed = await engine.tick()
         #expect(resumed.problem == nil)
-        #expect(resumed.jobs.map(\.key) == [f.key("fix")])
+        #expect(resumed.jobs.map(\.key) == [JobKey(repo: f.repo, item: "pr-7", move: "fix",
+            head: "abcdef01", round: StartMovesFixture.rejectionRound)])
         try await f.waitForJobs()
     }
 
@@ -186,15 +192,17 @@ struct StartMovesAcceptanceTests {
     func invalidBusyMergeCannotStartAnythingInSyncOnlyRepo(conflicts: Bool) async throws {
         let f = try await StartMovesFixture.make()
         defer { f.remove() }
+        try f.prepareMerge(who: "reviewer")
         let other = try f.leases.store("other")
         let held = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo, key: "schedule-agent"))
-        let engine = try f.engine()
-        try await engine.runNow(f.key("merge"))
+        let log = MoveLog()
+        let engine = try f.engine(log: { log.append($0) })
+        try await engine.runNow(f.mergeKey)
         let busy = await engine.tick()
         #expect(busy.problem == nil)
         #expect(busy.jobs.isEmpty)
         #expect(busy.next == ["synthetic/project#pr-7"])
-        try f.updatePRs(head: conflicts ? "same-head" : "new-head", conflicting: conflicts)
+        try f.updatePRs(head: conflicts ? "abcdef01" : "new-head", conflicting: conflicts)
         try await other.release(held)
         for _ in 0..<2 {
             let invalidated = await engine.tick()
@@ -202,6 +210,8 @@ struct StartMovesAcceptanceTests {
             #expect(invalidated.jobs.isEmpty)
             #expect(invalidated.next.isEmpty)
         }
+        let reason = conflicts ? "the PR cannot take it now" : "the head moved"
+        #expect(log.all.contains("synthetic/project#7: merge not started: \(reason)"))
     }
 
     @Test func syncOnlyRunNextAlreadyRunElsewhereLeavesQueue() async throws {
@@ -224,13 +234,15 @@ struct StartMovesAcceptanceTests {
     @Test func invalidMergeLosesPriorityButAutomaticFlowContinues() async throws {
         let f = try await StartMovesFixture.make(startMoves: true, maxAgents: 1)
         defer { f.remove() }
+        try f.prepareMerge()
         let other = try f.leases.store("other")
         let held = try RetryLeaseFixture.claimed(await other.claim(f.leases.item, in: f.repo, key: "schedule-agent"))
         let engine = try f.engine()
-        try await engine.runNow(f.key("merge"))
+        try await engine.runNow(f.mergeKey)
         let busy = await engine.tick()
         #expect(busy.jobs.isEmpty)
         #expect(busy.next == ["synthetic/project#pr-7"])
+        try f.reviews(["approve", "changes"])
         try f.updatePRs(head: "new-head", includeOlder: true)
         try await other.release(held)
         let first = await engine.tick()
@@ -241,7 +253,8 @@ struct StartMovesAcceptanceTests {
         try await f.waitForJobs()
         let second = await engine.tick()
         #expect(second.problem == nil)
-        #expect(second.jobs.contains { $0.key == JobKey(repo: f.repo, item: "pr-7", move: "fix", head: "new-head") })
+        #expect(second.jobs.contains { $0.key == JobKey(repo: f.repo, item: "pr-7", move: "fix", head: "new-head",
+            round: StartMovesFixture.rejectionRound) })
         #expect(!second.jobs.contains { $0.key.move == "merge" })
         try await f.waitForJobs()
     }
@@ -268,7 +281,7 @@ struct StartMovesFixture {
     let home: BtonHome
     var repo: String { leases.repo }
     var root: URL { leases.root }
-    func key(_ move: String) -> JobKey { JobKey(repo: repo, item: "pr-7", move: move, head: "same-head") }
+    func key(_ move: String) -> JobKey { JobKey(repo: repo, item: "pr-7", move: move, head: "abcdef01") }
 
     private static let template = Task { try await makeTemplate() }
 
@@ -319,7 +332,7 @@ struct StartMovesFixture {
                 ;;
               graphql)
                 cat <<'JSON'
-            {"data":{"viewer":{"login":"owner"},"repository":{"defaultBranchRef":{"name":"main"},"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"number":7,"title":"Synthetic","url":"https://example.invalid/pr/7","isDraft":false,"headRefOid":"same-head","headRefName":"feature","baseRefName":"main","body":"","updatedAt":"2026-10-19T12:00:00Z","mergeable":"\(conflicting ? "CONFLICTING" : "MERGEABLE")","authorAssociation":"OWNER","author":{"login":"owner"},"labels":{"nodes":[]},"assignees":{"nodes":[]},"comments":{"nodes":[]}}]}}}}
+            {"data":{"viewer":{"login":"owner"},"repository":{"defaultBranchRef":{"name":"main"},"pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"number":7,"title":"Synthetic","url":"https://example.invalid/pr/7","isDraft":false,"headRefOid":"abcdef01","headRefName":"feature","baseRefName":"main","body":"","updatedAt":"2026-10-19T12:00:00Z","mergeable":"\(conflicting ? "CONFLICTING" : "MERGEABLE")","authorAssociation":"OWNER","author":{"login":"owner"},"labels":{"nodes":[]},"assignees":{"nodes":[]},"comments":{"nodes":[]}}]}}}}
             JSON
                 ;;
               list) echo '[]' ;;
@@ -400,8 +413,8 @@ struct StartMovesFixture {
         return (flow, try GitHubClient.decodeOpenIssues(issueData, repo: repo).issues)
     }
 
-    func engine() throws -> Engine {
-        try Engine(home: home, github: GitHubClient(ghPath: root.appendingPathComponent("gh").path), log: { _ in })
+    func engine(log: @escaping @Sendable (String) -> Void = { _ in }) throws -> Engine {
+        try Engine(home: home, github: GitHubClient(ghPath: root.appendingPathComponent("gh").path), log: log)
     }
 
     func waitForJobs() async throws {

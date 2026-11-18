@@ -44,11 +44,7 @@ extension Engine {
                 snapshot.flows[repo.slug] = status
                 snapshot.me = open.viewer
                 snapshot.defaultBranches[repo.slug] = open.defaultBranch
-                snapshot.openPullRequests += open.pullRequests.map { pr in
-                    var pr = pr
-                    pr.move = status.flow.flatMap { FlowEngine.move(for: pr, flow: $0) }
-                    return pr
-                }
+                snapshot.openPullRequests += open.pullRequests.map { FlowEngine.judged($0, flow: status.flow) }
                 snapshot.merged += merged
                 read.append(repo.slug.lowercased())
             } catch {

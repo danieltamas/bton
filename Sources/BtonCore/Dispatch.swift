@@ -171,13 +171,23 @@ public enum DispatchPlanner {
         return made
     }
 
-    /// The owner's Merge on a PR of theirs that GitHub can merge, whatever the flow's move: the
-    /// flow's own `merge` dispatch, so the repo's merge command and its checks still decide.
+    /// The flow's move for the PR when that is a merge it dispatches: the only state a merge
+    /// starts in. Judged on the PR's facts, never on a `move` the value carries from an older read.
+    static func dueMerge(_ pr: PullRequest, flow: Flow) -> Move? {
+        guard let due = FlowEngine.move(for: pr, flow: flow), due.name == "merge", due.hasDispatch else { return nil }
+        return due
+    }
+
+    /// The owner's Merge on a PR of theirs that GitHub can merge, while the merge is the flow's
+    /// move for it: the flow's own `merge` dispatch, started here also when the flow gives it to
+    /// someone else (the reviewer's merge on a PR of mine). The ask decides who starts a merge
+    /// that is due, never that one is due: a newer rejection, a check that is not green or an
+    /// earlier rule that holds leaves nothing to start, whoever asked and however long ago.
     public static func mergeCandidate(_ pr: PullRequest, flow: Flow, me: String, repo: String) -> DispatchCandidate? {
-        let move = Move(name: "merge", owner: me, ownerFromRotation: false,
-                        tier: pr.move?.tier ?? FlowEngine.tier(of: pr, rule: flow.tier), hasDispatch: true)
-        guard let rule = flow.dispatch[move.name], pr.author.caseInsensitiveCompare(me) == .orderedSame,
-              pr.mergeable, !pr.isDraft, FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
+        guard let due = dueMerge(pr, flow: flow), let rule = flow.dispatch[due.name],
+              pr.author.caseInsensitiveCompare(me) == .orderedSame, pr.mergeable, !pr.isDraft else { return nil }
+        let move = Move(name: due.name, owner: me, ownerFromRotation: false, tier: due.tier, hasDispatch: true)
+        guard FlowEngine.isDispatchable(move, pr: pr, flow: flow, me: me) else { return nil }
         var made = candidate(pr, move: move, rule: rule, flow: flow, me: me, repo: repo)
         made.requiredChecks = FlowEngine.requiredChecks(ofMove: move.name, flow: flow)
         return made

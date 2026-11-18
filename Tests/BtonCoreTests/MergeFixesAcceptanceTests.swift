@@ -43,8 +43,10 @@ struct MergeFixesAcceptanceTests {
         defer { f.base.remove() }
         let store = try JobStore(home: f.base.home)
         let agent = mode == "agent timeout" ? "synthetic" : nil
+        if agent == nil { try f.base.prepareMerge() }
         var flagged = Job(id: UUID(), key: JobKey(repo: f.base.repo, item: "pr-7",
-            move: agent == nil ? "merge" : "fix", head: f.head), agent: agent,
+            move: agent == nil ? "merge" : "fix", head: f.head,
+            round: agent == nil ? StartMovesFixture.approvalRound : ""), agent: agent,
             startedAt: .now.addingTimeInterval(-60), endedAt: .now.addingTimeInterval(-30),
             status: .failed, detail: mode == "command failure" ? "bash exited 1" : "timed out", cost: 0)
         flagged.flags = mode == "command failure" ? [.failed] : [.timedOut]

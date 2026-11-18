@@ -167,16 +167,27 @@ public enum FlowEngine {
         return flow.moves.first { $0.when.allSatisfy(facts.holds) }
     }
 
+    /// The rules that hold but for their `checks_green:` predicates, in the flow's order, each
+    /// with the checks it names, and whether the head's check list was read whole. One reading
+    /// for the red hold and for the wait (`wait`), so they never disagree on what a check holds.
+    static func rulesHeldByChecks(for pr: PullRequest, flow: Flow) -> (rules: [(rule: MoveRule, names: [String])], readable: Bool) {
+        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
+        let rules = flow.moves.compactMap { rule -> (rule: MoveRule, names: [String])? in
+            let names = requiredChecks(of: rule)
+            guard !names.isEmpty, rule.when.filter({ !$0.hasPrefix(checksPredicate + ":") }).allSatisfy(facts.holds) else { return nil }
+            return (rule, names)
+        }
+        return (rules, facts.checksReadable)
+    }
+
     /// The first rule that holds but for its `checks_green:` predicates, every named check done
     /// on the head and at least one red, with the red names. A check still pending or not there
     /// may yet turn green; a red one does not, and a move held only by it is a person's: re-run
     /// it, or fix the base.
     static func blockedRule(for pr: PullRequest, flow: Flow) -> (rule: MoveRule, red: [String])? {
-        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
-        guard facts.checksReadable else { return nil }
-        for rule in flow.moves {
-            let names = requiredChecks(of: rule)
-            guard !names.isEmpty, rule.when.filter({ !$0.hasPrefix(checksPredicate + ":") }).allSatisfy(facts.holds) else { continue }
+        let held = rulesHeldByChecks(for: pr, flow: flow)
+        guard held.readable else { return nil }
+        for (rule, names) in held.rules {
             let states = names.map { name in pr.checks.first { $0.name == name }?.state }
             guard states.allSatisfy({ $0 == .success || $0 == .failure }) else { continue }
             let red = zip(names, states).filter { $0.1 == .failure }.map(\.0)
@@ -288,8 +299,8 @@ public enum FlowEngine {
         rule(for: pr, flow: flow).map(requiredChecks(of:)) ?? []
     }
 
-    /// The checks every rule for `move` names: the owner's Merge press at any move is gated by
-    /// the flow's merge rules too.
+    /// The checks every rule for `move` names: the owner's Merge is gated by all of the flow's
+    /// merge rules, not only by the one that holds.
     public static func requiredChecks(ofMove move: String, flow: Flow) -> [String] {
         var names: [String] = []
         for rule in flow.moves where rule.move == move {

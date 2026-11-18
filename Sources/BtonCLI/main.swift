@@ -87,7 +87,7 @@ do {
         let read = try await github.openPullRequests(repo: repo)
         for pr in read.pullRequests.sorted(by: { $0.number < $1.number }) {
             guard let move = FlowEngine.move(for: pr, flow: flow) else {
-                print("#\(pr.number)\t-")
+                print("#\(pr.number)\t-\(FlowEngine.wait(for: pr, flow: flow).map { "\t(\($0.summary))" } ?? "")")
                 continue
             }
             let owner = move.owner.map { move.ownerFromRotation ? "\($0) (rotation)" : move.ownerWroteIt ? "\($0) (author: needs another reviewer)" : $0 } ?? "unassigned"

@@ -136,6 +136,8 @@ private struct MergeHeadPinFixture {
                 headRef: "feature", baseRef: "main", body: "", isDraft: false,
                 labels: [], assignees: [], comments: [], updatedAt: .now)
             pr.mergeable = true
+            pr.comments = [PullRequestComment(author: "reviewer", authorAssociation: "MEMBER",
+                body: "## Review: approve (head \(pr.headSha))", createdAt: .now)]
             let gh = base.leases.root.appendingPathComponent("gh")
             let original = try String(contentsOf: gh, encoding: .utf8)
             let handler = #"""
@@ -170,7 +172,9 @@ private struct MergeHeadPinFixture {
         let actionCommand = ["/bin/sh", "-c", "touch \"$ACTION_FILE\""]
         let object: [String: Any] = ["version": 1, "base": "main",
             "tier": ["marker": "Tier:", "values": ["feature"], "default": "feature"],
-            "reviews": [String: String](), "fixed": "Fixed:", "moves": [], "dispatch": ["merge": ["command": command ?? actionCommand]],
+            "reviews": ["feature": [["heading": "## Review:", "notByAuthor": true]]], "fixed": "Fixed:",
+            "moves": [["move": "merge", "when": ["approved_current_head"], "who": "author"]],
+            "dispatch": ["merge": ["command": command ?? actionCommand]],
             "checks": ["beforeSession": agentMove ? checks : [["/usr/bin/false"]],
                        "beforeMerge": agentMove ? [["/usr/bin/false"]] : checks]]
         let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: object))

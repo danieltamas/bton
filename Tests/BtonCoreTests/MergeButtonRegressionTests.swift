@@ -33,10 +33,11 @@ struct MergeButtonRegressionTests {
         try await f.waitForJobs()
     }
 
-    @Test func ownPRStillAcceptsMergeOverrideOfDifferentFlowMove() async throws {
+    @Test func ownPRRejectsMergeOverrideOfDifferentFlowMove() async throws {
         let f = try await StartMovesFixture.make(startMoves: false)
         defer { f.remove() }
-        let engine = try f.engine()
+        let log = MoveLog()
+        let engine = try f.engine(log: { log.append($0) })
         let before = await engine.tick()
         #expect(before.problem == nil)
         #expect(before.openPullRequests.first?.author == "owner")
@@ -45,7 +46,8 @@ struct MergeButtonRegressionTests {
         try await engine.runNow(f.key("merge"))
         let after = await engine.tick()
         #expect(after.problem == nil)
-        #expect(after.jobs.map(\.key) == [f.key("merge")])
+        #expect(after.jobs.isEmpty)
+        #expect(log.all.contains("synthetic/project#7: merge not started: the flow does not ask for a merge on it now"))
         #expect(after.next.isEmpty)
         try await f.waitForJobs()
     }

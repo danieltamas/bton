@@ -86,6 +86,8 @@ private struct PullRequestRow: View {
             } else {
                 MoveChip(move: move, me: me, working: busy, shownApart: FlowEngine.failedChecks(of: pr))
             }
+        } else if let wait = pr.waiting {
+            WaitChip(wait: wait, shownApart: FlowEngine.failedChecks(of: pr))
         }
     }
 
@@ -485,6 +487,31 @@ struct MoveChip: View {
                  color: mine ? color : color.opacity(0.85), style: mine && !working ? .filled : .tinted)
         } else {
             Chip(text: "\(move.name) · unassigned", symbol: Theme.symbol(forMove: move.name), color: Theme.unassigned, style: .dashed)
+        }
+    }
+}
+
+/// A PR with no move that is one green check away from one: the move it will get and the checks
+/// it waits for, so an approved PR never sits on its row without a word. Dashed and never a
+/// button: nobody has the move yet and nothing here starts it.
+struct WaitChip: View {
+    let wait: MoveWait
+    /// The red checks the row's own chip shows: the pill does not name them twice.
+    var shownApart: [String] = []
+
+    var body: some View {
+        let color = Theme.color(forMove: wait.move)
+        if wait.checksUnread {
+            Chip(text: "\(wait.move) · too many checks to read", symbol: Theme.symbol(forMove: wait.move),
+                 color: Theme.unassigned, style: .dashed)
+                .help("GitHub lists more checks on this head than Bton reads, and Bton judges no gate on a part of the list: the \(wait.move) is yours to do on GitHub")
+        } else {
+            let red = wait.redChecks.filter { !shownApart.contains($0) }
+            Chip(text: "\(wait.move) · waiting for \(wait.checks.joined(separator: ", "))\(red.isEmpty ? "" : " · \(red.joined(separator: ", ")) red")",
+                 symbol: Theme.symbol(forMove: wait.move), color: color.opacity(0.85), style: .dashed)
+                .help(wait.redChecks.isEmpty
+                      ? "The \(wait.move) is due at the sync that reads \(wait.checks.joined(separator: ", ")) green on this head. Nobody is asked for anything until then."
+                      : "\(wait.redChecks.joined(separator: ", ")) is red on this head and \(wait.checks.joined(separator: ", ")) has not finished: the \(wait.move) is due once every one is green. Re-run the red check or push a fix.")
         }
     }
 }

@@ -36,6 +36,8 @@ struct ResolveAnyAcceptanceTests {
             "\"merge\":{\"command\":[\"merge\",\"{number}\"]\(checks)}")
         var pr = ResolveAnyFixture.pr()
         pr.mergeable = true
+        pr.comments = [PullRequestComment(author: "reviewer", authorAssociation: "MEMBER",
+            body: "## Review: approve (head \(pr.headSha))", createdAt: pr.updatedAt)]
         let candidate = try #require(DispatchPlanner.mergeCandidate(pr,
             flow: flow, me: "owner", repo: ResolveAnyFixture.repo))
         #expect(candidate.skipsChecks == (checks == #","checks":false"#))
@@ -179,7 +181,8 @@ private enum ResolveAnyFixture {
                     "large":[{"heading":"## Review:","notByAuthor":true}]},"fixed":"## Fixed:",
          "moves":[
            {"move":"decide","when":["label:turn:lead"],"who":"lead"},
-           {"move":"fix","when":["no_review_or_response_newer"],"who":"author"}],
+           {"move":"fix","when":["no_review_or_response_newer"],"who":"author"},
+           {"move":"merge","when":["approved_current_head"],"who":"author"}],
          "dispatch":{\(dispatch)}}
         """
         return try JSONDecoder().decode(Flow.self, from: Data(json.utf8))

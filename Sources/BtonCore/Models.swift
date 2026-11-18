@@ -38,10 +38,14 @@ public struct PullRequest: Identifiable, Hashable, Sendable {
     /// Commits under the head that only merge commits separate from it (a conflict fix leaves them): a
     /// review of one still stands for the head.
     public var mergeOnlyAncestors: [String] = []
-    /// GitHub says the PR can merge into its base as it stands: the panel's Merge, at any move.
+    /// GitHub says the PR can merge into its base as it stands: what the panel's Merge needs
+    /// beside a merge that is the flow's move.
     public var mergeable = false
     /// Set once the repo's flow has been evaluated; nil for a repo without a flow.
     public var move: Move?
+    /// What a PR without a move waits for, set with `move` (`FlowEngine.judged`); nil when it has
+    /// a move or no rule is one green check away.
+    public var waiting: MoveWait?
     /// What this Mac's jobs on the PR cost so far; nil without jobs or while a model has no price.
     public var cost: Decimal?
     /// One of this Mac's jobs is working on it now.
