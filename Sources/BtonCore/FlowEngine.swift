@@ -446,8 +446,9 @@ public enum FlowEngine {
         /// to (`PullRequest.carriedHeads`). GitHub's list of merge parents is never enough.
         /// An approval names that commit by its whole id: a commit whose id starts with eight
         /// chosen digits takes minutes to make, so the start of an id could pass a commit nobody
-        /// read. A rejection counts by the digits it gives, as it always did: taking one for the
-        /// wrong commit can only hold a PR, which whoever can push to it can do anyway.
+        /// read. A rejection counts by the digits it gives, as it always did: one taken for the
+        /// wrong commit holds the PR or sends it to its fix or its decision and approves nothing,
+        /// and whoever can push to a PR can bring a rejection on it anyway.
         func countsForHead(_ review: Review) -> Bool {
             let ids = ([pr.headSha] + pr.carriedHeads).map { $0.lowercased() }
             return review.verdict == .approve ? ids.contains(review.head) : ids.contains { $0.hasPrefix(review.head) }

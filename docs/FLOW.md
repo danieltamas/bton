@@ -110,8 +110,9 @@ A review **counts for** the current head by the commit it names (ignoring case):
   commit that reads as the approved one. An approval that gives fewer digits is still the PR's
   latest review, and it counts for no commit: the head is then a head with no review.
 - A `changes` or a `blocked` counts when the digits it gives are the start of the head's id.
-  Taking a rejection for the wrong commit can only hold a PR, which whoever can push to it can
-  do anyway. So the start of an id can stop a PR and can never pass one.
+  A rejection taken for the wrong commit holds the PR, sends it to its fix or its decision and
+  counts as a round. It approves nothing, and whoever can push to a PR can bring a rejection on
+  it anyway. So the start of an id can stop a PR and can never pass one.
 
 Bton writes the whole id itself. When it posts a review (`"post": "comment"`), the first line
 gets the id of the commit the reviewer was given wherever the reviewer wrote fewer digits. A
@@ -140,7 +141,10 @@ decision heading, and once Bton posts it, it removes the labels that held that m
 `label:` conditions no other rule names), so the PR moves on; if one can't be removed, the job
 fails saying which. A `decision.heading` that overlaps a review heading makes the flow invalid.
 Limit: a decision move runs once per head, so a second round cap on the same head (fixes and
-reviews without a push) waits for the next push.
+reviews without a push) waits for the next push. The same limit meets a decision of your own
+that approved by the start of an id: it counts for no commit, the review runs once more
+("Dispatch"), and when that review rejects, the decision does not run again on that head. The
+PR waits for a push, or for a decision typed with the whole id.
 
 ## Predicates
 
@@ -381,8 +385,9 @@ the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
 A move runs once per head on any Mac, whether it succeeds or fails. One review runs a second
 time: when your own latest review approves the head by the start of its id (an older Bton posted
 the reviewer's text as it was, or you typed it), it counts for no commit ("Reviews"), and the
-move a rule gives on `no_review_or_response_newer` runs once more on that head, so that Bton
-posts the whole id. It never runs a third time for such a review. When a failure's cause is
+PR's move, when the rule that gives it names `no_review_or_response_newer`, runs once more on
+that head, so that Bton posts the whole id. That is one more run per review round (someone
+else's review opens a round), never a third in the same round. When a failure's cause is
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
 runs it again on the same head, first in line, if it is still the PR's move. A PR move put
 first in line here that another Mac already ran on that head leaves the line, and the log says

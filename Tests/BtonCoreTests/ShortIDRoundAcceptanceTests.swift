@@ -51,6 +51,40 @@ struct ShortIDRoundAcceptanceTests {
         }
     }
 
+    @Test(arguments: [14, 15])
+    func onlyTheSelectedReviewRuleCanOpenAShortIDRound(scenario: Int) throws {
+        let manual: [String: Any] = [
+            "move": "review", "when": ["label:manual"], "who": "assignee"]
+        let repair: [String: Any] = [
+            "move": "review", "when": ["no_review_or_response_newer", "label:absent"],
+            "who": "assignee"]
+        let json: [String: Any] = ["version": 1, "base": "main",
+            "tier": ["marker": "Tier:", "values": ["small"], "default": "small"],
+            "reviews": ["small": [["heading": "## Review:", "notByAuthor": true]]],
+            "decision": ["heading": "## Decision:", "move": "decide", "by": ["author"]],
+            "fixed": "## Fixed:", "moves": scenario == 14 ? [manual, repair] : [repair, manual],
+            "dispatch": ["review": ["agent": "synthetic", "prompt": "Review", "post": "comment"]]]
+        let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: json))
+        var pr = F.pr([F.comment(String(F.head.prefix(8)))])
+        pr.labels = scenario == 14 ? ["manual"] : ["manual", "absent"]
+
+        #expect(FlowEngine.move(for: pr, flow: flow)?.name == "review")
+        #expect(FlowEngine.reviewsAgain("review", pr: pr, flow: flow, me: "me") == (scenario == 15))
+        let key = DispatchPlanner.key(for: pr, move: "review", flow: flow, me: "me", repo: pr.repo)
+        #expect(key.round == (scenario == 14 ? "" : "+short-id"))
+
+        if scenario == 14 {
+            let candidates = DispatchPlanner.candidates([pr], flow: flow, me: "me", repo: pr.repo)
+            #expect(candidates.count == 1)
+            let candidate = try #require(candidates.first)
+            #expect(candidate.key.round == "")
+            #expect(candidate.key == key)
+            let completed = Job(id: UUID(), key: key, agent: "synthetic", startedAt: F.now, status: .succeeded)
+            let agents = ["synthetic": AgentTemplate(argv: ["/usr/bin/true"])]
+            #expect(DispatchPlanner.select(candidates, jobs: [completed], maxAgents: 1, agents: agents).isEmpty)
+        }
+    }
+
     @Test func completedOriginalRunAllowsRepairButCompletedRepairNeverLoops() throws {
         let flow = try F.flow(rounds: true)
         let pr = F.pr([F.comment(String(F.head.prefix(8)))])

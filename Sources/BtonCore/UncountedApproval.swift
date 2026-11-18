@@ -30,12 +30,14 @@ extension FlowEngine {
 
     /// The flow asks for `move` again on a head and in a round it already ran in: my own latest
     /// review approves the head by the start of its id (an older Bton posted the reviewer's text
-    /// as it was, or I typed it), and my own posts open no round (`round`). Only for a move a
-    /// rule gives on `no_review_or_response_newer`: one due for another reason keeps its key.
+    /// as it was, or I typed it), and my own posts open no round (`round`). Only when the rule
+    /// that gives the PR its move now gives `move` on `no_review_or_response_newer`: a move due
+    /// for another reason keeps its key, also in a flow where another rule names the predicate.
     public static func reviewsAgain(_ move: String, pr: PullRequest, flow: Flow, me: String) -> Bool {
-        guard flow.moves.contains(where: { $0.move == move && $0.when.contains("no_review_or_response_newer") }),
-              let latest = uncounted(of: pr, flow: flow) else { return false }
-        return latest.author?.caseInsensitiveCompare(me) == .orderedSame && names(latest, theStartOf: pr.headSha)
+        guard let latest = uncounted(of: pr, flow: flow),
+              latest.author?.caseInsensitiveCompare(me) == .orderedSame, names(latest, theStartOf: pr.headSha),
+              let rule = rule(for: pr, flow: flow) else { return false }
+        return rule.move == move && rule.when.contains("no_review_or_response_newer")
     }
 
     /// The PR's latest review when it is an approval that does not count for the head.
