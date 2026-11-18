@@ -43,7 +43,7 @@ private enum DecisionFixture {
 
     static func decision(_ verdict: String, author: String? = "owner-dev",
                          association: String? = "OWNER", hour: Int = 14) -> PullRequestComment {
-        comment("## Decision: \(verdict) (head abcdef12)", author: author,
+        comment("## Decision: \(verdict) (head \(head))", author: author,
                 association: association, hour: hour)
     }
 
@@ -108,7 +108,7 @@ struct DecisionAcceptanceTests {
         let review = try #require(reviews.first)
         #expect(review.heading == "## Decision:")
         #expect(review.verdict.rawValue == verdict)
-        #expect(review.head == "abcdef12")
+        #expect(review.head == DecisionFixture.head)
     }
 
     @Test(arguments: ["CONTRIBUTOR", "NONE", "FIRST_TIMER", "UNKNOWN", "", "owner", nil] as [String?])
@@ -125,8 +125,8 @@ struct DecisionAcceptanceTests {
         #expect(FlowEngine.move(for: pr, flow: flow)?.name == "decide")
     }
 
-    @Test(arguments: ["Context\n## Decision: approve (head abcdef12)",
-                      "## Decision: approved (head abcdef12)",
+    @Test(arguments: ["Context\n## Decision: approve (head \(DecisionFixture.head))",
+                      "## Decision: approved (head \(DecisionFixture.head))",
                       "## Decision: approve", "## Decision: approve (head xyz1234)"])
     func decisionRequiresValidFirstLine(body: String) throws {
         let pr = DecisionFixture.pr([DecisionFixture.comment(body, author: "owner-dev")])
@@ -168,7 +168,7 @@ struct DecisionAcceptanceTests {
         #expect(move.name == "merge")
         #expect(move.owner == author)
         let selfReview = DecisionFixture.pr([
-            DecisionFixture.comment("## Review: approve (head abcdef12)", author: author)
+            DecisionFixture.comment("## Review: approve (head \(DecisionFixture.head))", author: author)
         ], author: author, tier: tier)
         #expect(FlowEngine.reviews(of: selfReview, flow: flow).isEmpty)
     }
@@ -222,7 +222,7 @@ struct DecisionAcceptanceTests {
     @Test func decisionFinalMessageRequiresDecisionHeading() throws {
         let message = "## Decision: approve (head abcdef12)\nSynthetic rationale."
         #expect(DispatchPlanner.reviewComment(fromFinalMessage: message, headings: ["## Decision:"],
-                                              head: DecisionFixture.head) == message)
+                                              head: DecisionFixture.head) == "## Decision: approve (head \(DecisionFixture.head))\nSynthetic rationale.")
         #expect(DispatchPlanner.reviewComment(fromFinalMessage: message, headings: ["## Review:"],
                                               head: DecisionFixture.head) == nil)
     }

@@ -248,7 +248,7 @@ private enum ReviewWaitsFixture {
 
     static func review(_ verdict: String) -> PullRequestComment {
         PullRequestComment(author: "reviewer", authorAssociation: "MEMBER",
-            body: "## Review: \(verdict) (head d67db2a8)",
+            body: "## Review: \(verdict) (head \(head))",
             createdAt: Date(timeIntervalSince1970: 1_800_000_000))
     }
 }

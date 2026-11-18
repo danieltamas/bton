@@ -65,7 +65,7 @@ struct PushOutcomeAcceptanceTests {
         ]
         let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: json))
         let changes = Self.comment("## Review: changes (head abcdef12)")
-        let approve = Self.comment("## Review: approve (head abcdef12)")
+        let approve = Self.comment("## Review: approve (head \(Self.head))")
         func candidate(_ move: String, pr: PullRequest, me: String) throws -> DispatchCandidate {
             try #require(DispatchPlanner.candidates([pr], flow: flow, me: me, repo: "synthetic/project")
                 .first { $0.key.move == move }, "\(move)")

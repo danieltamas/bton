@@ -24,6 +24,7 @@ public enum Verdict: String, Hashable, Sendable {
 public struct Review: Hashable, Sendable {
     public let heading: String
     public let verdict: Verdict
+    /// The commit id as the first line gives it, lower case: 7 to 40 hex digits.
     public let head: String
     public let author: String?
     public let createdAt: Date
@@ -97,12 +98,18 @@ public enum FlowEngine {
 
     /// Rules 1–3 of "Reviews": heading, verdict word, then a named head.
     public static func review(fromFirstLine line: String, headings: [String]) -> (heading: String, verdict: Verdict, head: String)? {
+        namedReview(in: line[...], headings: headings).map { ($0.heading, $0.verdict, line[$0.head].lowercased()) }
+    }
+
+    /// The same reading, with where the head's digits stand in the line: Bton writes the whole id
+    /// there when it posts a review (`DispatchPlanner.reviewComment`).
+    static func namedReview(in line: Substring, headings: [String]) -> (heading: String, verdict: Verdict, head: Range<String.Index>)? {
         for heading in headings where line.hasPrefix(heading) {
             let rest = line.dropFirst(heading.count)
             guard let verdict = rest.firstMatch(of: /^\s*(?i)(approve|changes|blocked)(?![A-Za-z0-9_])/),
                   let head = rest[verdict.range.upperBound...].firstMatch(of: /\(head\s+`?([0-9a-fA-F]{7,40})(?![0-9a-fA-F])/)
             else { continue }
-            return (heading, Verdict(rawValue: verdict.1.lowercased())!, String(head.1).lowercased())
+            return (heading, Verdict(rawValue: verdict.1.lowercased())!, head.1.startIndex..<head.1.endIndex)
         }
         return nil
     }
@@ -159,17 +166,6 @@ public enum FlowEngine {
             let names = Set(rule.when.map(name))
             return names.contains(redPredicate) && names.isDisjoint(with: reviewPredicates)
         }
-    }
-
-    /// Why the PR's approval does not count for its head, when the approved commit sits under a
-    /// merge commit no review is carried over; nil for any other PR. The flow asks for a review of
-    /// such a head without a word, so the log and `bton moves` say this.
-    public static func uncarriedApproval(of pr: PullRequest, flow: Flow) -> String? {
-        let facts = Facts(pr: pr, flow: flow, reviews: reviews(of: pr, flow: flow))
-        guard let latest = facts.latest, latest.verdict == .approve, !facts.matchesHead(latest),
-              pr.mergeOnlyAncestors.contains(where: { $0.lowercased().hasPrefix(latest.head) }) else { return nil }
-        return "the approval of \(latest.head.prefix(7)) does not carry to \(pr.headSha.prefix(7)): "
-            + (pr.carryRefusal ?? "no clean merge of the base leads to it")
     }
 
     /// The first rule whose conditions all hold for the PR.
@@ -422,7 +418,7 @@ public enum FlowEngine {
     }
 
     /// The facts one PR's predicates are judged on.
-    private struct Facts {
+    struct Facts {
         let pr: PullRequest
         let flow: Flow
         let reviews: [Review]
@@ -448,9 +444,13 @@ public enum FlowEngine {
 
         /// The review names the head, or a commit the head only adds git's own merges of the base
         /// to (`PullRequest.carriedHeads`). GitHub's list of merge parents is never enough.
-        func matchesHead(_ review: Review) -> Bool {
-            pr.headSha.lowercased().hasPrefix(review.head)
-                || pr.carriedHeads.contains { $0.lowercased().hasPrefix(review.head) }
+        /// An approval names that commit by its whole id: a commit whose id starts with eight
+        /// chosen digits takes minutes to make, so the start of an id could pass a commit nobody
+        /// read. A rejection counts by the digits it gives, as it always did: taking one for the
+        /// wrong commit can only hold a PR, which whoever can push to it can do anyway.
+        func countsForHead(_ review: Review) -> Bool {
+            let ids = ([pr.headSha] + pr.carriedHeads).map { $0.lowercased() }
+            return review.verdict == .approve ? ids.contains(review.head) : ids.contains { $0.hasPrefix(review.head) }
         }
 
         func holds(_ predicate: String) -> Bool {
@@ -465,10 +465,10 @@ public enum FlowEngine {
                 return pr.conflicting
             case ("no_review_or_response_newer", nil):
                 guard let latest else { return true }
-                return !matchesHead(latest) || (latestFixed.map { $0 > latest.createdAt } ?? false)
+                return !countsForHead(latest) || (latestFixed.map { $0 > latest.createdAt } ?? false)
             case ("approved_current_head", nil):
                 guard let latest else { return false }
-                return latest.verdict == .approve && matchesHead(latest)
+                return latest.verdict == .approve && countsForHead(latest)
             case ("latest_review_changes_or_blocked", nil):
                 return latest.map { $0.verdict != .approve } ?? false
             case let ("changes_rounds_at_least", count?):

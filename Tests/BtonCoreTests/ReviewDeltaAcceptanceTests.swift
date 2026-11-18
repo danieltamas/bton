@@ -58,7 +58,7 @@ struct ReviewDeltaAcceptanceTests {
             body: "## Review: approve (head bbbbbbb)\n\n" + Self.table,
             createdAt: Self.now.addingTimeInterval(-1))
         let decision = PullRequestComment(author: "lead", authorAssociation: "MEMBER",
-            body: "## Decision: approve (head bbbbbbb)", createdAt: Self.now)
+            body: "## Decision: approve (head \(Self.pr().headSha))", createdAt: Self.now)
         let previous = try #require(PREvidence.previousReview(pr: Self.pr(comments: [decision, newer, older]), flow: flow))
         #expect(previous.review.head == "bbbbbbb")
         #expect(previous.review.heading == "## Review:")
@@ -67,7 +67,7 @@ struct ReviewDeltaAcceptanceTests {
         #expect(previous.findings == Self.findings)
         #expect(PREvidence.previousReview(pr: Self.pr(comments: [decision]), flow: flow) == nil)
         let untrusted = PullRequestComment(author: "outsider", authorAssociation: "NONE",
-            body: newer.body, createdAt: Self.now)
+            body: "## Review: approve (head \(Self.pr().headSha))\n\n" + Self.table, createdAt: Self.now)
         #expect(PREvidence.previousReview(pr: Self.pr(comments: [untrusted]), flow: flow) == nil)
     }
 
@@ -233,7 +233,11 @@ struct ReviewDeltaAcceptanceTests {
         let discussion = try #require(packet.range(of: "## Discussion"))
         #expect(checks.lowerBound < previous.lowerBound && previous.lowerBound < discussion.lowerBound)
         let unavailable = Self.packet(Self.previous(delta: .init()))
-        #expect(unavailable.contains("reviewed head: not in this checkout"))
+        #expect(unavailable.contains("- reviewed head: unknown: the review names 7 of the 40 digits of a commit id"))
+        #expect(!unavailable.contains("not in this checkout"))
+        let whole = PREvidence.PreviousReview(review: Review(heading: "## Review:", verdict: .changes,
+            head: String(repeating: "a", count: 40), author: "rev", createdAt: Self.now), findings: [], delta: .init())
+        #expect(Self.packet(whole).contains("- reviewed head: not in this checkout"))
         #expect(unavailable.contains("scope: full"))
         let unknownRows = unavailable.components(separatedBy: "\n")
         for id in ["R1", "R2"] {

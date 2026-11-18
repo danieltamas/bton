@@ -204,7 +204,7 @@ private enum CheckMovesOnceFixture {
 
     static func review(_ verdict: String, at: Date) -> PullRequestComment {
         PullRequestComment(author: "vlad", authorAssociation: "MEMBER",
-                           body: "## Review: \(verdict) (head fa1fbb9d)\nSynthetic review.", createdAt: at)
+                           body: "## Review: \(verdict) (head \(head))\nSynthetic review.", createdAt: at)
     }
 
     static func pr() -> PullRequest {

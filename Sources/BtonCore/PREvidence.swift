@@ -136,9 +136,12 @@ public enum PREvidence {
 
     /// What changed since `reviewed`, the head a review covered. An unknown reviewed head is a
     /// normal outcome (nothing else is read, no problem); a failed read after that sets `problem`
-    /// and leaves its field unknown.
+    /// and leaves its field unknown. Git is asked only about a whole commit id: it resolves the
+    /// start of one to whatever commit in the clone has it, and a commit pushed to the PR can be
+    /// made to start with chosen digits, which would name the reviewer a delta of someone's choice.
     public static func delta(worktree: URL, base: String, reviewed: String, ghPath: String, runner: ProcessRunner) async -> Delta {
         var delta = Delta()
+        guard MergeCarry.isCommitID(reviewed) else { return delta }
         let git = Git(worktree: worktree, ghPath: ghPath, runner: runner)
         guard let resolved = trimmed(await git.run(["rev-parse", "--verify", "--quiet", "\(reviewed)^{commit}"])),
               !resolved.isEmpty else { return delta }
@@ -368,8 +371,10 @@ public enum PREvidence {
                 out += delta.isAncestor
                     ? "- reviewed head: \(reviewed), an ancestor of HEAD, \(delta.commitsSince.map { "\($0) commits since" } ?? "commits since unknown")\n"
                     : "- reviewed head: \(reviewed), not an ancestor of HEAD: history was rewritten\n"
-            } else {
+            } else if MergeCarry.isCommitID(review.head) {
                 out += "- reviewed head: not in this checkout\n"
+            } else {
+                out += "- reviewed head: unknown: the review names \(review.head.count) of the 40 digits of a commit id\n"
             }
             switch delta.baseContextChanged {
             case .some(false): out += "- base context: unchanged\n"

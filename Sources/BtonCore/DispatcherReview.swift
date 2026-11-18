@@ -30,8 +30,9 @@ extension Dispatcher {
     }
 
     /// Posts `text` as the PR's review when the PR is still at the head it reviewed and its first
-    /// line is a review heading of the PR's tier naming that head; anything else fails the job and
-    /// posts nothing. Then mirrors the verdict as a GitHub review and clears the move's labels.
+    /// line is a review heading of the PR's tier naming that head, with the head's whole id where
+    /// the reviewer gave the start of it (`DispatchPlanner.reviewComment`); anything else fails the
+    /// job and posts nothing. Then mirrors the verdict as a GitHub review and clears the move's labels.
     func postReview(_ job: Job, text output: String, review: ReviewTarget, detail: String? = nil) async {
         guard let body = DispatchPlanner.reviewComment(fromFinalMessage: output, headings: review.headings,
                                                        head: review.head) else {

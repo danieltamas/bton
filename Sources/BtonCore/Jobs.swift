@@ -12,7 +12,9 @@ public struct JobKey: Hashable, Codable, Sendable, CustomStringConvertible {
     public let head: String
     /// The review round on that head: the newest review by someone else (`FlowEngine.round`), so
     /// a move runs again, on every Mac, when a teammate posts another review on the same commit.
-    /// Empty before any review, and for every key that is not a PR move.
+    /// Empty before any review, and for every key that is not a PR move. A review that runs once
+    /// more because my own approval names the start of the head's id has
+    /// `FlowEngine.shortIDRound` after it (`DispatchPlanner.key`).
     public let round: String
 
     public init(repo: String, item: String, move: String, head: String, round: String = "") {

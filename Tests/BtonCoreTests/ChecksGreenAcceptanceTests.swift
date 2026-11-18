@@ -343,7 +343,7 @@ private enum ChecksGreenFixture {
     // Private copy of FlowFixture.graphql's node/envelope builder.
     static func decoded(rollup: Any, includeHead: Bool = true, approved: Bool = false) throws -> PullRequest {
         let comments: [[String: Any]] = approved ? [["author": ["login": "reviewer"],
-            "authorAssociation": "MEMBER", "body": "## Review: approve (head d67db2a8)",
+            "authorAssociation": "MEMBER", "body": "## Review: approve (head \(head))",
             "createdAt": "2026-10-28T12:00:00Z"]] : []
         var node: [String: Any] = [
             "number": 7, "title": "Synthetic PR", "url": "https://github.com/synthetic/project/pull/7",

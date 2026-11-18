@@ -32,7 +32,7 @@ private enum OwnReviewFixture {
 
     static func approval(by author: String) -> PullRequestComment {
         PullRequestComment(author: author, authorAssociation: "MEMBER",
-                           body: "## Review: approve (head abcdef12)",
+                           body: "## Review: approve (head \(head))",
                            createdAt: Date(timeIntervalSince1970: 3600))
     }
 

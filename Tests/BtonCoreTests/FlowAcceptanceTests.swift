@@ -214,7 +214,7 @@ struct FlowAcceptanceTests {
     func whoseMove(row: Int) throws {
         let comments: [FlowFixture.Comment]
         switch row {
-        case 4: comments = [.init(body: "## Review: approve (head d67db2a8)")]
+        case 4: comments = [.init(body: "## Review: approve (head \(FlowFixture.head))")]
         case 5: comments = [.init(body: "## Review: changes (head d67db2a8)", hour: 12),
                             .init(body: "## Review: blocked (head d67db2a8)", hour: 13)]
         case 6: comments = [.init(body: "## Review: changes needed (head d67db2a8)")]
@@ -238,7 +238,7 @@ struct FlowAcceptanceTests {
     func tierControlsCounting(tier: String, heading: String, author: String,
                               name: String, owner: String, count: Int) throws {
         let flow = try FlowFixture.flow()
-        let pr = try FlowFixture.pr(tier: tier, comments: [.init(body: "\(heading) approve (head d67db2a8)", author: author)])
+        let pr = try FlowFixture.pr(tier: tier, comments: [.init(body: "\(heading) approve (head \(FlowFixture.head))", author: author)])
         #expect(FlowEngine.reviews(of: pr, flow: flow).count == count)
         let move = try #require(FlowEngine.move(for: pr, flow: flow))
         #expect(move.name == name)
@@ -298,7 +298,7 @@ struct FlowAcceptanceTests {
         case "first blocked":
             comments = [.init(body: "## Review: blocked (head d67db2a8)")]; expected = "fix"
         default:
-            comments = [.init(body: "## Review: approve (head D67DB2A8)")]
+            comments = [.init(body: "## Review: approve (head \(FlowFixture.head.uppercased()))")]
             head = FlowFixture.head.uppercased(); expected = "merge"
         }
         // Reverse API order so latest means creation time, not array position.
@@ -342,7 +342,7 @@ struct FlowAcceptanceTests {
     func dispatchGates(name: String) throws {
         let flow = try FlowFixture.flow()
         let comments: [FlowFixture.Comment] = name == "fix" || name == "merge"
-            ? [.init(body: "## Review: \(name == "fix" ? "changes" : "approve") (head d67db2a8)")] : []
+            ? [.init(body: "## Review: \(name == "fix" ? "changes" : "approve") (head \(FlowFixture.head))")] : []
         for association in ["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "NONE"] {
             for base in ["develop", "main"] {
                 let pr = try FlowFixture.pr(draft: name == "finish", labels: name == "decide" ? ["turn:lead"] : [],
@@ -363,9 +363,9 @@ struct FlowAcceptanceTests {
     @Test func botMarkersAndNonFirstLinesNeverCount() throws {
         let flow = try FlowFixture.flow()
         let pr = try FlowFixture.pr(comments: [
-            .init(body: "## Review: approve (head d67db2a8)\n<!-- bton:fail key -->"),
-            .init(body: "<!-- bton:stale key -->\n## Review: approve (head d67db2a8)"),
-            .init(body: "Context\n## Review: approve (head d67db2a8)")
+            .init(body: "## Review: approve (head \(FlowFixture.head))\n<!-- bton:fail key -->"),
+            .init(body: "<!-- bton:stale key -->\n## Review: approve (head \(FlowFixture.head))"),
+            .init(body: "Context\n## Review: approve (head \(FlowFixture.head))")
         ])
         #expect(pr.comments.count == 1)
         #expect(FlowEngine.reviews(of: pr, flow: flow).isEmpty)

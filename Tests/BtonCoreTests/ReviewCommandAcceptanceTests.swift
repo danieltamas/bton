@@ -48,11 +48,15 @@ struct ReviewCommandAcceptanceTests {
     @Test func aReviewWithTheHeadingAndHeadIsPostedAsTheComment() async throws {
         let f = try await ReviewCommandFixture.make()
         defer { try? FileManager.default.removeItem(at: f.root) }
-        let review = "## Review: approve (head \(f.pr.headSha.prefix(12)))\nLooks fine."
+        let review = "## Review: approve (head \(f.pr.headSha))\nLooks fine."
         let job = try await f.finished(f.start(script: "printf '%s\\n%s' '## Review: approve (head \(f.pr.headSha.prefix(12)))' 'Looks fine.' > \"$BTON_OUT\""))
         #expect(job.status == .succeeded, "\(job.detail ?? "") \(f.log(job.id))")
         #expect(f.posted == review)
         #expect(f.ghCalls.contains("pr comment 7 --repo synthetic/project"))
+        var readBack = FullReviewIDFixture.pr(head: f.pr.headSha)
+        readBack.comments = [.init(author: "me", authorAssociation: "MEMBER", body: f.posted,
+                                   createdAt: FullReviewIDFixture.now)]
+        #expect(FlowEngine.move(for: readBack, flow: try FullReviewIDFixture.flow())?.name == "merge")
     }
 
     @Test func aFirstLineWithoutAHeadingPostsNothingAndFails() async throws {
@@ -124,13 +128,15 @@ private struct ReviewCommandFixture {
     var ghCalls: String { (try? String(contentsOf: root.appendingPathComponent("gh-seen"), encoding: .utf8)) ?? "" }
 
     static func make() async throws -> Self {
-        let base = try await SupervisionRunFixture.make()
+        let base = try await FullReviewIDEngineFixture.supervision()
         do {
             let runner = ProcessRunner()
             let pushed = try await runner.run("/usr/bin/git",
-                ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(120))
+                ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"],
+                environment: FullReviewIDFixture.gitEnvironment, timeout: .seconds(120))
             try #require(pushed.status == 0, "PR ref setup: \(pushed.stderr)")
-            let head = try await runner.run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
+            let head = try await runner.run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"],
+                environment: FullReviewIDFixture.gitEnvironment, timeout: .seconds(120))
             try #require(head.status == 0)
             let sha = String(decoding: head.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             var pr = PullRequest(repo: base.leases.repo, number: 7, title: "Synthetic PR", author: "owner",

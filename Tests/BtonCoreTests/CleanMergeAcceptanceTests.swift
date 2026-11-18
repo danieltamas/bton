@@ -16,14 +16,17 @@ struct CleanMergeAcceptanceTests {
         var pr = try FlowFixture.pr(tier: "small", head: m, comments: [.init(body: "## Review: approve (head \(review))")])
         pr.mergeOnlyAncestors = [a, b]
         pr.carriedHeads = carried ? [a] : []
-        #expect(FlowEngine.move(for: pr, flow: flow)?.name == (carried ? "merge" : "review"))
+        #expect(FlowEngine.move(for: pr, flow: flow)?.name == (carried && !abbreviated ? "merge" : "review"))
         let reason = "the approval of \(short(a)) does not carry to \(short(m)): no clean merge of the base leads to it"
-        #expect(FlowEngine.uncarriedApproval(of: pr, flow: flow) == (carried ? nil : reason))
+        #expect(FlowEngine.uncarriedApproval(of: pr, flow: flow) == (carried || abbreviated ? nil : reason))
+        let shortReason = "the approval of \(short(a)) does not count: it names 7 of the 40 digits of the commit's id"
+        #expect(FlowEngine.uncountedApproval(of: pr, flow: flow) == (abbreviated ? shortReason : carried ? nil : reason))
         if !carried {
             pr.carryRefusal = "x"
             #expect(FlowEngine.move(for: pr, flow: flow)?.name == "review")
-            #expect(FlowEngine.uncarriedApproval(of: pr, flow: flow) ==
-                "the approval of \(short(a)) does not carry to \(short(m)): x")
+            let refused = "the approval of \(short(a)) does not carry to \(short(m)): x"
+            #expect(FlowEngine.uncarriedApproval(of: pr, flow: flow) == (abbreviated ? nil : refused))
+            #expect(FlowEngine.uncountedApproval(of: pr, flow: flow) == (abbreviated ? shortReason : refused))
         }
     }
 

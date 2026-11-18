@@ -96,16 +96,34 @@ Only a comment's **first line** is read. It is a review when:
 2. right after the heading (spaces allowed) comes the verdict word `approve`, `changes` or
    `blocked` (ignoring case). Words after the verdict are fine: `## Review: changes needed`,
    `## Review: approve with nits`;
-3. somewhere after that it names a head: `(head ` then 7 to 40 hex digits, optionally in
+3. somewhere after that it names a commit: `(head ` then 7 to 40 hex digits, optionally in
    backticks: `(head 1d7d8b35)`, `(head 1d7d8b35; high-risk: ...)`, ``(head `94836b2b`)``;
 4. if the heading's entry has `"notByAuthor": true`, the comment's author is not the PR's author.
 
-A heading without the verdict word or without a head is not a review and changes nothing. A
-review's head **matches** the current head when the PR's `headRefOid` starts with it (ignoring
-case).
+A heading without the verdict word or without a head is not a review and changes nothing.
 
-A **response** is a comment whose first line starts with `fixed`, or a push (the current head
-no longer matches the latest review's).
+A review **counts for** the current head by the commit it names (ignoring case):
+
+- An `approve` counts only when it names the head by its whole id: all 40 digits of the PR's
+  `headRefOid`. The start of an id is not enough. A commit whose id starts with eight chosen
+  digits takes minutes to make, so whoever can push to the PR could push, after the approval, a
+  commit that reads as the approved one. An approval that gives fewer digits is still the PR's
+  latest review, and it counts for no commit: the head is then a head with no review.
+- A `changes` or a `blocked` counts when the digits it gives are the start of the head's id.
+  Taking a rejection for the wrong commit can only hold a PR, which whoever can push to it can
+  do anyway. So the start of an id can stop a PR and can never pass one.
+
+Bton writes the whole id itself. When it posts a review (`"post": "comment"`), the first line
+gets the id of the commit the reviewer was given wherever the reviewer wrote fewer digits. A
+review typed by hand needs all 40 digits to approve. When the latest review approves the head,
+or a commit under the head's merge commits, by fewer digits, the log and `bton moves` say so
+(`the approval of a6b54fa1 does not count: it names 8 of the 40 digits of the commit's id`).
+The rule is each Mac's: a Mac on an older Bton still posts the reviewer's text as it is and
+still takes the start of an id for the head, so the rule holds for a repo once every Mac that
+merges there has it.
+
+A **response** is a comment whose first line starts with `fixed`, or a push (the latest review
+no longer counts for the current head).
 
 Comments carrying Bton's marker `<!-- bton:` anywhere in the body are dropped before any of
 this: Bton's own failure and staleness comments never change a move.
@@ -113,7 +131,9 @@ this: Bton's own failure and staleness comments never change a move.
 A **decision** is a comment from one of `decision.by` (with write access) whose first line is
 `<decision.heading> approve|changes|blocked (head <sha>)`. It counts as a review in every tier,
 also on a PR its writer authored (`notByAuthor` does not apply), so an approve on the current
-head makes the move `merge` and a `changes` makes it `fix`. `changes_rounds_at_least` counts only
+head makes the move `merge` and a `changes` makes it `fix`. The id rule above holds for it too:
+an approve needs the head's whole id, which Bton writes when it posts the decision and a
+decision typed by hand must give. `changes_rounds_at_least` counts only
 the reviews after the latest decision, so the round cap starts over. When the `decision.move`
 move is dispatched with `"post": "comment"`, its agent's final message must start with the
 decision heading, and once Bton posts it, it removes the labels that held that move (its
@@ -131,8 +151,8 @@ All predicates of a move's `when` must hold. An empty `when` always holds.
 | `label:<name>` | the PR has that label |
 | `draft` | the PR is a draft |
 | `conflicting` | GitHub reports the PR conflicts with its base. `UNKNOWN` (GitHub still working it out after a push) does not count |
-| `no_review_or_response_newer` | no review counts yet, or the latest review's commit is neither the current head nor one its review still counts for (`approved_current_head` says which), or a `fixed` comment is newer than the latest review |
-| `approved_current_head` | the latest review's verdict is `approve` and its head matches the current head, or a commit the current head reaches through clean merges of the base alone, so a branch brought up to date with its base goes straight to the merge and not back to review. A merge commit is clean when Bton finds, in this Mac's clone of the repo, that it has exactly two parents, that its tree is the one `git merge-tree` makes of them, and that its second parent is in the PR's base branch as GitHub just gave its tip: what it holds is then what this Mac's git makes of the reviewed commit and the base, and whoever pushed it chose no line of it. Bton walks down from the head, one merge commit at a time, and stops at the first it does not find clean: a merge commit with more than two parents, a conflict resolved by hand, a merge commit changed after git made it, a merge of a commit that is not in the base, a check that could not be made (for example no clone chosen for the repo on this Mac, a commit the clone lacks and cannot fetch, git failing or not finishing in time), or the eleventh merge commit in a row. A review of a commit the walk reached still counts for the head, the commit it stopped at included: every merge commit above that commit is clean. A review of a commit under the one it stopped at does not count, and the head is then a head with no review (`no_review_or_response_newer`). When the latest review approves a commit that GitHub lists under the head's merge commits and that approval does not count, the log and `bton moves` say why, with the commit where the walk stopped when there is one (`the approval of a6b54fa does not carry to 1c2d3e4: 1c2d3e4 resolves a conflict by hand`). An approval that still counts leaves no note. Every read makes the check again, in the clone as it is then: nothing is kept from the read before, so a verdict changes when the clone does. To check, Bton fetches the commits the clone lacks by their id, which adds objects to the clone and nothing else: no ref, no `FETCH_HEAD`, no change to the working tree. The verdict is this Mac's: git takes the merge attributes from the working tree of the clone (the `.gitattributes` of whatever is checked out there) and the merge settings from the clone's and this Mac's git config, and they decide what a clean merge is. A merge driver defined in that config runs in the check as it runs in a merge, and what it writes is then what such a merge commit holds |
+| `no_review_or_response_newer` | no review counts yet, or the latest review counts neither for the current head ("Reviews" says when: an approval only by the whole id) nor for a commit whose review the head still carries (`approved_current_head` says which), or a `fixed` comment is newer than the latest review |
+| `approved_current_head` | the latest review's verdict is `approve` and it names, by its whole id ("Reviews"), the current head or a commit the current head reaches through clean merges of the base alone, so a branch brought up to date with its base goes straight to the merge and not back to review. A merge commit is clean when Bton finds, in this Mac's clone of the repo, that it has exactly two parents, that its tree is the one `git merge-tree` makes of them, and that its second parent is in the PR's base branch as GitHub just gave its tip: what it holds is then what this Mac's git makes of the reviewed commit and the base, and whoever pushed it chose no line of it. Bton walks down from the head, one merge commit at a time, and stops at the first it does not find clean: a merge commit with more than two parents, a conflict resolved by hand, a merge commit changed after git made it, a merge of a commit that is not in the base, a check that could not be made (for example no clone chosen for the repo on this Mac, a commit the clone lacks and cannot fetch, git failing or not finishing in time), or the eleventh merge commit in a row. A review of a commit the walk reached still counts for the head, the commit it stopped at included: every merge commit above that commit is clean. A review of a commit under the one it stopped at does not count, and the head is then a head with no review (`no_review_or_response_newer`). When the latest review approves a commit that GitHub lists under the head's merge commits and that approval does not count, the log and `bton moves` say why, with the commit where the walk stopped when there is one (`the approval of a6b54fa does not carry to 1c2d3e4: 1c2d3e4 resolves a conflict by hand`). An approval that names such a commit by fewer than 40 digits has the note of "Reviews" and not this one. An approval that still counts leaves no note. Every read makes the check again, in the clone as it is then: nothing is kept from the read before, so a verdict changes when the clone does. To check, Bton fetches the commits the clone lacks by their id, which adds objects to the clone and nothing else: no ref, no `FETCH_HEAD`, no change to the working tree. The verdict is this Mac's: git takes the merge attributes from the working tree of the clone (the `.gitattributes` of whatever is checked out there) and the merge settings from the clone's and this Mac's git config, and they decide what a clean merge is. A merge driver defined in that config runs in the check as it runs in a merge, and what it writes is then what such a merge commit holds |
 | `latest_review_changes_or_blocked` | the latest review's verdict is `changes` or `blocked` |
 | `changes_rounds_at_least:<n>` | the latest review's verdict is `changes` or `blocked`, and at least `n` of the PR's counting reviews since the latest decision have a `changes` or `blocked` verdict |
 | `checks_green:<name>[,<name>...]` | every named GitHub check (a check run's name, or a commit status's context) is green on the head commit: completed with the conclusion SUCCESS, or the status SUCCESS. Pending, failed, cancelled, skipped, neutral or absent is not green, nor is a head with more checks than Bton read (50). A PR that changes a file under `.github/workflows/` is gated like any other. Its checks ran the PR's own copy of the workflows (a check is matched by name, and a PR can change what a name runs or add a workflow with that name), as they ran the PR's own copy of every script a workflow calls, so the review is what vouches for a CI change, where one read that head: an approval carried over a merge commit (`approved_current_head`) did not. To make the flow's merge move wait for a reader other than the author on CI changes, put `.github/**` under a `tier.paths` tier whose reviews are `notByAuthor` (Tier floored by paths, above). That holds for a counting review only: a decision counts from the PR's author too, and the carried approval asks no reader. A re-run replaces the older run of the same name. Names are trimmed; an empty name makes the flow invalid. A command move whose rule has this predicate reads the checks again on the exact head right before the command and refuses (`checks not green: gate pending`) when any is not green or the read fails |
@@ -297,7 +317,9 @@ keeps the first assignee as before.
   clone's `info/exclude`; graphify honours that file too, so the build tree carries a
   `.graphifyignore` with `!memory` (also excluded) that takes the folder back in.
 - `"post": "comment"`: Bton posts the agent's final message as a PR comment, only if its first
-  line is a review (rules above) naming the current head.
+  line is a review (rules above) naming the commit the job was given, the PR's head when it
+  started, by its id or the start of it. Where it gives fewer than 40 digits Bton writes the
+  whole id in their place ("Reviews"); a first line that names another commit posts nothing.
 - `command`: an argv run instead of an agent (merge, or a review), in a fresh worktree of the base
   (the base branch, never the PR's head, so a PR cannot rewrite the script that reviews it). A move
   takes a `command` or an `agent`; both only when `agent` is given per tier, and then the tiers
@@ -356,7 +378,11 @@ keeps the first assignee as before.
 A move is dispatched only when it is mine, has a `dispatch` entry, the PR targets `base`, and
 the PR's author is `OWNER`, `MEMBER` or `COLLABORATOR` on the repo.
 
-A move runs once per head on any Mac, whether it succeeds or fails. When a failure's cause is
+A move runs once per head on any Mac, whether it succeeds or fails. One review runs a second
+time: when your own latest review approves the head by the start of its id (an older Bton posted
+the reviewer's text as it was, or you typed it), it counts for no commit ("Reviews"), and the
+move a rule gives on `no_review_or_response_newer` runs once more on that head, so that Bton
+posts the whole id. It never runs a third time for such a review. When a failure's cause is
 fixed (a missing variable, a down database), Retry on the failed or stopped job in the Jobs tab
 runs it again on the same head, first in line, if it is still the PR's move. A PR move put
 first in line here that another Mac already ran on that head leaves the line, and the log says

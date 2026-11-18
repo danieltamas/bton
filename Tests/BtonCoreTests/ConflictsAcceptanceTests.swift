@@ -271,7 +271,7 @@ private struct ConflictsFixture {
     static func pr(approved: Bool = false, draft: Bool = false) -> PullRequest {
         let comments: [PullRequestComment] = approved ? [
             .init(author: "reviewer", authorAssociation: "MEMBER",
-                  body: "## Review: approve (head d67db2a8)", createdAt: now)
+                  body: "## Review: approve (head \(head))", createdAt: now)
         ] : []
         return PullRequest(repo: key.repo, number: 7, title: "Synthetic", author: "owner",
             authorAssociation: "OWNER", url: URL(string: "https://example.invalid/pr/7")!,

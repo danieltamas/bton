@@ -46,7 +46,7 @@ struct SecurityFixesAcceptanceTests {
         ]
         let flow = try JSONDecoder().decode(Flow.self, from: JSONSerialization.data(withJSONObject: json))
         let comment = PullRequestComment(author: nil, authorAssociation: association,
-            body: "## Review: approve (head d67db2a8)", createdAt: .distantPast)
+            body: "## Review: approve (head \(SecurityFixture.head))", createdAt: .distantPast)
         let reviews = FlowEngine.reviews(of: SecurityFixture.pr([comment]), flow: flow)
         #expect(reviews.count == (notByAuthor ? 0 : 1))
         if !notByAuthor { #expect(try #require(reviews.first).author == nil) }
@@ -56,7 +56,7 @@ struct SecurityFixesAcceptanceTests {
     func reviewAssociationCountsOnlyWriteAccess(association: String?) throws {
         let trusted = ["OWNER", "MEMBER", "COLLABORATOR"].contains(association ?? "")
         let pr = SecurityFixture.pr([SecurityFixture.comment(
-            "## Review: approve (head d67db2a8)", association: association)])
+            "## Review: approve (head \(SecurityFixture.head))", association: association)])
         let flow = try FlowFixture.flow()
         #expect(FlowEngine.reviews(of: pr, flow: flow).count == (trusted ? 1 : 0))
         #expect(FlowEngine.move(for: pr, flow: flow)?.name == (trusted ? "merge" : "review"))
@@ -74,7 +74,7 @@ struct SecurityFixesAcceptanceTests {
     }
 
     @Test func defaultCommentAssociationFailsClosed() throws {
-        let comment = PullRequestComment(author: "reviewer", body: "## Review: approve (head d67db2a8)",
+        let comment = PullRequestComment(author: "reviewer", body: "## Review: approve (head \(SecurityFixture.head))",
                                          createdAt: .now)
         #expect(comment.authorAssociation == nil)
         #expect(FlowEngine.reviews(of: SecurityFixture.pr([comment]), flow: try FlowFixture.flow()).isEmpty)
@@ -83,7 +83,7 @@ struct SecurityFixesAcceptanceTests {
     @Test(arguments: ["MEMBER", "NONE", "missing", "null"])
     func graphqlCommentAssociationDecodes(value: String) throws {
         var comment: [String: Any] = ["author": ["login": "reviewer"],
-            "body": "## Review: approve (head d67db2a8)", "createdAt": "2026-10-19T12:00:00Z"]
+            "body": "## Review: approve (head \(SecurityFixture.head))", "createdAt": "2026-10-19T12:00:00Z"]
         if value == "null" { comment["authorAssociation"] = NSNull() }
         else if value != "missing" { comment["authorAssociation"] = value }
         let node: [String: Any] = [
@@ -104,7 +104,7 @@ struct SecurityFixesAcceptanceTests {
 
     @Test func untrustedCurrentHeadApprovalNeverDispatchesMerge() throws {
         let pr = SecurityFixture.pr([SecurityFixture.comment(
-            "## Review: approve (head d67db2a8)", association: "NONE")])
+            "## Review: approve (head \(SecurityFixture.head))", association: "NONE")])
         let flow = try FlowFixture.flow()
         #expect(FlowEngine.move(for: pr, flow: flow)?.name == "review")
         // The PR author owns merge; an outsider's approval must not offer it to that author.

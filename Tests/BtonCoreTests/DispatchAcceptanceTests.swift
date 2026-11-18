@@ -17,7 +17,7 @@ private enum DispatchFixture {
     static func pr(number: Int = 12, author: String = "me", base: String = "main",
                    review: String? = "changes needed", hostile: Bool = false, head: String = head) throws -> PullRequest {
         let comments: [[String: Any]] = review.map { verdict in
-            [["author": ["login": "reviewer"], "authorAssociation": "MEMBER", "body": "## Review: \(verdict) (head abcdef12)",
+            [["author": ["login": "reviewer"], "authorAssociation": "MEMBER", "body": "## Review: \(verdict) (head \(head))",
               "createdAt": "2026-10-19T12:00:00Z"]]
         } ?? []
         let node: [String: Any] = [
@@ -234,7 +234,7 @@ struct DispatchAcceptanceTests {
     ])
     func finalReviewMessage(text: String, valid: Bool) {
         let result = DispatchPlanner.reviewComment(fromFinalMessage: text, headings: ["## Review:"], head: DispatchFixture.head)
-        #expect(result == (valid ? text.trimmingCharacters(in: .whitespacesAndNewlines) : nil))
+        #expect(result == (valid ? "## Review: approve (head \(DispatchFixture.head))\nFindings" : nil))
     }
 
     @Test func leaseKeyJSONCompatibility() throws {

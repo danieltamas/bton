@@ -11,6 +11,8 @@ struct GitHubReviewMirrorAcceptanceTests {
         let summary = "\(move == "decide" ? "## Decision:" : "## Review:") \(verdict) (head \(f.head.prefix(8)))"
             + " --method DELETE -f event=APPROVE ; $(touch \(f.root.path)/injected) `echo injected` 'quoted' \"double\""
         let job = try await f.run(move: move, message: summary + "\n\nDetailed review stays in the comment.")
+        let postedSummary = "\(move == "decide" ? "## Decision:" : "## Review:") \(verdict) (head \(f.head))"
+            + " --method DELETE -f event=APPROVE ; $(touch \(f.root.path)/injected) `echo injected` 'quoted' \"double\""
         #expect(job.status == .succeeded)
         #expect(job.review?.head == f.head)
         let calls = try f.calls()
@@ -20,8 +22,8 @@ struct GitHubReviewMirrorAcceptanceTests {
         #expect(calls.filter { $0.contains("repos/synthetic/project/pulls/7/reviews") }.count == 1)
         #expect(calls[mirror] == ["api", "--method", "POST", "repos/synthetic/project/pulls/7/reviews",
             "-f", "commit_id=\(f.head)", "-f", "event=\(verdict == "approve" ? "APPROVE" : "REQUEST_CHANGES")",
-            "-f", "body=\(summary)"])
-        #expect(try f.text("posted-comment") == summary + "\n\nDetailed review stays in the comment.")
+            "-f", "body=\(postedSummary)"])
+        #expect(try f.text("posted-comment") == postedSummary + "\n\nDetailed review stays in the comment.")
         #expect(!FileManager.default.fileExists(atPath: f.root.appendingPathComponent("injected").path))
         if move == "decide" {
             let clear = try #require(calls.firstIndex { $0.contains("--remove-label") })
@@ -54,7 +56,7 @@ struct GitHubReviewMirrorAcceptanceTests {
         #expect(job.status == .succeeded)
         let posted = try f.text("posted-comment")
         let summary = String(posted.prefix { !$0.isNewline })
-        #expect(summary == "## Decision: approve (head [BUILD_REVISION])")
+        #expect(summary == "## Decision: approve (head [BUILD_REVISION]\(f.head.dropFirst(8)))")
         let calls = try f.calls()
         let mirrors = calls.filter { $0.contains("repos/synthetic/project/pulls/7/reviews") }
         #expect(mirrors.count == 1, "Redaction must not silently suppress a validated verdict")
@@ -85,11 +87,12 @@ private struct ReviewMirrorFixture {
     var root: URL { base.leases.root }
 
     static func make(commentFails: Bool = false, reviewFails: Bool = false) async throws -> Self {
-        let base = try await SupervisionRunFixture.make()
+        let base = try await FullReviewIDEngineFixture.supervision()
         let root = base.leases.root
         let gh = root.appendingPathComponent("gh")
         let original = try String(contentsOf: gh, encoding: .utf8)
-        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"], timeout: .seconds(120))
+        let result = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "rev-parse", "HEAD"],
+            environment: FullReviewIDFixture.gitEnvironment, timeout: .seconds(120))
         try #require(result.status == 0)
         let head = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         // NUL-delimited arguments and an empty argument between calls preserve spaces, quotes,
@@ -121,7 +124,8 @@ private struct ReviewMirrorFixture {
         try original.replacingOccurrences(of: "set -eu", with: "set -eu\n" + handler)
             .write(to: gh, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gh.path)
-        let push = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"], timeout: .seconds(120))
+        let push = try await ProcessRunner().run("/usr/bin/git", ["-C", base.clone.path, "push", "origin", "HEAD:refs/pull/7/head"],
+            environment: FullReviewIDFixture.gitEnvironment, timeout: .seconds(120))
         try #require(push.status == 0)
         let github = GitHubClient(ghPath: gh.path)
         let store = try JobStore(home: base.home)

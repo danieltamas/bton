@@ -141,8 +141,13 @@ public enum DispatchPlanner {
     /// on a head, on every Mac. Without the flow (a repo not read yet) the round is unknown.
     /// A move that answers the head's red checks (`FlowEngine.answersChecks`) has no round: a
     /// review changes nothing it reads, so it runs once per head.
+    /// A review my own approval left due (`FlowEngine.reviewsAgain`) gets one fixed round more.
     public static func key(for pr: PullRequest, move: String, flow: Flow?, me: String, repo: String) -> JobKey {
-        let round = flow.map { FlowEngine.answersChecks(move, flow: $0) ? "" : FlowEngine.round(of: pr, flow: $0, me: me) } ?? ""
+        let round = flow.map { flow -> String in
+            if FlowEngine.answersChecks(move, flow: flow) { return "" }
+            let again = FlowEngine.reviewsAgain(move, pr: pr, flow: flow, me: me)
+            return FlowEngine.round(of: pr, flow: flow, me: me) + (again ? FlowEngine.shortIDRound : "")
+        } ?? ""
         return JobKey(repo: repo, item: "pr-\(pr.number)", move: move, head: pr.headSha, round: round)
     }
 
@@ -591,12 +596,16 @@ public enum DispatchPlanner {
     }
 
     /// The comment a review agent's final message becomes: only one whose first line is a review
-    /// heading naming the PR's current head.
+    /// heading naming `head`, the commit Bton gave the reviewer, by its id or the start of it.
+    /// Where the reviewer gave fewer digits Bton writes the whole id: an approval counts only for
+    /// the commit it names whole (`FlowEngine.Facts.countsForHead`), and the id Bton holds is the
+    /// commit the reviewer read.
     public static func reviewComment(fromFinalMessage text: String, headings: [String], head: String) -> String? {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.hasPrefix("\n"), !text.hasPrefix("\r\n"),
-              let review = FlowEngine.review(fromFirstLine: FlowEngine.firstLine(of: message), headings: headings),
-              head.lowercased().hasPrefix(review.head) else { return nil }
-        return message
+              let review = FlowEngine.namedReview(in: message.prefix { !$0.isNewline }, headings: headings) else { return nil }
+        let head = head.lowercased(), named = message[review.head].lowercased()
+        guard head.hasPrefix(named) else { return nil }
+        return named == head ? message : message.replacingCharacters(in: review.head, with: head)
     }
 }
