@@ -248,10 +248,14 @@ public enum DispatchPlanner {
     /// a success there would hide that until someone reads its report.
     public static let endedWithoutPushing = "ended without pushing"
 
-    public static func pushOutcome(startedAt head: String,
+    /// `report` is the agent's final message: it can turn a run that pushed nothing into one that
+    /// no push could help (`futileReason`), and nothing else. A head that moved is a fix whatever
+    /// the report says, and a head that could not be read stays unconfirmed.
+    public static func pushOutcome(startedAt head: String, report: String = "",
                                    liveHead: () async throws -> String) async -> (status: Job.Status, detail: String?) {
-        await headMoved(from: head, liveHead: liveHead,
-                        unmoved: "\(endedWithoutPushing): the PR is still at \(head.prefix(12)); the agent's report says what it did instead")
+        let unmoved = futileReason(in: report).map { "\(noPushCanClear): \($0)" }
+            ?? "\(endedWithoutPushing): the PR is still at \(head.prefix(12)); the agent's report says what it did instead"
+        return await headMoved(from: head, liveHead: liveHead, unmoved: unmoved)
     }
 
     /// Why a finished review must not be posted, or nil while the PR is still at the head it

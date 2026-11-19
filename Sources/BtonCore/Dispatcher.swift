@@ -334,6 +334,10 @@ actor Dispatcher {
                 candidate.prompt = Supervision.adding(PREvidence.promptLine(), to: candidate)
                 if let secondPrompt = candidate.secondPrompt { candidate.secondPrompt = secondPrompt + "\n\n" + PREvidence.promptLine() }
             }
+            // A fix agent learns the one ending without a push that Bton does not run again.
+            if candidate.pushes, candidate.prompt != nil {
+                candidate.prompt = Supervision.adding(DispatchPlanner.fixLine(fixed: flow?.fixed), to: candidate)
+            }
             // A red check the move is sent to fix that is a known flake: rerun before changing code.
             if !candidate.move.redChecks.isEmpty,
                let line = Flakes.line(redChecks: candidate.move.redChecks,
@@ -610,7 +614,7 @@ actor Dispatcher {
                                 detail: job.verdict == nil ? "final message names no supervisor verdict" : nil)
         }
         if job.pushes == true, job.review == nil {
-            let outcome = await proved(job, outcome: await pushOutcome(of: job))
+            let outcome = await proved(job, outcome: await pushOutcome(of: job, report: output))
             if stopRequested(job.id) { return await finish(job, status: .cancelled, detail: "stopped") }
             return await finish(job, status: outcome.status, detail: outcome.detail)
         }

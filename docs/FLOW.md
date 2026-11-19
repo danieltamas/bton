@@ -395,6 +395,25 @@ runs it again on the same head, first in line, if it is still the PR's move. A P
 first in line here that another Mac already ran on that head leaves the line, and the log says
 `<move> not started: it already ran on this head`.
 
+A `fix` run by an agent must push: one that ends with the head where it was fails as
+`ended without pushing`, with Retry like any failed job. One such run gets no Retry: the review
+waits for something no change to the branch can supply (another person's approval or decision,
+facts the job cannot read, such as production data), so the same run on the same PR ends the
+same way. Bton asks every fix agent to end its final message, in that case only, with one last
+line, `## No push can clear this: <what the review waits for>`, and to post no comment that
+starts with the flow's `fixed` heading (it would ask for the review again). The job then fails
+as `no push can clear the review: <reason>`, the reason being the agent's own sentence as one
+line of plain text, at most 200 characters. The PR's row gives that reason on a grey line,
+`No push can clear the review: <reason>`, with the job's report a click away; its pill is a
+quiet chip, not a button, and its menu has no Run Next. Neither the row nor the Jobs tab offers
+Retry, nor does the supervisor retry it. Retry comes back when the PR
+gets a comment newer than the job, which may be what the review waited for; a new head or a
+review by someone else is a new key and starts the fix by itself, as always. The line is the
+agent's word, and the agent reads the PR's text, so it decides one thing, whether Retry is
+offered: it counts only as the last line of the final message and only when the head is
+confirmed where it was. A head that moved is a fix whatever the report says, and a head that
+could not be read stays `could not confirm the push`, with Retry.
+
 A PR row carries one pill, the PR's move and who has it ("review · lee", "fix · unassigned"),
 and when the move is mine and this Mac's agent would run it, the pill is the button and reads
 what it does: **Merge**, **Review**, **Retry fix**, **Fix again**. A PR of mine that GitHub

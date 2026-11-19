@@ -762,10 +762,19 @@ public actor Engine {
 
     /// Runs a failed or stopped PR move again on its head, or an issue draft on its comment, first in line.
     public func retry(_ id: UUID) throws -> Bool {
-        guard let job = jobs.all().first(where: { $0.id == id }), try jobs.requestRetry(id) else { return false }
+        guard let job = jobs.all().first(where: { $0.id == id }),
+              try jobs.requestRetry(id, commentedSince: commentedSince(job)) else { return false }
         runNext(repo: job.key.repo, item: job.key.item, pressed: true)
         ask(job.key)
         return true
+    }
+
+    /// Whether the PR of a fix that no push could help got a comment since, by this Mac's last
+    /// read of its repo. No read of the PR is no comment: the run stays as it was (`Job.canRetry`).
+    func commentedSince(_ job: Job) -> Bool {
+        guard job.isFutileFix, let read = lastReads[job.key.repo.lowercased()] else { return false }
+        return read.pullRequests.first { "pr-\($0.number)" == job.key.item }
+            .map { DispatchPlanner.commentedSince(job, pr: $0) } ?? false
     }
 
     func heldAgents() -> Set<String> {
@@ -789,7 +798,9 @@ public actor Engine {
     /// still the flow's move at the sync that would start it; a `resolve` key runs at any move.
     public func runNow(_ key: JobKey) throws {
         let all = jobs.all()
-        if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all) }) { _ = try jobs.requestRetry(ended.id) }
+        if let ended = all.last(where: { $0.key == key && $0.canRetry(among: all, commentedSince: commentedSince($0)) }) {
+            _ = try jobs.requestRetry(ended.id, commentedSince: commentedSince(ended))
+        }
         runNext(repo: key.repo, item: key.item, pressed: true)
         ask(key)
     }

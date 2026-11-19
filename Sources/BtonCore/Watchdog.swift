@@ -31,6 +31,8 @@ public enum Watchdog {
 
     private static func failure(_ detail: String?) -> JobFlag {
         guard let detail else { return .failed }
+        // Before the suffix below: this detail ends with the agent's own words.
+        if detail.hasPrefix(DispatchPlanner.noPushCanClear) { return .failed }
         // An agent past its deadline, or a check or command past its move's limit (`DispatchError.timedOut`).
         if detail == "timed out" || detail.hasSuffix("minutes and was stopped") { return .timedOut }
         if detail.hasPrefix("lease lost") { return .leaseLost }

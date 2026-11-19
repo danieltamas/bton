@@ -84,7 +84,10 @@ private struct PullRequestRow: View {
                         .opacity(running ? 0.6 : 1)
                 }
             } else {
-                MoveChip(move: move, me: me, working: busy, shownApart: FlowEngine.failedChecks(of: pr))
+                // Quiet too on a fix that no push can help: nothing here starts it, and the row's
+                // line says why.
+                MoveChip(move: move, me: me, working: busy || store.futileOnHead(pr, move: move.name) != nil,
+                         shownApart: FlowEngine.failedChecks(of: pr))
             }
         } else if let wait = pr.waiting {
             WaitChip(wait: wait, shownApart: FlowEngine.failedChecks(of: pr))
@@ -192,13 +195,27 @@ private struct PullRequestRow: View {
                 }
                 // The card's full width, so the reason never squeezes the title into a sliver.
                 if let failed, let detail = failed.job.detail {
+                    // A fix that no push could help, with Retry back after a new comment: its reason
+                    // stays whole, as on the line below, so the reader can hold the comment against it.
                     ReportLine(text: "Last \(failed.move) on this head stopped: \(detail)", symbol: "exclamationmark.triangle",
-                               color: Theme.danger) { withAnimation(Motion.spring) { store.watchingJob = failed.job.id } }
+                               color: Theme.danger, lines: failed.job.isFutileFix ? 8 : 3) {
+                        withAnimation(Motion.spring) { store.watchingJob = failed.job.id }
+                    }
                 }
                 if let unchanged {
                     ReportLine(text: "Last \(unchanged.key.move) on this head ran and changed nothing: read why", symbol: "info.circle",
                                color: Theme.textSecondary, fill: Theme.canvasLift, help: "Open the agent's report") {
                         withAnimation(Motion.spring) { store.watchingJob = unchanged.id }
+                    }
+                }
+                // A fix that no push can help: the agent's reason, whole (200 characters at most, and
+                // its end can name a second thing the review waits for). Grey, not the red of a run to
+                // retry: nothing here is the reader's to fix. The tooltip says what starts the fix again.
+                if !busy, !starting, let futile = pr.move.flatMap({ store.futileOnHead(pr, move: $0.name) }), let detail = futile.detail {
+                    let restart = futile.verdict.map { $0.note.prefix(1).uppercased() + $0.note.dropFirst() + ". " } ?? ""
+                    ReportLine(text: detail.prefix(1).uppercased() + detail.dropFirst(), symbol: "info.circle", color: Theme.textSecondary,
+                               fill: Theme.canvasLift, help: restart + "Open the agent's report.", lines: 8) {
+                        withAnimation(Motion.spring) { store.watchingJob = futile.id }
                     }
                 }
                 // The flow asks for a review of an approved head without a word; this says why, from
@@ -222,8 +239,10 @@ private struct PullRequestRow: View {
             .clipped()
         }
         .contextMenu {
-            // Only a move this Mac's agent takes can start; the rest are people's.
-            if !busy, let move = pr.move, move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me) {
+            // Only a move this Mac's agent takes can start; the rest are people's. A fix that no push
+            // can help does not start again on this head (`Job.canRetry`), so the menu does not offer it.
+            if !busy, let move = pr.move, move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me),
+               store.futileOnHead(pr, move: move.name) == nil {
                 AsyncPress(id: "next:\(pr.repo)#pr-\(pr.number)", action: { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") }) { running, press in
                     Button("Run Next", action: press).disabled(running)
                 }
@@ -472,7 +491,8 @@ struct MoveChip: View {
     let me: String?
     /// In place of the move's own glyph: what pressing it does.
     var symbol: String?
-    /// An agent works the move now: a filled pill read as one to press again.
+    /// An agent works the move now, or no run of it can help on this head: a filled pill read as
+    /// one to press again.
     var working = false
     /// In place of "move · who": the pill is the action, and what it does is its whole text.
     var title: String?

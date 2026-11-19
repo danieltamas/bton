@@ -120,7 +120,9 @@ where your flow says a person decides.
       Search by number, title or login. An issue the flow labels as waiting for a check in
       production stays open when its PR merges. A failed job names the last line its agent printed
       and gets a Retry. A fix whose agent exits without pushing fails too, named as such, instead
-      of passing on its report. A job's session page copies or opens the whole session as one
+      of passing on its report; when its review waits for something no push can supply (another
+      person's approval, production numbers), the row says what, and Retry is offered again only
+      once the PR has a new comment. A job's session page copies or opens the whole session as one
       Markdown file: Bton's log, the prompt, every step with its full result, the report. When an
       agent's login expires its jobs wait instead of failing one by one.
     </td>

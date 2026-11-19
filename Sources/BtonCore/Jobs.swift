@@ -135,8 +135,17 @@ public struct Job: Identifiable, Hashable, Codable, Sendable {
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
     }
 
-    public func canRetry(among jobs: [Job]) -> Bool {
-        [.failed, .cancelled].contains(status) && retry != true
+    /// A fix whose agent reported that no push can clear its review (`DispatchPlanner.noPushCanClear`).
+    /// Only a job that had to push can be one, whatever another job's detail quotes.
+    public var isFutileFix: Bool {
+        pushes == true && status == .failed && detail?.hasPrefix(DispatchPlanner.noPushCanClear + ": ") == true
+    }
+
+    /// A fix that no push could help reads the same PR again and ends the same way, so it is run
+    /// again only once the PR has a comment newer than it (`commentedSince`), which may be what
+    /// its review waited for. A new head or a review by someone else is a new key, with its own run.
+    public func canRetry(among jobs: [Job], commentedSince: @autoclosure () -> Bool = false) -> Bool {
+        [.failed, .cancelled].contains(status) && retry != true && (!isFutileFix || commentedSince())
             && (key.item.hasPrefix("pr-") || key.item.hasPrefix("issue-")
                 && (key.move == IssueDrafts.move || key.move == IssueDecisions.move || key.move == IssueIntake.move || IssueMoves.moves.contains(key.move)))
             && !jobs.contains { $0.key == key && $0.startedAt > startedAt }
@@ -234,10 +243,11 @@ public struct JobStore: Sendable {
                                            options: .atomic)
     }
 
-    /// Marks a job the owner retries, so its move runs again on the same head.
-    public func requestRetry(_ id: UUID) throws -> Bool {
+    /// Marks a job the owner retries, so its move runs again on the same head. `commentedSince`
+    /// is the caller's read of the job's PR, which a fix that no push could help needs (`Job.canRetry`).
+    public func requestRetry(_ id: UUID, commentedSince: Bool = false) throws -> Bool {
         let all = all()
-        guard var job = all.first(where: { $0.id == id }), job.canRetry(among: all) else { return false }
+        guard var job = all.first(where: { $0.id == id }), job.canRetry(among: all, commentedSince: commentedSince) else { return false }
         job.retry = true
         try save(job)
         return true

@@ -159,7 +159,10 @@ public enum Supervision {
         let quoted = ["agent exited", "posting the review failed", "lease lost", "decision posted"]
         guard !quoted.contains(where: detail.hasPrefix) else { return nil }
         let known: (SupervisorVerdict.Action, String)?
-        if detail.hasPrefix("waiting: ") {
+        // Before every suffix below: this detail ends with the agent's own words.
+        if detail.hasPrefix(DispatchPlanner.noPushCanClear) {
+            known = (.none, "no Retry until the PR gets a new comment; a new head or a review by someone else starts the fix again")
+        } else if detail.hasPrefix("waiting: ") {
             known = (.none, "waits for a Mac that has the tool: Bton runs the move again in 30 minutes, or at once when pressed")
         } else if detail.hasSuffix(" not found on this Mac's PATH") {
             known = (.escalate, "the agent's program is not on this Mac's PATH: install it or point the agent at it in Settings")

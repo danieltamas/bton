@@ -11,6 +11,9 @@ public enum Cause {
     /// The prefix decides: `agent exited 1 after: check x` is an agent exit.
     public static func key(for job: Job) -> String? {
         guard job.status == .failed, let detail = job.detail else { return nil }
+        // What one PR's review waits for is not a cause that recurs across items, and the detail
+        // ends with the agent's own words: no rule below may read them.
+        if detail.hasPrefix(DispatchPlanner.noPushCanClear) { return nil }
         if detail.hasPrefix("check "), let argv = backticked(detail) { return "check:" + argv }
         if detail.hasPrefix("posting the check failure failed: check "), let argv = backticked(detail) { return "check:" + argv }
         if detail.hasPrefix("checks not green: ") { return "red:" + redChecks(detail).joined(separator: ",") }

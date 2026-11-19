@@ -422,7 +422,13 @@ final class AppStore {
         await refresh()
     }
 
-    func canRetry(_ job: Job) -> Bool { job.canRetry(among: jobs) }
+    func canRetry(_ job: Job) -> Bool { job.canRetry(among: jobs, commentedSince: commentedSince(job)) }
+
+    /// Whether the PR of a fix that no push could help got a comment since, by the rows on screen.
+    private func commentedSince(_ job: Job) -> Bool {
+        openPullRequests.first { $0.repo.caseInsensitiveCompare(job.key.repo) == .orderedSame && "pr-\($0.number)" == job.key.item }
+            .map { DispatchPlanner.commentedSince(job, pr: $0) } ?? false
+    }
     func canRunAgain(_ job: Job) -> Bool { job.canRunAgain(among: jobs) }
 
     /// The move runs again on the same head, once the cause of the failure is fixed.
@@ -627,7 +633,13 @@ final class AppStore {
     /// The move failed or was stopped on the PR's current head, and nothing has run it since.
     /// The move's run on this head that failed and may run again, if one did.
     func failedOnHead(_ pr: PullRequest, move: String) -> Job? {
-        run(of: move, on: pr).flatMap { $0.canRetry(among: jobs) ? $0 : nil }
+        run(of: move, on: pr).flatMap { $0.canRetry(among: jobs, commentedSince: DispatchPlanner.commentedSince($0, pr: pr)) ? $0 : nil }
+    }
+
+    /// The move's run on this head that no push could help, while nothing on the PR is newer
+    /// than it: the row gives its reason and offers no Retry (`Job.canRetry`).
+    func futileOnHead(_ pr: PullRequest, move: String) -> Job? {
+        run(of: move, on: pr).flatMap { $0.isFutileFix && $0.retry != true && !DispatchPlanner.commentedSince($0, pr: pr) ? $0 : nil }
     }
 
     /// The newest job that ran this move of the PR under its key now; for a move that answers

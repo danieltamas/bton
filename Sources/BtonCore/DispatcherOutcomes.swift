@@ -116,11 +116,11 @@ extension Dispatcher {
 
     /// A fix is done when the PR's head moved: an agent that exits 0 without a push (a blocked
     /// tool, a question nobody answered) wrote a report, not a fix.
-    func pushOutcome(of job: Job) async -> (status: Job.Status, detail: String?) {
+    func pushOutcome(of job: Job, report: String) async -> (status: Job.Status, detail: String?) {
         guard let number = Int(job.key.item.dropFirst("pr-".count)) else {
             return (.failed, "could not confirm the push: \(job.key.item) is not a PR")
         }
-        return await DispatchPlanner.pushOutcome(startedAt: job.key.head) { [github] in
+        return await DispatchPlanner.pushOutcome(startedAt: job.key.head, report: report) { [github] in
             try await Self.settledHead(of: number, in: job.key.repo, startedAt: job.key.head, github: github)
         }
     }

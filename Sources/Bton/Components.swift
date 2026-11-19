@@ -522,12 +522,14 @@ struct ReportLine: View {
     let color: Color
     var fill: Color?
     var help = "Open the job and the agent's report"
+    /// Where the text is cut: more for a text whose end the reader needs.
+    var lines = 3
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Label(text, systemImage: symbol).font(.meta).foregroundStyle(color).lineLimit(3)
+                Label(text, systemImage: symbol).font(.meta).foregroundStyle(color).lineLimit(lines)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textTertiary)
