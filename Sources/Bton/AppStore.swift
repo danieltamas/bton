@@ -636,10 +636,17 @@ final class AppStore {
         run(of: move, on: pr).flatMap { $0.canRetry(among: jobs, commentedSince: DispatchPlanner.commentedSince($0, pr: pr)) ? $0 : nil }
     }
 
-    /// The move's run on this head that no push could help, while nothing on the PR is newer
-    /// than it: the row gives its reason and offers no Retry (`Job.canRetry`).
+    /// The move's newest run on this head when no push could help it and it was not run again:
+    /// the row gives its reason, on the red line once Retry is back (`failedOnHead`), on a line
+    /// of its own until then and on a row whose move is not mine to start.
     func futileOnHead(_ pr: PullRequest, move: String) -> Job? {
-        run(of: move, on: pr).flatMap { $0.isFutileFix && $0.retry != true && !DispatchPlanner.commentedSince($0, pr: pr) ? $0 : nil }
+        run(of: move, on: pr).flatMap { $0.isFutileFix && $0.retry != true ? $0 : nil }
+    }
+
+    /// Whether such a run still keeps its move from starting here: the PR has no comment newer
+    /// than it, so neither Retry nor Run Next starts the move (`Job.canRetry`).
+    func futileHolds(_ pr: PullRequest, move: String) -> Bool {
+        futileOnHead(pr, move: move).map { !DispatchPlanner.commentedSince($0, pr: pr) } ?? false
     }
 
     /// The newest job that ran this move of the PR under its key now; for a move that answers

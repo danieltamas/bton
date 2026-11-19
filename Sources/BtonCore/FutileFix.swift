@@ -44,7 +44,12 @@ extension DispatchPlanner {
     /// a fix that no push could help, the one change on an unchanged head and round that may be
     /// what its review waited for (an approval posted as a comment, the facts it could not read).
     public static func commentedSince(_ job: Job, pr: PullRequest) -> Bool {
-        guard let ended = job.endedAt else { return false }
-        return pr.comments.contains { $0.createdAt > ended }
+        commentedSince(job, newestComment: pr.comments.map(\.createdAt).max())
+    }
+
+    /// The same question for a caller that kept only the PR's newest comment date (`Engine.newestComments`).
+    static func commentedSince(_ job: Job, newestComment: Date?) -> Bool {
+        guard let ended = job.endedAt, let newestComment else { return false }
+        return newestComment > ended
     }
 }

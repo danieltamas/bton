@@ -407,7 +407,10 @@ line of plain text, at most 200 characters. The PR's row gives that reason on a 
 `No push can clear the review: <reason>`, with the job's report a click away; its pill is a
 quiet chip, not a button, and its menu has no Run Next. Neither the row nor the Jobs tab offers
 Retry, nor does the supervisor retry it. Retry comes back when the PR
-gets a comment newer than the job, which may be what the review waited for; a new head or a
+gets a comment newer than the job, which may be what the review waited for: the comment counts
+from the first read that shows it on the row, a sync's or the lists' read between two syncs.
+The row then gives the reason on the red line of a failed run, with Retry; a row whose fix is
+not this Mac's to start keeps the grey line. A new head or a
 review by someone else is a new key and starts the fix by itself, as always. The line is the
 agent's word, and the agent reads the PR's text, so it decides one thing, whether Retry is
 offered: it counts only as the last line of the final message and only when the head is

@@ -86,7 +86,7 @@ private struct PullRequestRow: View {
             } else {
                 // Quiet too on a fix that no push can help: nothing here starts it, and the row's
                 // line says why.
-                MoveChip(move: move, me: me, working: busy || store.futileOnHead(pr, move: move.name) != nil,
+                MoveChip(move: move, me: me, working: busy || store.futileHolds(pr, move: move.name),
                          shownApart: FlowEngine.failedChecks(of: pr))
             }
         } else if let wait = pr.waiting {
@@ -210,9 +210,13 @@ private struct PullRequestRow: View {
                 }
                 // A fix that no push can help: the agent's reason, whole (200 characters at most, and
                 // its end can name a second thing the review waits for). Grey, not the red of a run to
-                // retry: nothing here is the reader's to fix. The tooltip says what starts the fix again.
-                if !busy, !starting, let futile = pr.move.flatMap({ store.futileOnHead(pr, move: $0.name) }), let detail = futile.detail {
-                    let restart = futile.verdict.map { $0.note.prefix(1).uppercased() + $0.note.dropFirst() + ". " } ?? ""
+                // retry: nothing here is the reader's to fix. It leaves only for the red line above
+                // with the same reason, so a new comment on a row whose fix is not mine to start
+                // keeps it. The tooltip says what starts the fix again, while that still holds.
+                if !busy, !starting, let futile = pr.move.flatMap({ store.futileOnHead(pr, move: $0.name) }), futile.id != failed?.job.id,
+                   let detail = futile.detail {
+                    let holds = !DispatchPlanner.commentedSince(futile, pr: pr)
+                    let restart = holds ? futile.verdict.map { $0.note.prefix(1).uppercased() + $0.note.dropFirst() + ". " } ?? "" : ""
                     ReportLine(text: detail.prefix(1).uppercased() + detail.dropFirst(), symbol: "info.circle", color: Theme.textSecondary,
                                fill: Theme.canvasLift, help: restart + "Open the agent's report.", lines: 8) {
                         withAnimation(Motion.spring) { store.watchingJob = futile.id }
@@ -239,8 +243,10 @@ private struct PullRequestRow: View {
             .clipped()
         }
         .contextMenu {
-            // Only a move this Mac's agent takes can start; the rest are people's. A fix that no push
-            // can help does not start again on this head (`Job.canRetry`), so the menu does not offer it.
+            // Only a move this Mac's agent takes can start; the rest are people's. Not after a fix
+            // that no push could help: Run Next does not run a key that already ran
+            // (`DispatchPlanner.select`), and what runs it again is the pill's Retry, once the PR
+            // has a newer comment.
             if !busy, let move = pr.move, move.hasDispatch, !move.ownerWroteIt, let me, move.isMine(me),
                store.futileOnHead(pr, move: move.name) == nil {
                 AsyncPress(id: "next:\(pr.repo)#pr-\(pr.number)", action: { await store.runNext(repo: pr.repo, item: "pr-\(pr.number)") }) { running, press in

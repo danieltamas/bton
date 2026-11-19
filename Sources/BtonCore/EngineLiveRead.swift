@@ -46,6 +46,8 @@ extension Engine {
                 snapshot.defaultBranches[repo.slug] = open.defaultBranch
                 snapshot.openPullRequests += open.pullRequests.map { FlowEngine.judged($0, flow: status.flow) }
                 snapshot.merged += merged
+                // A comment the rows now show is one a Retry can be judged by (`commentedSince`).
+                noteComments(open.pullRequests)
                 read.append(repo.slug.lowercased())
             } catch {
                 failures.append("\(repo.slug): \(error.localizedDescription)")

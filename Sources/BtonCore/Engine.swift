@@ -136,6 +136,11 @@ public actor Engine {
     /// What the last sync read of each repo, by lowercased slug: a New issue turn starts from it
     /// while it is under one poll old (`composeTick`), instead of reading GitHub again.
     var lastReads: [String: RepoRead] = [:]
+    /// The newest comment each PR had at any read that gives the app its rows, the sync's or
+    /// `readLists`', by pick: a Retry of a fix that no push could help is judged by it
+    /// (`commentedSince`), so the engine never refuses one that a row offers. Only ever later: a
+    /// read that ends after a newer one takes nothing back.
+    var newestComments: [String: Date] = [:]
     /// The ETag of each repo's open-PR list at the last probe, by lowercased slug (`listsChanged`).
     var pullTags: [String: String] = [:]
     /// Tags seen at a probe that found a change, kept until `readLists` reads that repo.
@@ -317,6 +322,7 @@ public actor Engine {
                     snapshot.openPullRequests += pullRequests
                     snapshot.merged += merged
                     noteWaits(pullRequests)
+                    noteComments(pullRequests)
                     if let flow = status.flow { noteUncountedApprovals(pullRequests, flow: flow) }
                     snapshot.defaultBranches[repo.slug] = read.defaultBranch
                     let kept = RepoRead(repo: repo, status: status, viewer: read.viewer, defaultBranch: read.defaultBranch,
@@ -769,12 +775,21 @@ public actor Engine {
         return true
     }
 
-    /// Whether the PR of a fix that no push could help got a comment since, by this Mac's last
-    /// read of its repo. No read of the PR is no comment: the run stays as it was (`Job.canRetry`).
+    /// Whether the PR of a fix that no push could help got a comment since, by every read of it
+    /// in this run (`newestComments`). No read of the PR is no comment: the run stays as it was
+    /// (`Job.canRetry`).
     func commentedSince(_ job: Job) -> Bool {
-        guard job.isFutileFix, let read = lastReads[job.key.repo.lowercased()] else { return false }
-        return read.pullRequests.first { "pr-\($0.number)" == job.key.item }
-            .map { DispatchPlanner.commentedSince(job, pr: $0) } ?? false
+        job.isFutileFix && DispatchPlanner.commentedSince(
+            job, newestComment: newestComments[Self.pick(repo: job.key.repo, item: job.key.item)])
+    }
+
+    /// Keeps each read PR's newest comment date (`newestComments`).
+    func noteComments(_ pullRequests: [PullRequest]) {
+        for pr in pullRequests {
+            guard let newest = pr.comments.map(\.createdAt).max() else { continue }
+            let pick = Self.pick(repo: pr.repo, item: "pr-\(pr.number)")
+            newestComments[pick] = max(newestComments[pick] ?? newest, newest)
+        }
     }
 
     func heldAgents() -> Set<String> {
